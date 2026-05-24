@@ -1,0 +1,7 @@
+/* =================================================================
+   theme.css - Imports structured theme stylesheets
+   ================================================================= */
+
+@import './themes/dark.css';
+@import './themes/light.css';
+@import './themes/blue.css';

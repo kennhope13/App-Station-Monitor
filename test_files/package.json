@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "mqtt": "^5.15.1",
+    "node-opcua-client": "^2.173.1",
+    "nodes7": "^0.3.18"
+  }
+}

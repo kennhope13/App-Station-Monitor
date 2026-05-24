@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; background:#000; overflow:hidden; }
+video-stream { display:block; width:100%; height:100%; }
+video { width:100%; height:100%; object-fit:fill; display:block; }
+</style>
+</head>
+<body>
+<script type="module">
+import './video-stream.js';
+const p = new URLSearchParams(location.search);
+const src = p.get('src') || '';
+const mode = p.get('mode') || 'webrtc,mse';
+const go2rtc = p.get('go2rtc') || 'http://localhost:1984';
+const el = document.createElement('video-stream');
+el.mode = mode;
+el.src = new URL('api/ws?src=' + encodeURIComponent(src), go2rtc);
+document.body.appendChild(el);
+</script>
+</body>
+</html>

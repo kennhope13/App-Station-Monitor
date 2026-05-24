@@ -1,0 +1,50 @@
+# Node / Frontend
+node_modules/
+**/node_modules/
+dist/
+build/
+.svelte-kit/
+.next/
+.tauri/
+frontend/src-tauri/target/
+
+# .NET / C#
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Python / AI Engine
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+.ipynb_checkpoints
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+frontend/.env
+ai_engine/.env
+
+# Temporary / Large Media Files
+test_files/cam153_snapshots/
+
+# System Files
+.DS_Store
+Thumbs.db
+Desktop.ini

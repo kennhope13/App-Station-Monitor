@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' * data: blob:;" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+  <title>Station Monitor - Power System Dashboard</title>
+  <meta name="description" content="Internal real-time power station monitoring dashboard." />
+  <meta name="theme-color" content="#0a0f0a" />
+  <meta name="robots" content="noindex, nofollow" />
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" href="/favico/logo.svg" />
+  <link rel="apple-touch-icon" href="/favico/logo.svg" />
+
+  <!-- Google Fonts: Inter (Industrial Sans-Serif) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Theme -->
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('station-theme') || 'dark';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.classList.add('theme-' + t);
+
+        // Always use professional dark background during loading to prevent bright flashing
+        var bg = '#090e1a';
+        var text = '#edf2fc';
+
+        var style = document.createElement('style');
+        style.innerHTML = 'body { background: ' + bg + ' !important; } #initial-loader { background: ' + bg + '; color: ' + text + '; }';
+        document.head.appendChild(style);
+      } catch (e) { }
+      document.documentElement.classList.add('no-transition');
+    })()
+  </script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Styles -->
+  <link rel="stylesheet" href="/src/styles/main.css" />
+</head>
+
+<body>
+  <div id="root">
+    <div id="initial-loader"
+      style="height: 100vh; display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 14px; font-weight: bold; transition: background 0.15s, color 0.15s;">
+      Loading Station Monitor...
+    </div>
+  </div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

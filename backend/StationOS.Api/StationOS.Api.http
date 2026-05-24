@@ -1,0 +1,6 @@
+@StationMonitor.Api_HostAddress = http://localhost:5055
+
+GET {{StationMonitor.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,63 @@
+# Station Server — chạy tại mỗi trạm
+# docker-compose -f docker-compose.station.yml up -d
+#
+# Yêu cầu file .env (copy từ .env.example) ở cùng cấp với file này.
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      Mode: Station
+      StationId: ${STATION_ID:-default}
+      CentralServer: ${CENTRAL_SERVER_URL:-}
+      ConnectionStrings__Sqlite: "Data Source=/data/station.db"
+      ASPNETCORE_URLS: http://+:5000
+      Go2Rtc__ApiUrl: http://go2rtc:1984
+    volumes:
+      - station_data:/data
+      - snapshots:/data/snapshots
+      - recordings:/data/recordings
+      - buffer:/data/buffer
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    volumes:
+      - ./go2rtc/go2rtc.yaml:/config/go2rtc.yaml
+    ports:
+      - "1984:1984"   # API + WebRTC signaling
+      - "8554:8554"   # RTSP
+      - "8555:8555"   # WebRTC media
+    restart: unless-stopped
+
+  ai_engine:
+    build:
+      context: ./ai_engine
+      dockerfile: Dockerfile
+    environment:
+      BACKEND_URL: http://backend:5000     # ← FIX: backend container listen :5000
+      GO2RTC_RTSP: rtsp://go2rtc:8554
+      GO2RTC_API:  http://go2rtc:1984
+    ports:
+      - "8100:8100"   # FastAPI + MJPEG preview
+    depends_on:
+      backend:
+        condition: service_healthy
+      go2rtc:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  station_data:
+  snapshots:
+  recordings:
+  buffer:

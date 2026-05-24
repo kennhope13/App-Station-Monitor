@@ -1,0 +1,16 @@
+api:
+  listen: ":1984"
+
+streams:
+  # Camera streams được thêm động qua API
+  # go2rtc API: POST /api/streams?name=cam1&src=rtsp://...
+  # Hoặc thêm tĩnh ở đây:
+  #
+  # cam_thermal: rtsp://admin:password@192.168.x.x/Streaming/Channels/201
+  # cam_optical: rtsp://admin:password@192.168.x.x/Streaming/Channels/101
+
+webrtc:
+  listen: ":8555"
+
+log:
+  level: info

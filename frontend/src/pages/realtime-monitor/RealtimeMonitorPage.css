@@ -1,0 +1,176 @@
+.rtm-page { display:flex; flex-direction:column; height:100%; background:var(--admin-bg); overflow:hidden; }
+
+/* ── Toolbar ── */
+.rtm-bar {
+  height:44px; background:var(--admin-panel); border-bottom:1px solid var(--admin-border);
+  display:flex; align-items:center; padding:0 14px; gap:10px;
+  flex-shrink:0; z-index:30;
+}
+.rtm-title { font-size:10px; font-weight:900; color:var(--admin-text); letter-spacing:2px; text-transform:uppercase; }
+.rtm-sep   { width:1px; height:22px; background:var(--admin-border); flex-shrink:0; }
+
+.nvr-lb {
+  background:var(--admin-btn-secondary-bg); border:1px solid var(--admin-btn-secondary-border); color:var(--admin-btn-secondary-text);
+  width:30px; height:30px; border-radius:5px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .15s; padding:0; flex-shrink:0;
+}
+.nvr-lb.active { background:var(--admin-accent); border-color:var(--admin-accent); color:var(--admin-text-on-accent); }
+.nvr-lb:hover:not(.active) { border-color:var(--admin-border); color:var(--admin-text); background:var(--admin-hover); }
+
+.nvr-sel {
+  background:var(--admin-panel); border:1px solid var(--admin-border); color:var(--admin-text);
+  padding:0 8px; border-radius:4px; font-size:11px; height:28px; max-width:180px;
+}
+.nvr-sel:focus { outline:none; border-color:var(--admin-accent); }
+
+.nvr-back-btn {
+  display:none; align-items:center; gap:6px;
+  background:var(--admin-tag-success-bg); border:1px solid var(--admin-success); color:var(--admin-success);
+  padding:0 12px; height:28px; border-radius:5px; font-size:11px; font-weight:700;
+  cursor:pointer; transition:background .15s; white-space:nowrap;
+}
+.nvr-back-btn:hover { background:var(--admin-tag-success-bg); opacity: 0.8; }
+.nvr-back-btn.visible { display:flex; }
+.nvr-fs-cam { display:none; font-size:11px; font-weight:700; color:var(--admin-accent); white-space:nowrap; }
+
+.nvr-stats { margin-left:auto; display:flex; gap:16px; align-items:center; }
+.nvr-stat  { font-size:11px; color:var(--admin-text-muted); display:flex; gap:5px; align-items:center; }
+.nvr-stat b { font-weight:800; }
+.nvr-clock-txt { font-size:12px; font-weight:700; font-family:'Courier New',monospace; color:var(--admin-text); letter-spacing:1px; }
+
+/* ── Main area ── */
+.rtm-main { flex:1; display:flex; overflow:hidden; min-height:0; }
+
+/* ── Camera grid ── */
+.nvr-wrap { flex:1; min-width:0; overflow:hidden; background:#070a10; position:relative; padding:2px; box-sizing:border-box; }
+.nvr-grid { display:grid; gap:2px; height:100%; width:100%; position:relative; box-sizing:border-box; }
+.nvr-grid.l1 { grid-template-columns:1fr; grid-template-rows:1fr; }
+.nvr-grid.l4 { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; }
+.nvr-grid.l9 { grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
+
+.nvr-cell { position:relative; background:#0c0f16; overflow:hidden; cursor:pointer; user-select:none; transition:box-shadow .12s; }
+.nvr-cell:hover { box-shadow:inset 0 0 0 1px var(--admin-accent); }
+.nvr-cell.expanded { position:absolute!important; inset:0!important; z-index:20; box-shadow:0 0 0 2px var(--admin-accent)!important; }
+.nvr-cell iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  pointer-events: none;
+  display: block;
+  background: #000;
+  z-index: 1;
+}
+
+/* No signal */
+.nvr-nosig { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; pointer-events:none; }
+.nvr-nosig-ico { font-size:1.8rem; opacity:.2; color:var(--admin-text-muted); }
+.nvr-nosig-txt { font-size:9px; font-weight:900; color:rgba(255, 255, 255, 0.4); letter-spacing:3px; text-transform:uppercase; }
+.nvr-ch { position:absolute; top:8px; left:10px; font-size:10px; font-weight:700; color:rgba(255, 255, 255, 0.4); pointer-events:none; }
+
+/* HUD top (on hover) */
+.nvr-hud-t { position:absolute; top:0; left:0; right:0; padding:7px 10px 20px; background:linear-gradient(180deg,rgba(0,0,0,.78) 0%,transparent 100%); display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; z-index:5; opacity:0; transition:opacity .2s; }
+.nvr-cam-info { display:flex; align-items:center; gap:6px; min-width:0; }
+.nvr-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; transition:background .3s,box-shadow .3s; }
+.nvr-dot.online  { background:var(--admin-success); box-shadow:0 0 6px var(--admin-success); }
+.nvr-dot.offline { background:var(--admin-danger); box-shadow:0 0 6px var(--admin-danger); }
+.nvr-dot.unknown { background:var(--admin-border); }
+.nvr-cname { font-size:11px; font-weight:700; color:rgba(255,255,255,.82); text-shadow:0 1px 4px rgba(0,0,0,.9); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
+.nvr-rec { display:flex; align-items:center; gap:3px; font-size:9px; font-weight:900; color:var(--admin-danger); letter-spacing:1px; flex-shrink:0; }
+.nvr-recdot { width:6px; height:6px; border-radius:50%; background:var(--admin-danger); animation:nvr-blink 1.2s infinite; }
+@keyframes nvr-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* HUD bottom (on hover) */
+.nvr-hud-b { position:absolute; bottom:0; left:0; right:0; padding:18px 10px 7px; background:linear-gradient(0deg,rgba(0,0,0,.74) 0%,transparent 100%); display:flex; justify-content:space-between; align-items:flex-end; z-index:5; opacity:0; transition:opacity .2s; pointer-events:none; }
+.nvr-cell:hover .nvr-hud-t, .nvr-cell:hover .nvr-hud-b { opacity:1; }
+.nvr-ts   { font-size:10px; font-weight:500; color:rgba(255,255,255,.45); font-family:'Courier New',monospace; }
+.nvr-acts { display:flex; gap:4px; pointer-events:all; }
+.nvr-abtn { background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.15); color:rgba(255,255,255,.7); width:26px; height:26px; border-radius:4px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+.nvr-abtn:hover { background:rgba(59,130,246,.45); border-color:var(--admin-accent); color:#fff; }
+
+/* ── Events Panel ── */
+.nvr-ep { display:flex; width:300px; flex-shrink:0; background:var(--admin-panel); border-left:1px solid var(--admin-border); overflow:hidden; transition:width .25s ease; position:relative; }
+.nvr-ep.collapsed { width:28px; }
+
+/* Vertical toggle tab */
+.nvr-ep-tab { width:28px; flex-shrink:0; background:transparent; border:none; border-right:1px solid var(--admin-border); color:var(--admin-text-muted); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:0; transition:all .15s; }
+.nvr-ep-tab:hover { color:var(--admin-accent); background:var(--admin-hover); }
+.nvr-ep-tab-arrow { font-size:9px; transition:transform .25s; line-height:1; }
+.nvr-ep.collapsed .nvr-ep-tab-arrow { transform:rotate(180deg); }
+.nvr-ep-tab-label { font-size:8px; font-weight:900; letter-spacing:1.5px; writing-mode:vertical-rl; transform:rotate(180deg); opacity:.4; color:inherit; }
+
+/* Panel body */
+.nvr-ep-body { flex:1; display:flex; flex-direction:column; overflow:hidden; min-width:272px; }
+
+/* Panel header */
+.nvr-ep-hdr { padding:10px 12px 8px; border-bottom:1px solid var(--admin-border); flex-shrink:0; }
+.nvr-ep-hdr-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.nvr-ep-title { font-size:10px; font-weight:900; color:var(--admin-text); letter-spacing:1.5px; text-transform:uppercase; }
+.nvr-ep-cnt { background:var(--admin-info-bg); border:1px solid var(--admin-info-border); color:var(--admin-info-text); font-size:9px; font-weight:800; padding:1px 7px; border-radius:10px; }
+
+/* Filters */
+.nvr-ep-filters { display:flex; gap:5px; align-items:center; }
+.nvr-ep-fsel { background:var(--admin-bg); border:1px solid var(--admin-border); color:var(--admin-text); padding:3px 6px; border-radius:4px; font-size:10px; height:26px; flex:1; min-width:0; cursor:pointer; }
+.nvr-ep-fdate { background:var(--admin-bg); border:1px solid var(--admin-border); color:var(--admin-text); padding:3px 5px; border-radius:4px; font-size:10px; height:26px; width:100px; flex-shrink:0; }
+.nvr-ep-fsel:focus,.nvr-ep-fdate:focus { outline:none; border-color:var(--admin-accent); }
+.nvr-ep-rbtn { background:transparent; border:1px solid var(--admin-border); color:var(--admin-text-muted); width:26px; height:26px; border-radius:4px; cursor:pointer; font-size:13px; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .15s; }
+.nvr-ep-rbtn:hover { border-color:var(--admin-accent); color:var(--admin-accent); }
+
+/* Events list */
+.nvr-ep-list { flex:1; overflow-y:auto; padding:5px; }
+.nvr-ep-list::-webkit-scrollbar { width:3px; }
+.nvr-ep-list::-webkit-scrollbar-track { background:var(--admin-panel); }
+.nvr-ep-list::-webkit-scrollbar-thumb { background:var(--admin-border); border-radius:2px; }
+
+.nvr-evt { display:flex; gap:8px; padding:7px 7px; border-radius:6px; cursor:pointer; transition:background .12s; margin-bottom:3px; border:1px solid transparent; }
+.nvr-evt:hover { background:var(--admin-hover); border-color:var(--admin-border); }
+
+.nvr-evt-thumb {
+  width:54px; height:38px; border-radius:4px; flex-shrink:0; overflow:hidden;
+  background:var(--admin-bg); display:flex; align-items:center; justify-content:center; font-size:1.3rem;
+}
+.nvr-evt-thumb img { width:54px; height:38px; object-fit:cover; display:block; }
+
+.nvr-evt-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; justify-content:center; }
+.nvr-evt-badge { display:inline-flex; align-items:center; gap:4px; font-size:9px; font-weight:800; letter-spacing:.3px; }
+.nvr-evt-cam  { font-size:9px; color:var(--admin-text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.nvr-evt-time { font-size:9px; color:var(--admin-text-muted); font-family:monospace; }
+.nvr-evt-temp { font-size:10px; font-weight:800; color:var(--admin-danger); }
+
+.nvr-ep-empty { padding:40px 12px; text-align:center; color:var(--admin-text-muted); font-size:11px; }
+.nvr-ep-loading { padding:20px; text-align:center; color:var(--admin-text-muted); font-size:11px; }
+
+@keyframes nvr-flash { 0%{background:var(--admin-info-bg)} 100%{background:transparent} }
+.nvr-evt.new { animation:nvr-flash .9s ease-out; }
+
+/* Visual Alarm Pulse */
+@keyframes nvr-alarm-pulse {
+  0% { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: inset 0 0 10px 4px rgba(239, 68, 68, 0.8); }
+  100% { box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.4); }
+}
+.nvr-cell.alarm-triggered {
+  animation: nvr-alarm-pulse 1.5s infinite;
+  z-index: 10;
+  border: 1px solid var(--admin-danger);
+}
+
+/* ── Lightbox Extended ── */
+.nvr-lb-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:9999; align-items:center; justify-content:center; }
+.nvr-lb-overlay.open { display:flex; }
+.nvr-lb-content { max-width:92vw; max-height:90vh; position:relative; }
+.nvr-lb-overlay img, .nvr-lb-overlay video { width:100%; height:100%; border-radius:8px; box-shadow:0 0 60px rgba(0,0,0,.8); }
+.nvr-lb-close { position:absolute; top:16px; right:20px; color:#fff; font-size:1.4rem; cursor:pointer; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.15); border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; transition:background .15s; }
+.nvr-lb-close:hover { background:rgba(255,255,255,.2); }
+
+/* ── Canvas Overlay ── */
+.nvr-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
