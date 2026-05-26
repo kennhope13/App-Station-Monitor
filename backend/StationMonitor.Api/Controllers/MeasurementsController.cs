@@ -12,6 +12,7 @@ using StationMonitor.Api.Hubs;
 using StationMonitor.Data;
 using System.Collections.Generic;
 using System.Linq;
+using Npgsql;
 
 namespace StationMonitor.Api.Controllers;
 
@@ -112,6 +113,15 @@ public class MeasurementsController : ControllerBase
     /// Trả về list { PointId, Time, Value } đã lọc theo khoảng thời gian
     /// intervalMinutes: gộp trung bình theo N phút (0 = raw, max 60)
     /// </summary>
+    private static DateTime GetBucketTime(DateTime dt, int intervalMinutes)
+    {
+        if (intervalMinutes <= 1) return dt;
+        var ticks = dt.Ticks;
+        var intervalTicks = TimeSpan.FromMinutes(intervalMinutes).Ticks;
+        var bucketTicks = (ticks / intervalTicks) * intervalTicks;
+        return new DateTime(bucketTicks, dt.Kind);
+    }
+
     [HttpGet("history/bulk")]
     public async Task<IActionResult> GetHistoryBulk(
         [FromQuery] Guid stationId,
@@ -129,57 +139,117 @@ public class MeasurementsController : ControllerBase
 
         var selectedPoints = pointIds?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 
-        var conn = _db.Database.GetDbConnection();
-        await conn.OpenAsync();
-        await using var cmd = conn.CreateCommand();
+        // Kiểm tra xem database đang dùng SQLite hay PostgreSQL
+        var isSqlite = _db.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite";
 
-        string sql;
-        if (intervalMinutes <= 0)
+        if (isSqlite)
         {
-            // Raw data
-            sql = $"""
-                SELECT "PointId", "Time", "Value"
-                FROM "SensorReadings"
-                WHERE "StationId" = '{stationId}'
-                  AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
-                  AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
-                ORDER BY "Time", "PointId"
-                LIMIT 50000
-                """;
+            var q = _db.SensorReadings.AsNoTracking()
+                .Where(r => r.StationId == stationId && r.Time >= from && r.Time <= to);
+
+            if (selectedPoints != null && selectedPoints.Any())
+            {
+                q = q.Where(r => selectedPoints.Contains(r.PointId));
+            }
+
+            if (intervalMinutes <= 0)
+            {
+                // Raw data cho SQLite
+                var readings = await q
+                    .OrderBy(r => r.Time)
+                    .ThenBy(r => r.PointId)
+                    .Take(50000)
+                    .Select(r => new
+                    {
+                        PointId = r.PointId,
+                        Time    = r.Time,
+                        Value   = r.Value ?? 0.0
+                    })
+                    .ToListAsync();
+
+                return Ok(readings);
+            }
+            else
+            {
+                // Gộp trung bình theo intervalMinutes cho SQLite
+                var readings = await q
+                    .Select(r => new { r.PointId, r.Time, Value = r.Value ?? 0.0 })
+                    .ToListAsync();
+
+                var grouped = readings
+                    .GroupBy(r => new
+                    {
+                        r.PointId,
+                        TimeBucket = GetBucketTime(r.Time, intervalMinutes)
+                    })
+                    .Select(g => new
+                    {
+                        PointId = g.Key.PointId,
+                        Time    = g.Key.TimeBucket,
+                        Value   = g.Average(r => r.Value)
+                    })
+                    .OrderBy(r => r.Time)
+                    .ThenBy(r => r.PointId)
+                    .ToList();
+
+                return Ok(grouped);
+            }
         }
         else
         {
-            // Time-bucket aggregation (TimescaleDB)
-            sql = $"""
-                SELECT "PointId",
-                       time_bucket('{intervalMinutes} minutes', "Time") AS "Time",
-                       AVG("Value")::float8 AS "Value"
-                FROM "SensorReadings"
-                WHERE "StationId" = '{stationId}'
-                  AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
-                  AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
-                GROUP BY "PointId", time_bucket('{intervalMinutes} minutes', "Time")
-                ORDER BY "Time", "PointId"
-                """;
-        }
+            // PostgreSQL/TimescaleDB
+            var connStr = _db.Database.GetConnectionString()!;
+            await using var conn = new NpgsqlConnection(connStr);
+            await conn.OpenAsync();
+            await using var cmd = conn.CreateCommand();
 
-        cmd.CommandText = sql;
-        await using var reader = await cmd.ExecuteReaderAsync();
-
-        var rows = new List<object>();
-        while (await reader.ReadAsync())
-        {
-            var pid = reader.GetString(0);
-            if (selectedPoints != null && !selectedPoints.Contains(pid)) continue;
-            rows.Add(new
+            string sql;
+            if (intervalMinutes <= 0)
             {
-                PointId = pid,
-                Time    = reader.GetDateTime(1),
-                Value   = reader.GetDouble(2),
-            });
+                // Raw data
+                sql = $"""
+                    SELECT "PointId", "Time", "Value"
+                    FROM "SensorReadings"
+                    WHERE "StationId" = '{stationId}'
+                      AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
+                      AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
+                    ORDER BY "Time", "PointId"
+                    LIMIT 50000
+                    """;
+            }
+            else
+            {
+                // Time-bucket aggregation (TimescaleDB)
+                sql = $"""
+                    SELECT "PointId",
+                           time_bucket('{intervalMinutes} minutes', "Time") AS "Time",
+                           AVG("Value")::float8 AS "Value"
+                    FROM "SensorReadings"
+                    WHERE "StationId" = '{stationId}'
+                      AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
+                      AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
+                    GROUP BY "PointId", time_bucket('{intervalMinutes} minutes', "Time")
+                    ORDER BY "Time", "PointId"
+                    """;
+            }
+
+            cmd.CommandText = sql;
+            await using var reader = await cmd.ExecuteReaderAsync();
+
+            var rows = new List<object>();
+            while (await reader.ReadAsync())
+            {
+                var pid = reader.GetString(0);
+                if (selectedPoints != null && !selectedPoints.Contains(pid)) continue;
+                rows.Add(new
+                {
+                    PointId = pid,
+                    Time    = reader.GetDateTime(1),
+                    Value   = reader.GetDouble(2),
+                });
+            }
+            return Ok(rows);
         }
-        await conn.CloseAsync();
-        return Ok(rows);
     }
 
     /// <summary>
@@ -266,6 +336,17 @@ public class MeasurementsController : ControllerBase
         }
 
         if (readings == null || !readings.Any()) return BadRequest();
+
+        // Lọc sạch các giá trị rác dựa trên đơn vị đo hoặc ID điểm đo
+        readings = readings.Where(r => {
+            var isTemp = (r.Unit == "°C" || r.PointId.StartsWith("P") || r.PointId.StartsWith("nhiet_do"));
+            if (isTemp) {
+                return r.Value >= 20.0 && r.Value <= 80.0;
+            } else {
+                return r.Value >= -100.0 && r.Value <= 1000.0; // Hỗ trợ phong_dien (dB) âm
+            }
+        }).ToList();
+        if (!readings.Any()) return Ok(new { success = true, count = 0 });
 
         var okMsg = $"[Ingest] Received {readings.Count} points for Device {readings[0].DeviceId}";
         try { System.IO.File.AppendAllText(logFile, okMsg + "\n"); } catch {}

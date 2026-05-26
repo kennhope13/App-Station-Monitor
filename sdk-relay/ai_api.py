@@ -123,14 +123,14 @@ def pd_prediction_api():
     save_to_pd_csv(PD_CSV_FILE, ts, pd_id, pd_val, freq, s_db, freq_ai, status, forecast_ts)
     sys.stderr.write(f"[DEBUG] Saved PD {pd_id}: {pd_val}dB, {freq}Hz, {s_db}dB(Audio), {freq_ai}Hz(AI)\n")
     
-    # Ingest vào Backend local (nếu cần xem biểu đồ lịch sử ở phần Phóng điện)
-    try:
-        ingest_payload = [{
-            "DeviceId": DEVICE_GUID, "PointId": "phong_dien",
-            "Value": pd_val, "PredictedValue": pd_val, "Unit": "dB"
-        }]
-        requests.post(INTERNAL_INGEST_URL, json=ingest_payload, timeout=2)
-    except: pass
+    # Ingest vào Backend local (nếu cần xem biểu đồ lịch sử ở phần Phóng điện) - BỎ QUA DỰ ĐOÁN PD ĐỂ TRÁNH NHẦM LẪN
+    # try:
+    #     ingest_payload = [{
+    #         "DeviceId": DEVICE_GUID, "PointId": "phong_dien",
+    #         "Value": pd_val, "PredictedValue": pd_val, "Unit": "dB"
+    #     }]
+    #     requests.post(INTERNAL_INGEST_URL, json=ingest_payload, timeout=2)
+    # except: pass
     
     return jsonify({"success": True}), 200
 

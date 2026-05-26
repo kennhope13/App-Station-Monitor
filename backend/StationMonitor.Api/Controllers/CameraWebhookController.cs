@@ -87,7 +87,11 @@ public class CameraWebhookController : ControllerBase
                 using var stream = new FileStream(fullPath, FileMode.Create);
                 await thumbFile.CopyToAsync(stream);
                 HttpContext.Items["ThumbnailUrl"] = $"/detections/{tname}";
-                _logger.LogInformation("[CamWebhook] Saved thumbnail: {path}", fullPath);
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30));
+                    try { if (System.IO.File.Exists(fullPath)) System.IO.File.Delete(fullPath); } catch { }
+                });
             }
         }
         else
@@ -128,7 +132,7 @@ public class CameraWebhookController : ControllerBase
         string detDir = Path.Combine(mediaRootDir, "detections");
         if (!Directory.Exists(detDir)) Directory.CreateDirectory(detDir);
 
-        // Lưu ảnh snapshot
+        // Lưu ảnh snapshot — tự xóa sau 30 giây
         string? snapshotUrl = null;
         if (imgBytes?.Length > 0)
         {
@@ -136,7 +140,11 @@ public class CameraWebhookController : ControllerBase
             var fullPath = Path.Combine(detDir, fname);
             await System.IO.File.WriteAllBytesAsync(fullPath, imgBytes);
             snapshotUrl = $"/media/detections/{fname}";
-            _logger.LogInformation("[CamWebhook] Saved snapshot: {path}", fullPath);
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30));
+                try { if (System.IO.File.Exists(fullPath)) System.IO.File.Delete(fullPath); } catch { }
+            });
         }
 
         // Tạo Alert
@@ -236,7 +244,11 @@ public class CameraWebhookController : ControllerBase
         {
             await file.CopyToAsync(stream);
         }
-        _logger.LogInformation("[CamWebhook] Saved video: {path}", path);
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            try { if (System.IO.File.Exists(path)) System.IO.File.Delete(path); } catch { }
+        });
 
         var videoUrl = $"/media/videos/{fname}";
 
@@ -346,6 +358,9 @@ public class CameraWebhookController : ControllerBase
         "smokealarm"            => ("smoke",             "alarm",   true),
         "linedetection"         => ("intrusion",         "warning", true),
         "fielddetection"        => ("intrusion",         "warning", true),
+        "persondetection"       => ("person_detection",  "alarm",   true),
+        "humandetection"        => ("person_detection",  "alarm",   true),
+        "intrusiondetection"    => ("person_detection",  "alarm",   true),
         "videotampering"        => ("tampering",         "warning", true),
         "videoloss"             => ("video_loss",        "alarm",   true),
         "motiondetection"       => ("motion",            "info",    false),

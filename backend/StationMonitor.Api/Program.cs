@@ -252,6 +252,16 @@ try {
         // SQLite: Dùng EnsureCreated để tạo bảng chuẩn từ C# Model nếu chưa có
         db.Database.EnsureCreated();
 
+        // Tự động dọn dẹp các giá trị rác trong DB trên startup (nhiệt độ ngoài [20, 80]°C)
+        try {
+            var deleted = db.Database.ExecuteSqlRaw("DELETE FROM \"SensorReadings\" WHERE (\"Unit\" = '°C' OR \"PointId\" LIKE 'P%' OR \"PointId\" LIKE 'nhiet_do%') AND (\"Value\" < 20.0 OR \"Value\" > 80.0);");
+            if (deleted > 0) {
+                Console.WriteLine($"[Startup] Cleaned {deleted} garbage sensor readings from database.");
+            }
+        } catch (Exception ex) {
+            Console.WriteLine($"[Startup] WARNING: Could not clean garbage readings: {ex.Message}");
+        }
+
         // Vá lỗi thiếu cột RuleSet cho SQLite (vì SQLite không hỗ trợ IF NOT EXISTS trong ALTER TABLE)
         try {
             db.Database.ExecuteSqlRaw("ALTER TABLE Rules ADD COLUMN RuleSet TEXT;");
@@ -284,6 +294,9 @@ try {
         // Seed 10 rules nhiệt độ cho Camera 152 (P1 -> P10)
         await SeedThermalPointsRulesAsync(db);
 
+        // Seed bổ sung các rules nhiệt độ cho Camera 152 (P11 -> P20)
+        await SeedThermalPointsRulesP11ToP20Async(db);
+
         // Seed license key mặc định nếu chưa có
         await SeedDefaultLicenseAsync(db);
 
@@ -304,7 +317,27 @@ app.Run();
 // ── Seed rules NETA MTS 2023 ────────────────────────────
 static async Task SeedNetaRulesAsync(AppDbContext db)
 {
-    if (await db.Rules.AnyAsync(r => r.Name.StartsWith("NETA"))) return;
+    var existingRules = await db.Rules.Where(r => r.Name.StartsWith("NETA")).ToListAsync();
+    if (existingRules.Any())
+    {
+        var monitor = existingRules.FirstOrDefault(r => r.Name == "NETA Monitor — Phóng điện");
+        if (monitor != null && !monitor.Actions.Contains("alert"))
+        {
+            monitor.Actions = """[{"type":"alert","level":"warning"},{"type":"health","penalty":5},{"type":"maintenance","taskType":"inspection","scheduledInDays":180}]""";
+        }
+        var warning = existingRules.FirstOrDefault(r => r.Name == "NETA Warning — Phóng điện");
+        if (warning != null && !warning.Actions.Contains("alert"))
+        {
+            warning.Actions = """[{"type":"alert","level":"warning"},{"type":"health","penalty":15},{"type":"maintenance","taskType":"repair","scheduledInDays":45}]""";
+        }
+        var critical = existingRules.FirstOrDefault(r => r.Name == "NETA Critical — Phóng điện");
+        if (critical != null && !critical.Actions.Contains("alert"))
+        {
+            critical.Actions = """[{"type":"alert","level":"alarm"},{"type":"health","penalty":30},{"type":"maintenance","taskType":"repair","scheduledInDays":3}]""";
+        }
+        await db.SaveChangesAsync();
+        return;
+    }
 
     var station = await db.Stations.FirstOrDefaultAsync();
     if (station == null) return;
@@ -316,7 +349,7 @@ static async Task SeedNetaRulesAsync(AppDbContext db)
             Name      = "NETA Monitor — Phóng điện",
             RuleSet   = "Tủ 471",
             Condition = """{"point":"phong_dien","op":">","value":-37}""",
-            Actions   = """[{"type":"health","penalty":5},{"type":"maintenance","taskType":"inspection","scheduledInDays":180}]""",
+            Actions   = """[{"type":"alert","level":"warning"},{"type":"health","penalty":5},{"type":"maintenance","taskType":"inspection","scheduledInDays":180}]""",
             Enabled   = true,
         },
         new StationMonitor.Data.Entities.Rule
@@ -325,7 +358,7 @@ static async Task SeedNetaRulesAsync(AppDbContext db)
             Name      = "NETA Warning — Phóng điện",
             RuleSet   = "Tủ 471",
             Condition = """{"point":"phong_dien","op":">","value":-27}""",
-            Actions   = """[{"type":"health","penalty":15},{"type":"maintenance","taskType":"repair","scheduledInDays":45}]""",
+            Actions   = """[{"type":"alert","level":"warning"},{"type":"health","penalty":15},{"type":"maintenance","taskType":"repair","scheduledInDays":45}]""",
             Enabled   = true,
         },
         new StationMonitor.Data.Entities.Rule
@@ -334,7 +367,7 @@ static async Task SeedNetaRulesAsync(AppDbContext db)
             Name      = "NETA Critical — Phóng điện",
             RuleSet   = "Tủ 471",
             Condition = """{"point":"phong_dien","op":">","value":-20}""",
-            Actions   = """[{"type":"health","penalty":30},{"type":"maintenance","taskType":"repair","scheduledInDays":3}]""",
+            Actions   = """[{"type":"alert","level":"alarm"},{"type":"health","penalty":30},{"type":"maintenance","taskType":"repair","scheduledInDays":3}]""",
             Enabled   = true,
         }
     );
@@ -581,4 +614,37 @@ static async Task SeedDefaultSldAsync(StationMonitor.Data.AppDbContext db)
         }
     }
     await db.SaveChangesAsync();
+}
+
+// ── Seed bổ sung 10 rules nhiệt độ cho Camera 152 (P11 -> P20) ─────
+static async Task SeedThermalPointsRulesP11ToP20Async(AppDbContext db)
+{
+    if (await db.Rules.AnyAsync(r => r.Name == "Cảnh báo điểm P11")) return;
+
+    var station = await db.Stations.FirstOrDefaultAsync();
+    if (station == null) return;
+
+    var thermalCam = await db.Devices.FirstOrDefaultAsync(d => d.Type == "camera_thermal");
+
+    for (int i = 11; i <= 20; i++)
+    {
+        db.Rules.Add(new StationMonitor.Data.Entities.Rule
+        {
+            StationId = station.Id,
+            DeviceId  = thermalCam?.Id,
+            Name      = $"Cảnh báo điểm P{i}",
+            RuleSet   = "Các điểm đo của cam nhiệt",
+            Condition = System.Text.Json.JsonSerializer.Serialize(new { 
+                point = $"P{i}", 
+                op = ">=", 
+                pre_alarm = 50, 
+                alarm = 70,
+                type = "analog"
+            }),
+            Actions   = """[{"type":"alert","level":"hybrid"}]""",
+            Enabled   = true,
+        });
+    }
+    await db.SaveChangesAsync();
+    Console.WriteLine("[Startup] Đã seed bổ sung 10 rules nhiệt độ camera (P11-P20)");
 }

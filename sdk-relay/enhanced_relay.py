@@ -732,7 +732,9 @@ class ThermalSDK:
                                             py = int(ty * h)
                                             px = max(0, min(w - 1, px))
                                             py = max(0, min(h - 1, py))
-                                            LIVE_TEMPS[rid] = float(matrix[py, px])
+                                            val = float(matrix[py, px])
+                                            if 20.0 <= val <= 80.0:
+                                                LIVE_TEMPS[rid] = val
                                 except Exception:
                                     pass
         except Exception:

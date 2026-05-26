@@ -4,6 +4,7 @@
 // ============================================================
 
 import { API_BASE_URL } from '@/utils/env';
+import { confirmDialog } from '@/utils/confirm';
 
 interface ThermalPoint {
   id: string;
@@ -553,7 +554,7 @@ export class ThermalPointsPage {
   }
 
   private async deletePoint(id: string): Promise<void> {
-    if (!confirm(`Xóa điểm P${id}? Hành động này không thể hoàn tác.`)) return;
+    if (!await confirmDialog({ title: 'Xóa điểm đo', message: `Xóa điểm P${id}? Hành động này không thể hoàn tác.`, confirmText: 'Xóa', danger: true })) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/thermal-points/${id}`, {
         method: 'DELETE',

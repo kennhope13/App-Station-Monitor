@@ -1362,7 +1362,10 @@ if (main && p.deviceId) {
     this.sensors = points;
 
     const temps = points.filter(p => p.pointId.startsWith('nhiet_do'));
-    const pd = points.find(p => p.pointId === 'phong_dien');
+    const plcDevice = devices.find(d => d.type === 'plc_s7');
+    const pd = plcDevice 
+      ? points.find(p => p.pointId === 'phong_dien' && p.deviceId?.toLowerCase() === plcDevice.id.toLowerCase())
+      : points.find(p => p.pointId === 'phong_dien');
 
     // ── Phân loại cảnh báo theo nguồn ──────────────────────────
     const PLC_POINTS  = ['nhiet_do_pha_1','nhiet_do_pha_2','nhiet_do_pha_3','phong_dien'];

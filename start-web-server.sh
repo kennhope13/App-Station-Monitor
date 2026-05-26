@@ -71,7 +71,10 @@ if [ ! -d "dist" ]; then
 fi
 
 echo "📤 Deploy to backend wwwroot (preserving media & reports)..."
-cd "$SCRIPT_DIR/backend/StationMonitor.Api/wwwroot"
+WWWROOT="$SCRIPT_DIR/backend/StationMonitor.Api/wwwroot"
+# Đổi owner về admin- để có thể ghi (phòng khi build trước chạy root)
+sudo chown -R "$USER:$USER" "$WWWROOT" 2>/dev/null || true
+cd "$WWWROOT"
 # Xóa tất cả TRỪ thư mục media, reports, sld và các file sơ đồ .svg
 find . -maxdepth 1 ! -name 'media' ! -name 'reports' ! -name 'sld' ! -name '*.svg' ! -name '.' -exec rm -rf {} +
 cp -r "$SCRIPT_DIR/frontend/dist"/* ./
