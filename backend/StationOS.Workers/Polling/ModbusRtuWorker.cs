@@ -67,6 +67,7 @@ public class ModbusRtuWorker : BackgroundService
         foreach (var c in _clients.Values) { try { c.Dispose(); } catch { } }
     }
 
+    /// <summary>Duyệt tất cả thiết bị Modbus RTU trong DB và đọc holding registers qua cổng serial.</summary>
     private async Task PollAllAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();

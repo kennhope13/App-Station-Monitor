@@ -53,6 +53,7 @@ public class StorageMonitorWorker : BackgroundService
         }
     }
 
+    /// <summary>Kiểm tra dung lượng ổ đĩa, tạo alert nếu < 10% hoặc < 5% free, lưu metric vào SystemSettings.</summary>
     private async Task CheckStorageAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();

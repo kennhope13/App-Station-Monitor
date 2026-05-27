@@ -10,14 +10,9 @@ namespace StationOS.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<string>(
-                name: "Capabilities",
-                table: "Devices",
-                type: "text",
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "jsonb",
-                oldNullable: true);
+            // Migration AddDeviceCapabilities trước đó thiếu Designer.cs nên có thể bị skip.
+            // Defensive: tạo cột Capabilities nếu chưa có, sau đó mới ALTER type.
+            migrationBuilder.Sql(@"ALTER TABLE ""Devices"" ADD COLUMN IF NOT EXISTS ""Capabilities"" text;");
 
             migrationBuilder.CreateIndex(
                 name: "IX_SensorReadings_DeviceId_PointId_Time",

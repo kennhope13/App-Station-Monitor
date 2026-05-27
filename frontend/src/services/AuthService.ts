@@ -4,8 +4,11 @@
 // ============================================================
 
 import type { User, UserRole } from '@/types/api.types';
-import { API_BASE } from '@/services/api/BaseApiService';
+import { API_BASE_URL } from '@/utils/env';
 import { useAuthStore } from '@/store/authStore';
+
+// Tự tính API_BASE để tránh circular import với BaseApiService
+const API_BASE = `${API_BASE_URL}/api/v1`;
 
 class AuthService {
     public async login(username: string, password: string): Promise<{ success: boolean; error?: string; licenseReason?: string }> {
@@ -39,8 +42,10 @@ class AuthService {
                 created_at: new Date().toISOString(),
             };
 
+            const refreshToken = data.refreshToken ?? '';
+
             // Cập nhật Zustand Store
-            useAuthStore.getState().setSession(user, token);
+            useAuthStore.getState().setSession(user, token, refreshToken);
             
             return { success: true, licenseReason: data.licenseReason ?? '' };
 

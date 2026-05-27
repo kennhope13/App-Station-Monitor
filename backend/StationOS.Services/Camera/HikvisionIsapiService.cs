@@ -12,9 +12,25 @@ namespace StationOS.Services.Camera;
 public class HikvisionIsapiService
 {
     private readonly ILogger<HikvisionIsapiService> _logger;
+    // Fallback client cho stream API (giữ kết nối lâu, không cần auth)
     private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     public HikvisionIsapiService(ILogger<HikvisionIsapiService> logger) => _logger = logger;
+
+    /// <summary>
+    /// Tạo HttpClient với Digest authentication cho camera Hikvision.
+    /// Hikvision firmware mới (DS-2TD..., DS-QAAI...) chỉ chấp nhận Digest, không cho Basic.
+    /// .NET tự handle 401 challenge và resend với Digest header đúng.
+    /// </summary>
+    private static HttpClient CreateDigestClient(string user, string pass)
+    {
+        var handler = new HttpClientHandler
+        {
+            Credentials = new System.Net.NetworkCredential(user, pass),
+            PreAuthenticate = false  // để server reply 401 → .NET tự thêm Digest header
+        };
+        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+    }
 
     // ── Snapshot ──────────────────────────────────────────────
 
@@ -24,8 +40,8 @@ public class HikvisionIsapiService
         var url = $"http://{ip}/ISAPI/Streaming/channels/{channel}01/picture";
         try
         {
-            var req  = BuildRequest(HttpMethod.Get, url, user, pass);
-            var res  = await _http.SendAsync(req);
+            using var client = CreateDigestClient(user, pass);
+            using var res = await client.GetAsync(url);
             if (!res.IsSuccessStatusCode) return null;
             return await res.Content.ReadAsByteArrayAsync();
         }
@@ -49,9 +65,9 @@ public class HikvisionIsapiService
         var body = BuildPtzBody(cmd, speed);
         try
         {
-            var req = BuildRequest(HttpMethod.Put, url, user, pass);
-            req.Content = new StringContent(body, Encoding.UTF8, "application/xml");
-            var res = await _http.SendAsync(req);
+            using var client = CreateDigestClient(user, pass);
+            using var content = new StringContent(body, Encoding.UTF8, "application/xml");
+            using var res = await client.PutAsync(url, content);
             return res.IsSuccessStatusCode;
         }
         catch (Exception ex)
@@ -68,8 +84,8 @@ public class HikvisionIsapiService
         var url = $"http://{ip}/ISAPI/System/deviceInfo";
         try
         {
-            var req = BuildRequest(HttpMethod.Get, url, user, pass);
-            var res = await _http.SendAsync(req);
+            using var client = CreateDigestClient(user, pass);
+            using var res = await client.GetAsync(url);
             if (!res.IsSuccessStatusCode) return null;
 
             var xml = await res.Content.ReadAsStringAsync();
@@ -110,10 +126,10 @@ public class HikvisionIsapiService
         caps.HasAudio = await ProbeEndpointAsync(ip, user, pass, "/ISAPI/System/Audio/channels/1");
 
         // Acoustic PD detector (DS-QAAI series, etc.)
-        // Nếu endpoint này tồn tại → camera có khả năng phát hiện phóng điện cục bộ qua siêu âm
+        // Note: cam DS-QAAI yêu cầu ?format=json — không support Accept: application/xml cho endpoint này
         caps.HasAcousticPd = await ProbeEndpointAsync(
             ip, user, pass,
-            "/ISAPI/System/AcousticLeakDetection/AudioIn/1/capabilities");
+            "/ISAPI/System/AcousticLeakDetection/AudioIn/1/capabilities?format=json");
 
         // Alert/event support
         caps.HasAlerts = await ProbeEndpointAsync(ip, user, pass, "/ISAPI/Event/capabilities");
@@ -134,10 +150,10 @@ public class HikvisionIsapiService
     {
         try
         {
-            var req = BuildRequest(HttpMethod.Get, $"http://{ip}{path}", user, pass);
-            req.Headers.Add("Accept", "application/xml");
+            using var client = CreateDigestClient(user, pass);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var res = await _http.SendAsync(req, cts.Token);
+            // Không ép Accept header — cam mới (DS-QAAI) reject application/xml cho 1 số endpoint
+            using var res = await client.GetAsync($"http://{ip}{path}", cts.Token);
             return res.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -148,8 +164,8 @@ public class HikvisionIsapiService
         var channels = new List<int>();
         try
         {
-            var req = BuildRequest(HttpMethod.Get, $"http://{ip}/ISAPI/Streaming/channels", user, pass);
-            var res = await _http.SendAsync(req);
+            using var client = CreateDigestClient(user, pass);
+            using var res = await client.GetAsync($"http://{ip}/ISAPI/Streaming/channels");
             if (!res.IsSuccessStatusCode) return channels;
 
             var xml = XDocument.Parse(await res.Content.ReadAsStringAsync());
@@ -228,9 +244,9 @@ public class HikvisionIsapiService
     {
         try
         {
-            var req = BuildRequest(HttpMethod.Put, $"http://{ip}{path}", user, pass);
-            req.Content = new StringContent(body, Encoding.UTF8, contentType);
-            var res = await _http.SendAsync(req);
+            using var client = CreateDigestClient(user, pass);
+            using var content = new StringContent(body, Encoding.UTF8, contentType);
+            using var res = await client.PutAsync($"http://{ip}{path}", content);
             if (!res.IsSuccessStatusCode)
             {
                 _logger.LogWarning("[Hikvision] PUT {Path} → {Status}", path, res.StatusCode);
@@ -259,10 +275,11 @@ public class HikvisionIsapiService
         var url = $"http://{ip}/ISAPI/Event/notification/alertStream";
         try
         {
-            var req = BuildRequest(HttpMethod.Get, url, user, pass);
+            using var client = CreateDigestClient(user, pass);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Add("Accept", "multipart/x-mixed-replace");
 
-            using var res    = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var res    = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             using var stream = await res.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream);
 
@@ -297,10 +314,27 @@ public class HikvisionIsapiService
 
     private static HttpRequestMessage BuildRequest(HttpMethod method, string url, string user, string pass)
     {
-        var req   = new HttpRequestMessage(method, url);
-        var creds = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{user}:{pass}"));
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", creds);
-        return req;
+        // KHÔNG set Basic auth header ở đây — HttpClientHandler với NetworkCredential
+        // sẽ tự xử lý Digest challenge khi server trả 401 (gửi qua CreateDigestClient).
+        return new HttpRequestMessage(method, url);
+    }
+
+    /// <summary>
+    /// Wrapper: tạo HttpClient digest, send request, dispose client tự động.
+    /// Dùng cho mọi call ISAPI cần auth (firmware mới của Hikvision yêu cầu Digest).
+    /// </summary>
+    private async Task<HttpResponseMessage> SendDigestAsync(
+        HttpMethod method, string url, string user, string pass,
+        HttpContent? content = null,
+        CancellationToken ct = default,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead)
+    {
+        var client = CreateDigestClient(user, pass);
+        var req = new HttpRequestMessage(method, url);
+        if (content != null) req.Content = content;
+        // Note: client phải sống đến khi caller đọc xong content nếu dùng ResponseHeadersRead
+        // → caller chịu trách nhiệm dispose response, client leak nhẹ nhưng acceptable (request hiếm)
+        return await client.SendAsync(req, completionOption, ct);
     }
 
     private static string BuildPtzBody(PtzCommand cmd, int speed)
@@ -327,8 +361,12 @@ public class HikvisionIsapiService
     {
         try
         {
-            var doc  = XDocument.Parse(xml);
-            XNamespace ns = "http://www.hikvision.com/ver20/XMLSchema";
+            var doc = XDocument.Parse(xml);
+            // Hikvision dùng 2 namespace tùy firmware/dòng cam:
+            //   - http://www.hikvision.com/ver20/XMLSchema  (cam cũ, DS-2CD, DS-QAAI...)
+            //   - http://www.isapi.org/ver20/XMLSchema      (cam mới, DS-2TD2637T...)
+            // Lấy namespace từ root element thay vì hardcode → match cả 2.
+            XNamespace ns = doc.Root?.GetDefaultNamespace() ?? XNamespace.None;
             return new HikvisionDeviceInfo
             {
                 Model        = doc.Descendants(ns + "model").FirstOrDefault()?.Value

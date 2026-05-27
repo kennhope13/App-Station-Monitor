@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CAM_POINT_LABELS, PT_CAM_IDS } from '@/constants/points';
+import type { Rule } from '@/types/api.types';
 
 export interface CameraSensor {
   pid: string;
@@ -9,30 +10,51 @@ export interface CameraSensor {
 interface CameraGridProps {
   sensors: CameraSensor[];
   alertsCount: number;
+  /** Danh sách Rule để lấy ngưỡng cảnh báo/nguy hiểm cho từng điểm đo */
+  rules?: Rule[];
 }
 
-const WARN_THRESHOLD = 40;
-const DANGER_THRESHOLD = 50;
+/** Phân tích ngưỡng từ Rule condition JSON cho 1 điểm đo cụ thể */
+function getThresholdsFromRules(pid: string, rules: Rule[]): { warn: number | null; alarm: number | null } {
+  for (const r of rules) {
+    if (!r.enabled) continue;
+    try {
+      const cond = JSON.parse(r.condition);
+      if (cond.point !== pid) continue;
+      const warn = cond.pre_alarm ?? null;
+      const alarm = cond.alarm ?? cond.value ?? null;
+      return { warn, alarm };
+    } catch { continue; }
+  }
+  return { warn: null, alarm: null };
+}
 
-function getTempColor(val: number) {
-  if (val >= DANGER_THRESHOLD) return 'var(--admin-danger)';
-  if (val >= WARN_THRESHOLD)   return 'var(--admin-warning)';
+function getTempColor(val: number, warn: number | null, alarm: number | null) {
+  if (alarm !== null && val >= alarm) return 'var(--admin-danger)';
+  if (warn !== null && val >= warn) return 'var(--admin-warning)';
+  // Nếu không có Rule nào → luôn xanh (bình thường)
+  if (warn === null && alarm === null) return 'var(--admin-text-muted)';
   return 'var(--admin-success)';
 }
 
-export default function CameraGrid({ sensors, alertsCount }: CameraGridProps) {
+export default function CameraGrid({ sensors, alertsCount, rules = [] }: CameraGridProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Build full list: all 10 points, sorted by value desc (hottest first)
-  const rows = [...PT_CAM_IDS].map(pid => ({
-    pid,
-    label: CAM_POINT_LABELS[pid] ?? pid,
-    sensor: sensors.find(s => s.pid.toUpperCase() === pid),
-  })).sort((a, b) => (b.sensor?.value ?? -Infinity) - (a.sensor?.value ?? -Infinity));
+  // Xây danh sách điểm đo, sắp xếp theo nhiệt độ giảm dần
+  const rows = [...PT_CAM_IDS].map(pid => {
+    const thresholds = getThresholdsFromRules(pid, rules);
+    return {
+      pid,
+      label: CAM_POINT_LABELS[pid] ?? pid,
+      sensor: sensors.find(s => s.pid.toUpperCase() === pid),
+      warn: thresholds.warn,
+      alarm: thresholds.alarm,
+    };
+  }).sort((a, b) => (b.sensor?.value ?? -Infinity) - (a.sensor?.value ?? -Infinity));
 
   const hottest = rows.find(r => r.sensor);
-  const overDanger  = rows.filter(r => r.sensor && r.sensor.value >= DANGER_THRESHOLD).length;
-  const overWarning = rows.filter(r => r.sensor && r.sensor.value >= WARN_THRESHOLD && r.sensor.value < DANGER_THRESHOLD).length;
+  const overDanger  = rows.filter(r => r.sensor && r.alarm !== null && r.sensor.value >= r.alarm).length;
+  const overWarning = rows.filter(r => r.sensor && r.warn !== null && r.sensor.value >= r.warn && (r.alarm === null || r.sensor.value < r.alarm)).length;
 
   return (
     <div
@@ -71,48 +93,54 @@ export default function CameraGrid({ sensors, alertsCount }: CameraGridProps) {
 
       {!isCollapsed && (
         <div style={{ padding: '4px 0' }}>
-          {rows.map((row, idx) => {
-            const val = row.sensor?.value;
-            const color = val !== undefined ? getTempColor(val) : 'var(--admin-border)';
-            const isHottest = row.pid === hottest?.pid && val !== undefined;
+          {rows.length === 0 ? (
+            <div style={{ padding: '16px 10px', fontSize: '0.68rem', color: 'var(--admin-text-muted)', textAlign: 'center' }}>
+              Chưa cấu hình điểm đo nhiệt
+            </div>
+          ) : (
+            rows.map((row, idx) => {
+              const val = row.sensor?.value;
+              const color = val !== undefined ? getTempColor(val, row.warn, row.alarm) : 'var(--admin-border)';
+              const isHottest = row.pid === hottest?.pid && val !== undefined;
 
-            return (
-              <div
-                key={row.pid}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '5px 10px',
-                  borderBottom: idx < rows.length - 1 ? '1px solid var(--admin-border-light)' : 'none',
-                  background: isHottest && val !== undefined && val >= DANGER_THRESHOLD
-                    ? 'rgba(239,68,68,0.06)' : 'transparent',
-                }}
-              >
-                {/* Status dot */}
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+              return (
+                <div
+                  key={row.pid}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '5px 10px',
+                    borderBottom: idx < rows.length - 1 ? '1px solid var(--admin-border-light)' : 'none',
+                    background: isHottest && val !== undefined && row.alarm !== null && val >= row.alarm
+                      ? 'rgba(239,68,68,0.06)' : 'transparent',
+                  }}
+                >
+                  {/* Status dot */}
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
 
-                {/* Name */}
-                <span style={{
-                  flex: 1, fontSize: '0.68rem', color: 'var(--admin-text)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  fontWeight: isHottest ? 700 : 400,
-                }}>
-                  {row.label}
-                </span>
-
-                {/* Value */}
-                <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>
-                  {val !== undefined ? `${val.toFixed(1)}°C` : '--'}
-                </span>
-
-                {/* Tag */}
-                {isHottest && val !== undefined && (
-                  <span style={{ fontSize: '0.52rem', fontWeight: 800, color: 'var(--admin-danger)', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 2, padding: '1px 4px', flexShrink: 0 }}>
-                    MAX
+                  {/* Name */}
+                  <span style={{
+                    flex: 1, fontSize: '0.68rem', color: 'var(--admin-text)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    fontWeight: isHottest ? 700 : 400,
+                  }}>
+                    {row.label}
                   </span>
-                )}
-              </div>
-            );
-          })}
+
+                  {/* Value */}
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>
+                    {val !== undefined ? `${val.toFixed(1)}°C` : '--'}
+                  </span>
+
+                  {/* Tag */}
+                  {isHottest && val !== undefined && (
+                    <span style={{ fontSize: '0.52rem', fontWeight: 800, color: 'var(--admin-danger)', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 2, padding: '1px 4px', flexShrink: 0 }}>
+                      MAX
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
       )}
 

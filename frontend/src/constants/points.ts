@@ -13,8 +13,8 @@ export const PT_TEMP_ALL = [PT_TEMP_1, PT_TEMP_2, PT_TEMP_3] as const;
 // Phóng điện cục bộ (Partial Discharge)
 export const PT_PD = 'phong_dien';
 
-// Camera: P1–P10 là các điểm camera trên SLD
-export const PT_CAM_IDS = ['P1','P2','P3','P4','P5','P6','P7','P8','P9','P10'] as const;
+// Camera: P1–P10 là các điểm camera trên SLD (để trống để người dùng tự cấu hình)
+export const PT_CAM_IDS: readonly string[] = [];
 
 // Label hiển thị tương ứng với từng point nhiệt độ
 export const TEMP_LABELS: Record<string, string> = {
@@ -24,16 +24,5 @@ export const TEMP_LABELS: Record<string, string> = {
   [PT_PD]:     'Phóng điện PD',
 };
 
-// Tên hiển thị cho từng điểm đo camera nhiệt (mock)
-export const CAM_POINT_LABELS: Record<string, string> = {
-  P1:  'Đầu cáp Pha A — Tủ 471',
-  P2:  'Đầu cáp Pha B — Tủ 471',
-  P3:  'Đầu cáp Pha C — Tủ 471',
-  P4:  'Tiếp điểm dao cách ly 471',
-  P5:  'Thanh cái 110kV',
-  P6:  'Cáp lực đầu vào Pha A',
-  P7:  'Cáp lực đầu vào Pha B',
-  P8:  'Cáp lực đầu vào Pha C',
-  P9:  'Đầu cáp Pha A — Tủ 472',
-  P10: 'Đầu cáp Pha B — Tủ 472',
-};
+// Tên hiển thị cho từng điểm đo camera nhiệt (rỗng)
+export const CAM_POINT_LABELS: Record<string, string> = {};

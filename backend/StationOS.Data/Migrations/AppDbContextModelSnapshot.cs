@@ -549,6 +549,60 @@ namespace StationOS.Data.Migrations
                     b.ToTable("Reports");
                 });
 
+            modelBuilder.Entity("StationOS.Data.Entities.RoiPoint", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<float>("AlarmThreshold")
+                        .HasColumnType("real");
+
+                    b.Property<string>("Color")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<float>("Ox")
+                        .HasColumnType("real");
+
+                    b.Property<float>("Oy")
+                        .HasColumnType("real");
+
+                    b.Property<string>("PointId")
+                        .HasColumnType("text");
+
+                    b.Property<float>("PreAlarmThreshold")
+                        .HasColumnType("real");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<float>("Tx")
+                        .HasColumnType("real");
+
+                    b.Property<float>("Ty")
+                        .HasColumnType("real");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.ToTable("RoiPoints");
+                });
+
             modelBuilder.Entity("StationOS.Data.Entities.Rule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -896,6 +950,15 @@ namespace StationOS.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastPasswordChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -978,6 +1041,17 @@ namespace StationOS.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Station");
+                });
+
+            modelBuilder.Entity("StationOS.Data.Entities.RoiPoint", b =>
+                {
+                    b.HasOne("StationOS.Data.Entities.Device", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Device");
                 });
 
             modelBuilder.Entity("StationOS.Data.Entities.Rule", b =>

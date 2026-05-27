@@ -206,6 +206,11 @@ export default function MaintenancePage() {
 
   return (
     <div className="admin-page-container">
+      {loadError && (
+        <div style={{ color: 'var(--admin-danger)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', padding: '8px 12px', fontSize: '0.78rem', marginBottom: 12 }}>
+          {loadError}
+        </div>
+      )}
       <div className="page-toolbar-row">
         <div className="page-title-cell">
           <h2>LỊCH BẢO TRÌ</h2>

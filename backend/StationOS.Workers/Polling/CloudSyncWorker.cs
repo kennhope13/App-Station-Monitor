@@ -49,6 +49,7 @@ public class CloudSyncWorker : BackgroundService
         }
     }
 
+    /// <summary>Lấy batch pending items từ SyncQueue, upsert lên Supabase, cập nhật trạng thái.</summary>
     private async Task SyncBatchAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();

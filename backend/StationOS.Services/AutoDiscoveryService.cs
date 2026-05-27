@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // AutoDiscoveryService — Tự động phát hiện thiết bị trong mạng
 // Chiến lược: Ping sweep → Port scan → Protocol probe
 // ============================================================
@@ -70,17 +70,27 @@ public class AutoDiscoveryService
     {
         _logger.LogInformation("[AutoDiscover] Quét subnet {Subnet}.{From}-{To}", subnet, fromHost, toHost);
 
-        // Phase 1: Ping sweep (parallel)
-        var pingTasks = Enumerable.Range(fromHost, toHost - fromHost + 1)
-            .Select(i => PingSingleAsync($"{subnet}.{i}", ct));
+        // Phase 1: Ping sweep (parallel with concurrency limit)
+        using var semaphore = new SemaphoreSlim(20);
+        var pingTasks = Enumerable.Range(fromHost, toHost - fromHost + 1).Select(async i =>
+        {
+            await semaphore.WaitAsync(ct);
+            try { return await PingSingleAsync($"{subnet}.{i}", ct); }
+            finally { semaphore.Release(); }
+        });
         var pinged = await Task.WhenAll(pingTasks);
         var alive  = pinged.Where(r => r.IsReachable).ToList();
 
         _logger.LogInformation("[AutoDiscover] {N}/{Total} hosts phản hồi ping", alive.Count, toHost - fromHost + 1);
 
         // Phase 2: Port scan + protocol probe (parallel per host)
-        var probeTasks = alive.Select(host => ProbeHostAsync(host, ct));
-        var results    = await Task.WhenAll(probeTasks);
+        var probeTasks = alive.Select(async host => 
+        {
+            await semaphore.WaitAsync(ct);
+            try { return await ProbeHostAsync(host, ct); }
+            finally { semaphore.Release(); }
+        });
+        var results = await Task.WhenAll(probeTasks);
 
         return results.SelectMany(r => r).ToList();
     }
@@ -237,7 +247,7 @@ public class AutoDiscoveryService
         catch { return false; }
     }
 
-    // Thử detect capabilities đầy đủ — dùng blank password trước, nếu fail thì bỏ qua
+    // Thử detect capabilities đầy đủ — dùng blank password trước, nếu fail thì bỏ qua (tránh hardcode mật khẩu)
     private async Task<HikvisionCapabilities?> TryHikvisionCapabilitiesAsync(string ip)
     {
         try { return await _hikIsapi.DiscoverCapabilitiesAsync(ip, "admin", ""); }

@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
     public DbSet<MaintenanceTask> MaintenanceTasks => Set<MaintenanceTask>();
     public DbSet<License> Licenses => Set<License>();
     public DbSet<Boundary> Boundaries => Set<Boundary>();
+    public DbSet<RoiPoint> RoiPoints => Set<RoiPoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

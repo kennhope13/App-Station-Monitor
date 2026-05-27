@@ -36,12 +36,14 @@ class RtspReader:
         logger.info("[RTSP] Started reader for %s → %s", self.stream_id, self.stream_url)
 
     def stop(self) -> None:
+        """Dừng thread đọc frame và giải phóng VideoCapture."""
         self._running = False
         if self._cap:
             self._cap.release()
 
     @property
     def latest_frame(self) -> np.ndarray | None:
+        """Frame mới nhất từ RTSP stream (thread-safe). Trả về None nếu chưa có frame."""
         with self._lock:
             return self._frame.copy() if self._frame is not None else None
 

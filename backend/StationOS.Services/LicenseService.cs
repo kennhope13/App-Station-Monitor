@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // LicenseService — Quản lý license key và concurrent sessions
 // Key format: {TIER}-{YYMMDD}-{NONCE4}-{HMAC8}
 //   TIER: SOLO (1 user) | TEAM (5 users) | ENT (unlimited)
@@ -27,7 +27,9 @@ public class LicenseService
     public LicenseService(IServiceScopeFactory scopeFactory, IConfiguration config)
     {
         _scopeFactory = scopeFactory;
-        _vendorSecret = config["License:VendorSecret"] ?? "StationOS_License_Secret_2026";
+        _vendorSecret = Environment.GetEnvironmentVariable("STATIONOS_VENDOR_SECRET") 
+                        ?? config["License:VendorSecret"] 
+                        ?? throw new InvalidOperationException("Khóa bí mật nhà cung cấp (VendorSecret) chưa được cấu hình. Vui lòng thiết lập biến môi trường STATIONOS_VENDOR_SECRET.");
     }
 
     // ── Key validation ─────────────────────────────────────────

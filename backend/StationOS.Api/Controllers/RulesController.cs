@@ -26,6 +26,8 @@ public class RulesController : ControllerBase
         _permissions = permissions;
     }
 
+    /// <summary>Lấy danh sách tất cả rule. Nếu gọi từ localhost (AI Engine) thì trả toàn bộ không giới hạn trạm.</summary>
+    /// <returns>Danh sách rule kèm tên thiết bị liên kết.</returns>
     // GET /api/v1/rules
     [HttpGet]
     [AllowAnonymous] 
@@ -70,6 +72,9 @@ public class RulesController : ControllerBase
         return Ok(rules);
     }
 
+    /// <summary>Lấy chi tiết 1 rule theo ID.</summary>
+    /// <param name="id">Rule ID.</param>
+    /// <returns>Đối tượng Rule hoặc 404.</returns>
     // GET /api/v1/rules/{id}
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
@@ -80,6 +85,9 @@ public class RulesController : ControllerBase
         return Ok(rule);
     }
 
+    /// <summary>Tạo rule mới. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="req">Thông tin rule cần tạo.</param>
+    /// <returns>Rule vừa tạo.</returns>
     // POST /api/v1/rules
     [HttpPost]
     [Authorize(Roles = "admin,manager")]
@@ -104,6 +112,10 @@ public class RulesController : ControllerBase
         return Ok(rule);
     }
 
+    /// <summary>Cập nhật rule. Chỉ cập nhật các field được gửi lên (non-null).</summary>
+    /// <param name="id">Rule ID cần sửa.</param>
+    /// <param name="req">Các field cần cập nhật.</param>
+    /// <returns>Rule đã cập nhật.</returns>
     // PUT /api/v1/rules/{id}
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "admin,manager")]
@@ -123,6 +135,9 @@ public class RulesController : ControllerBase
         return Ok(rule);
     }
 
+    /// <summary>Xóa rule. Chỉ admin mới có quyền.</summary>
+    /// <param name="id">Rule ID cần xóa.</param>
+    /// <returns>204 NoContent nếu thành công.</returns>
     // DELETE /api/v1/rules/{id}
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "admin")]
@@ -135,6 +150,9 @@ public class RulesController : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Bật/tắt rule (toggle enabled).</summary>
+    /// <param name="id">Rule ID.</param>
+    /// <returns>Trạng thái enabled mới của rule.</returns>
     [HttpPatch("{id}/toggle")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> Toggle(Guid id)
@@ -147,13 +165,21 @@ public class RulesController : ControllerBase
     }
 }
 
+/// <summary>Request DTO cho tạo/cập nhật rule.</summary>
 public class RuleRequest
 {
+    /// <summary>Tên rule hiển thị.</summary>
     public string? Name      { get; set; }
+    /// <summary>Bộ rule (ví dụ: "Tủ 471").</summary>
     public string? RuleSet   { get; set; }
+    /// <summary>Điều kiện kích hoạt dạng JSON: {"point","op","value","clearValue"}.</summary>
     public string? Condition { get; set; }
+    /// <summary>Hành động khi kích hoạt dạng JSON array: [{"type","level","penalty"}].</summary>
     public string? Actions   { get; set; }
+    /// <summary>Rule có được bật không.</summary>
     public bool?   Enabled   { get; set; }
+    /// <summary>Trạm áp dụng rule.</summary>
     public Guid?   StationId { get; set; }
+    /// <summary>Thiết bị áp dụng rule (null = toàn trạm).</summary>
     public Guid?   DeviceId  { get; set; }
 }

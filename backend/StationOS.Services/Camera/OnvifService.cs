@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // OnvifService — Khám phá và điều khiển camera qua ONVIF
 // Hỗ trợ: WS-Discovery, GetProfiles, PTZ, Snapshot
 // ============================================================
@@ -36,16 +36,17 @@ public class OnvifService
             await udp.SendAsync(probe, probe.Length, ep);
 
             var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-            while (DateTime.UtcNow < deadline)
+            using var cts = new CancellationTokenSource(timeoutMs);
+            while (DateTime.UtcNow < deadline && !cts.IsCancellationRequested)
             {
-                udp.Client.ReceiveTimeout = (int)(deadline - DateTime.UtcNow).TotalMilliseconds;
                 try
                 {
-                    var res = await udp.ReceiveAsync();
+                    var res = await udp.ReceiveAsync(cts.Token);
                     var xml = Encoding.UTF8.GetString(res.Buffer);
                     var xAddrs = ExtractXAddrs(xml);
                     if (xAddrs is not null) results.Add(xAddrs);
                 }
+                catch (OperationCanceledException) { break; }
                 catch (SocketException) { break; }
             }
         }

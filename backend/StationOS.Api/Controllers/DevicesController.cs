@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // DevicesController — Quản lý thiết bị (PLC, Camera, Sensor...)
 //
 // Camera type is AUTO-DETECTED via ISAPI when adding a Hikvision
@@ -15,6 +15,7 @@ using StationOS.Data.Entities;
 using StationOS.Services;
 using StationOS.Services.Camera;
 using StationOS.Services.Devices;
+using StationOS.Services.Security;
 
 namespace StationOS.Api.Controllers;
 
@@ -28,14 +29,19 @@ public class DevicesController : ControllerBase
     private readonly PermissionService _permissions;
     private readonly IConfiguration _config;
     private readonly HikvisionIsapiService _isapi;
+    private readonly CredentialEncryptionService _crypto;
+    private readonly AutoDiscoveryService _autoDiscovery;
 
-    public DevicesController(AppDbContext db, DeviceService deviceService, PermissionService permissions, IConfiguration config, HikvisionIsapiService isapi)
+    public DevicesController(AppDbContext db, DeviceService deviceService, PermissionService permissions,
+                             IConfiguration config, HikvisionIsapiService isapi, CredentialEncryptionService crypto, AutoDiscoveryService autoDiscovery)
     {
         _db = db;
         _deviceService = deviceService;
         _permissions = permissions;
         _config = config;
         _isapi = isapi;
+        _crypto = crypto;
+        _autoDiscovery = autoDiscovery;
     }
 
     private bool IsTrustedInternal(string? ip)
@@ -57,9 +63,14 @@ public class DevicesController : ControllerBase
         if (!IsTrustedInternal(remoteIp) && !User.Identity!.IsAuthenticated)
             return Unauthorized();
 
-        var devices = await _db.Devices
+        var raw = await _db.Devices
             .Select(d => new { d.Id, d.Name, d.Type, d.Config, d.Status })
             .ToListAsync();
+        // Che password trong response — chỉ admin xem qua endpoint riêng nếu cần plain
+        var devices = raw.Select(d => new {
+            d.Id, d.Name, d.Type, d.Status,
+            Config = _crypto.RedactPasswordInConfigJson(d.Config),
+        });
         return Ok(devices);
     }
 
@@ -79,13 +90,17 @@ public class DevicesController : ControllerBase
         if (!string.IsNullOrEmpty(type))
             query = query.Where(d => d.Type.Contains(type));
 
-        var devices = await query
+        var raw = await query
             .OrderBy(d => d.Type).ThenBy(d => d.Name)
             .Select(d => new {
                 d.Id, d.Name, d.Type, d.Protocol,
                 d.Config, d.Status, d.CreatedAt
             }).ToListAsync();
 
+        var devices = raw.Select(d => new {
+            d.Id, d.Name, d.Type, d.Protocol, d.Status, d.CreatedAt,
+            Config = _crypto.RedactPasswordInConfigJson(d.Config),
+        });
         return Ok(devices);
     }
 
@@ -159,15 +174,39 @@ public class DevicesController : ControllerBase
         }
         else
         {
-            // Luồng quang học — luôn tạo
-            var optical = await AddCameraAsync("camera_cctv", $"{prefix} – Quan sát thường", "/Streaming/Channels/101", $"camera_{ipTag}_normal");
-            created.Add(new { optical.Id, optical.Name, optical.Type, streamId = $"camera_{ipTag}_normal" });
-
-            // Nếu camera có thermal → tạo thêm luồng nhiệt
             if (caps.HasThermal)
             {
-                var thermal = await AddCameraAsync("camera_thermal", $"{prefix} – Ảnh nhiệt", "/Streaming/Channels/201", $"camera_{ipTag}_thermal");
-                created.Add(new { thermal.Id, thermal.Name, thermal.Type, streamId = $"camera_{ipTag}_thermal" });
+                // Camera có cả ảnh nhiệt và quang học → tạo duy nhất 1 thiết bị camera_dual
+                var cfgObj = new
+                {
+                    ip = req.Ip,
+                    username = req.Username,
+                    password = req.Password,
+                    rtsp_optical = "/Streaming/Channels/101",
+                    go2rtc_optical = $"cam_{ipTag}_optical",
+                    rtsp_thermal = "/Streaming/Channels/201",
+                    go2rtc_thermal = $"cam_{ipTag}_thermal"
+                };
+                var device = new Device
+                {
+                    StationId    = req.StationId,
+                    Name         = $"{prefix} – Dual Thermal & Optical",
+                    Type         = "camera_dual",
+                    Protocol     = "isapi",
+                    Config       = System.Text.Json.JsonSerializer.Serialize(cfgObj),
+                    Capabilities = capsJson,
+                    Status       = "online",
+                };
+                _db.Devices.Add(device);
+                await _db.SaveChangesAsync();
+                await _deviceService.RegisterCameraStreamAsync(device);
+                created.Add(new { device.Id, device.Name, device.Type, streamId = $"cam_{ipTag}_optical, cam_{ipTag}_thermal" });
+            }
+            else
+            {
+                // Camera thường — chỉ 1 luồng quang học
+                var optical = await AddCameraAsync("camera_cctv", $"{prefix} – Quan sát thường", "/Streaming/Channels/101", $"camera_{ipTag}_normal");
+                created.Add(new { optical.Id, optical.Name, optical.Type, streamId = $"camera_{ipTag}_normal" });
             }
         }
 
@@ -207,16 +246,23 @@ public class DevicesController : ControllerBase
             Name         = req.Name,
             Type         = req.Type,
             Protocol     = req.Protocol ?? (req.Type.StartsWith("camera") ? "isapi" : null),
-            Config       = req.Config,
+            // Encrypt password trước khi save DB (idempotent — không re-encrypt nếu đã có prefix)
+            Config       = _crypto.EncryptPasswordInConfigJson(req.Config),
             Capabilities = capsJson,
             Status       = "online"
         };
         _db.Devices.Add(device);
         await _db.SaveChangesAsync();
 
-        // Camera → đăng ký stream với go2rtc
+        // Camera → đăng ký stream với go2rtc. Pass DECRYPTED config để build RTSP URL đúng.
         if (device.Type.StartsWith("camera") && req.Config != null)
-            await _deviceService.RegisterCameraStreamAsync(device);
+        {
+            var deviceForStream = new Device {
+                Id = device.Id, Name = device.Name, Type = device.Type,
+                Config = _crypto.DecryptPasswordInConfigJson(device.Config),
+            };
+            await _deviceService.RegisterCameraStreamAsync(deviceForStream);
+        }
 
         // PD camera → tự động apply config siêu âm chuẩn StationOS
         if (device.Type == "camera_pd")
@@ -242,12 +288,58 @@ public class DevicesController : ControllerBase
         catch { return []; }
     }
 
+    /// <summary>
+    /// Nếu user gửi password="***" (redacted) → giữ password cũ.
+    /// Ngược lại dùng password mới user gửi.
+    /// Áp dụng cho cả password / api_key / secret.
+    /// </summary>
+    private string MergeConfigKeepOldPasswordIfRedacted(string? oldConfig, string newConfig)
+    {
+        try
+        {
+            using var oldDoc = JsonDocument.Parse(string.IsNullOrEmpty(oldConfig) ? "{}" : oldConfig);
+            using var newDoc = JsonDocument.Parse(newConfig);
+            var oldDecrypted = _crypto.DecryptPasswordInConfigJson(oldConfig);
+            using var oldPlainDoc = JsonDocument.Parse(string.IsNullOrEmpty(oldDecrypted) ? "{}" : oldDecrypted);
+
+            var result = new Dictionary<string, object?>();
+            string[] secretKeys = ["password", "api_key", "secret"];
+
+            foreach (var p in newDoc.RootElement.EnumerateObject())
+            {
+                if (secretKeys.Contains(p.Name.ToLowerInvariant()) &&
+                    p.Value.ValueKind == JsonValueKind.String &&
+                    p.Value.GetString() == "***")
+                {
+                    // Keep old plain password
+                    if (oldPlainDoc.RootElement.TryGetProperty(p.Name, out var oldVal) &&
+                        oldVal.ValueKind == JsonValueKind.String)
+                        result[p.Name] = oldVal.GetString();
+                    // else: bỏ qua (không có password cũ)
+                }
+                else
+                {
+                    result[p.Name] = p.Value.ValueKind == JsonValueKind.String
+                        ? p.Value.GetString()
+                        : JsonSerializer.Deserialize<object>(p.Value.GetRawText());
+                }
+            }
+            return JsonSerializer.Serialize(result);
+        }
+        catch { return newConfig; }
+    }
+
     [HttpGet("devices/{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var d = await _db.Devices.FindAsync(id);
         if (d == null) return NotFound();
-        return Ok(d);
+        // Redact password trước khi trả về (encrypted thì cũng không nên expose)
+        return Ok(new {
+            d.Id, d.Name, d.Type, d.Protocol, d.Status, d.CreatedAt,
+            d.Capabilities, d.StationId,
+            Config = _crypto.RedactPasswordInConfigJson(d.Config),
+        });
     }
 
     /// <summary>
@@ -260,7 +352,13 @@ public class DevicesController : ControllerBase
         if (device == null) return NotFound();
 
         device.Name = req.Name ?? device.Name;
-        device.Config = req.Config ?? device.Config;
+        if (req.Config != null)
+        {
+            // Nếu FE gửi config với password="***" → giữ password cũ (user không đổi)
+            // Nếu password mới thật → encrypt rồi save
+            var merged = MergeConfigKeepOldPasswordIfRedacted(device.Config, req.Config);
+            device.Config = _crypto.EncryptPasswordInConfigJson(merged);
+        }
         device.Status = req.Status ?? device.Status;
         await _db.SaveChangesAsync();
 
@@ -280,11 +378,36 @@ public class DevicesController : ControllerBase
         var device = await _db.Devices.FindAsync(id);
         if (device == null) return NotFound();
 
+        // 1. Nếu là camera → hủy đăng ký stream với go2rtc
         if (device.Type.StartsWith("camera"))
             await _deviceService.UnregisterCameraStreamAsync(device);
 
+        // 2. Dọn dẹp thủ công tất cả dữ liệu liên quan để tránh lỗi hypertable hoặc constraint
+        var boundaries = _db.Boundaries.Where(x => x.DeviceId == id);
+        _db.Boundaries.RemoveRange(boundaries);
+
+        var rules = _db.Rules.Where(x => x.DeviceId == id);
+        _db.Rules.RemoveRange(rules);
+
+        var sensorReadings = _db.SensorReadings.Where(x => x.DeviceId == id);
+        _db.SensorReadings.RemoveRange(sensorReadings);
+
+        var alerts = _db.Alerts.Where(x => x.DeviceId == id);
+        _db.Alerts.RemoveRange(alerts);
+
+        var sldPoints = _db.SldPoints.Where(x => x.DeviceId == id);
+        _db.SldPoints.RemoveRange(sldPoints);
+
+        var maintenanceTasks = _db.MaintenanceTasks.Where(x => x.DeviceId == id);
+        _db.MaintenanceTasks.RemoveRange(maintenanceTasks);
+
+        var ruleTriggerLogs = _db.RuleTriggerLogs.Where(x => x.DeviceId == id);
+        _db.RuleTriggerLogs.RemoveRange(ruleTriggerLogs);
+
+        // 3. Xóa thiết bị chính
         _db.Devices.Remove(device);
         await _db.SaveChangesAsync();
+
         return NoContent();
     }
 
@@ -301,14 +424,85 @@ public class DevicesController : ControllerBase
         return Ok(new { success = result.Success, message = result.Message, latencyMs = result.LatencyMs });
     }
 
+    // ── ROI Points ────────────────────────────────────────────
+
+    [HttpGet("devices/{deviceId}/roi-points")]
+    public async Task<IActionResult> GetRoiPoints(Guid deviceId)
+    {
+        var points = await _db.RoiPoints
+            .Where(r => r.DeviceId == deviceId)
+            .OrderBy(r => r.CreatedAt)
+            .ToListAsync();
+        return Ok(points);
+    }
+
+    [HttpPost("devices/{deviceId}/roi-points")]
+    public async Task<IActionResult> CreateRoiPoint(Guid deviceId, [FromBody] RoiPointRequest req)
+    {
+        var point = new RoiPoint
+        {
+            DeviceId = deviceId,
+            Name = req.Name,
+            Tx = req.Tx,
+            Ty = req.Ty,
+            Ox = req.Ox ?? req.Tx,
+            Oy = req.Oy ?? req.Ty,
+            PointId = req.PointId,
+            Color = req.Color,
+            SortOrder = req.SortOrder,
+            PreAlarmThreshold = req.PreAlarmThreshold ?? 50.0f,
+            AlarmThreshold = req.AlarmThreshold ?? 70.0f,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        _db.RoiPoints.Add(point);
+        await _db.SaveChangesAsync();
+        return Ok(point);
+    }
+
+    [HttpPut("devices/{deviceId}/roi-points/{id}")]
+    public async Task<IActionResult> UpdateRoiPoint(Guid deviceId, Guid id, [FromBody] RoiPointRequest req)
+    {
+        var point = await _db.RoiPoints.FirstOrDefaultAsync(r => r.Id == id && r.DeviceId == deviceId);
+        if (point == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(req.Name)) point.Name = req.Name;
+        if (req.Tx > 0) point.Tx = req.Tx;
+        if (req.Ty > 0) point.Ty = req.Ty;
+        if (req.Ox.HasValue) point.Ox = req.Ox.Value;
+        if (req.Oy.HasValue) point.Oy = req.Oy.Value;
+        if (req.PreAlarmThreshold.HasValue) point.PreAlarmThreshold = req.PreAlarmThreshold.Value;
+        if (req.AlarmThreshold.HasValue) point.AlarmThreshold = req.AlarmThreshold.Value;
+        if (req.PointId != null) point.PointId = req.PointId;
+        if (req.Color != null) point.Color = req.Color;
+        if (req.SortOrder > 0) point.SortOrder = req.SortOrder;
+        
+        point.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+        return Ok(point);
+    }
+
+    [HttpDelete("devices/{deviceId}/roi-points/{id}")]
+    public async Task<IActionResult> DeleteRoiPoint(Guid deviceId, Guid id)
+    {
+        var point = await _db.RoiPoints.FirstOrDefaultAsync(r => r.Id == id && r.DeviceId == deviceId);
+        if (point == null) return NotFound();
+
+        _db.RoiPoints.Remove(point);
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
+
     /// <summary>
     /// Quét LAN để tìm thiết bị mới (camera, PLC...)
     /// Query: ?subnet=192.168.10 để quét subnet cụ thể
     /// </summary>
     [HttpGet("devices/scan")]
+    [AllowAnonymous]
     public async Task<IActionResult> ScanLan([FromQuery] string subnet = "192.168.10")
     {
-        var found = await _deviceService.ScanLanAsync(subnet);
+        var found = await _autoDiscovery.ScanSubnetAsync(subnet);
         return Ok(found);
     }
 }
@@ -329,3 +523,16 @@ public record UpdateDeviceRequest(
 
 public record DiscoverRequest(string Ip, string Username, string Password);
 public record AutoConfigureRequest(Guid StationId, string Ip, string Username, string Password, string? NamePrefix);
+
+public record RoiPointRequest(
+    string Name,
+    float Tx,
+    float Ty,
+    float? Ox = null,
+    float? Oy = null,
+    string? PointId = null,
+    string? Color = null,
+    int SortOrder = 0,
+    float? PreAlarmThreshold = 50.0f,
+    float? AlarmThreshold = 70.0f
+);

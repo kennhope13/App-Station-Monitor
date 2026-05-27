@@ -1,24 +1,21 @@
 // ============================================================
-// SettingsPage.tsx — Cài đặt hệ thống (6 tab)
-// Tab 0: Cài đặt chung  (GeneralTab)
-// Tab 1: Thông báo      (NotificationTab)
-// Tab 2: DB & Backup    (DatabaseTab)
-// Tab 3: Giao diện      (ThemeTab)
-// Tab 4: Cloud Sync     (CloudSyncTab)
-// Tab 5: Liên kết Camera(LinkageTab)
-// Mỗi tab tự load và lưu dữ liệu riêng.
+// SettingsPage.tsx — Cài đặt hệ thống (5 tab)
+// Tab 0: Cài đặt chung    (GeneralTab)    — polling, health check, email, timezone
+// Tab 1: Thông báo        (NotificationTab) — SMTP + email test
+// Tab 2: Giao diện        (ThemeTab)       — theme light/dark
+// Tab 3: Cloud Sync       (CloudSyncTab)   — đồng bộ Supabase
+// Tab 4: Liên kết Camera  (LinkageTab)     — auto camera action khi có alert
 // ============================================================
 
 import { useState } from 'react';
 import GeneralTab from './tabs/GeneralTab';
 import NotificationTab from './tabs/NotificationTab';
-import DatabaseTab from './tabs/DatabaseTab';
 import ThemeTab from './tabs/ThemeTab';
 import CloudSyncTab from './tabs/CloudSyncTab';
 import LinkageTab from './tabs/LinkageTab';
 import './SettingsPage.css';
 
-const TABS = ['Cài đặt chung', 'Thông báo', 'Database & Backup', 'Giao diện', 'Cloud Sync', 'Liên kết Camera'];
+const TABS = ['Cài đặt chung', 'Thông báo', 'Giao diện', 'Cloud Sync', 'Liên kết Camera'];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(0);
@@ -46,10 +43,9 @@ export default function SettingsPage() {
       <div className="admin-card" style={{ flex: 1, overflow: 'auto', padding: '20px 24px', borderRadius: 4 }}>
         {activeTab === 0 && <GeneralTab />}
         {activeTab === 1 && <NotificationTab />}
-        {activeTab === 2 && <DatabaseTab />}
-        {activeTab === 3 && <ThemeTab />}
-        {activeTab === 4 && <CloudSyncTab />}
-        {activeTab === 5 && <LinkageTab />}
+        {activeTab === 2 && <ThemeTab />}
+        {activeTab === 3 && <CloudSyncTab />}
+        {activeTab === 4 && <LinkageTab />}
       </div>
     </div>
   );

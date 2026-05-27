@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +36,7 @@ public class ThermalEvidenceService
         _http = http;
     }
 
-    public async Task<ThermalEvidenceResult?> CaptureForAlertAsync(
+    public virtual async Task<ThermalEvidenceResult?> CaptureForAlertAsync(
         AppDbContext db,
         Guid stationId,
         CancellationToken ct)
@@ -89,7 +89,12 @@ public class ThermalEvidenceService
             thumbUrl = $"/media/detections/{thumbName}";
         }
 
-        videoUrl = await TryRecordClipAsync(streamId, ip, user, pass, rtspPath, videosDir, ct);
+        var durationSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "camera_record_duration_s", ct);
+        int clipDuration = ClipSeconds;
+        if (durationSetting != null && int.TryParse(durationSetting.Value.Trim('"'), out var pSecs) && pSecs > 0)
+            clipDuration = pSecs;
+
+        videoUrl = await TryRecordClipAsync(streamId, ip, user, pass, rtspPath, videosDir, clipDuration, ct);
 
         return new ThermalEvidenceResult(camera)
         {
@@ -134,6 +139,7 @@ public class ThermalEvidenceService
         string pass,
         string rtspPath,
         string videosDir,
+        int clipDuration,
         CancellationToken ct)
     {
         var input = BuildClipInput(streamId, ip, user, pass, rtspPath);
@@ -159,7 +165,7 @@ public class ThermalEvidenceService
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(input);
             psi.ArgumentList.Add("-t");
-            psi.ArgumentList.Add(ClipSeconds.ToString());
+            psi.ArgumentList.Add(clipDuration.ToString());
             psi.ArgumentList.Add("-an");
             psi.ArgumentList.Add("-c:v");
             psi.ArgumentList.Add("libx264");
@@ -174,7 +180,7 @@ public class ThermalEvidenceService
                 return null;
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(ClipSeconds + 15));
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(clipDuration + 15));
             await process.WaitForExitAsync(timeoutCts.Token);
 
             if (process.ExitCode == 0 && File.Exists(outputPath) && new FileInfo(outputPath).Length > 0)

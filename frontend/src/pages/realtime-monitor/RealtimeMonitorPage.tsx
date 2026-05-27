@@ -60,10 +60,34 @@ export default function RealtimeMonitorPage() {
   // Load cameras
   useEffect(() => {
     stationApi.getCamerasFromFirstStation().then(cams => {
-      setCameras(cams);
       const initialStatus: Record<string, string> = {};
       cams.forEach(c => initialStatus[c.id] = c.status || 'unknown');
       setDeviceStatus(initialStatus);
+
+      const expandedCams: CameraDevice[] = [];
+      cams.forEach(c => {
+        const cfg = (c as any).config || {};
+        if (c.type === 'camera_dual') {
+          expandedCams.push({
+            ...c,
+            id: `${c.id}_optical`,
+            name: `${c.name} (Quang học)`,
+            config: { ...cfg, go2rtc_id: cfg.go2rtc_optical }
+          } as any);
+          expandedCams.push({
+            ...c,
+            id: `${c.id}_thermal`,
+            name: `${c.name} (Nhiệt)`,
+            config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
+          } as any);
+        } else {
+          expandedCams.push({
+            ...c,
+            config: cfg
+          });
+        }
+      });
+      setCameras(expandedCams);
     }).catch(console.error);
 
     const timer = setInterval(() => {
@@ -77,7 +101,10 @@ export default function RealtimeMonitorPage() {
   const loadDetections = useCallback(async () => {
     try {
       const params = new URLSearchParams({ limit: '80' });
-      if (selectedCamFilter) params.set('deviceId', selectedCamFilter);
+      if (selectedCamFilter) {
+        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '');
+        params.set('deviceId', baseFilterId);
+      }
       if (typeFilter) params.set('type', typeFilter);
       if (dateFilter) {
         params.set('from', new Date(dateFilter).toISOString());
@@ -102,7 +129,8 @@ export default function RealtimeMonitorPage() {
     });
     hubConnection.on('CameraEvent', (evt: DetectionEvent) => {
       setDetections(prev => {
-        if (selectedCamFilter && evt.cameraId !== selectedCamFilter) return prev;
+        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '');
+        if (selectedCamFilter && evt.cameraId !== baseFilterId) return prev;
         if (typeFilter && evt.detectionType !== typeFilter) return prev;
         return [evt, ...prev];
       });
@@ -114,7 +142,7 @@ export default function RealtimeMonitorPage() {
 
   // Helpers
   const cellCount = layout === 'l1' ? 1 : layout === 'l4' ? 4 : 9;
-  const onlineCount = Object.values(deviceStatus).filter(s => s === 'online').length;
+  const onlineCount = cameras.filter(c => deviceStatus[c.id.replace(/_(optical|thermal)$/, '')] === 'online').length;
   const displayCams = selectedCamFilter ? cameras.filter(c => c.id === selectedCamFilter) : cameras;
 
   // Render Grid Cells
@@ -150,8 +178,11 @@ export default function RealtimeMonitorPage() {
     const subId = cfg.go2rtc_sub_id || go2rtcId;
     const mainId = cfg.go2rtc_main_id || go2rtcId;
     const activeId = isExpanded ? mainId : subId;
-    const status = deviceStatus[cam.id] || 'unknown';
-    const streamUrl = `/camera-stream.html?src=${encodeURIComponent(activeId)}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`;
+    const status = deviceStatus[cam.id.replace(/_(optical|thermal)$/, '')] || 'unknown';
+    
+    const isAI = cam.id.endsWith('_thermal') || cam.type === 'camera_pd';
+    const rawStreamUrl = `/camera-stream.html?src=${encodeURIComponent(activeId)}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`;
+    const aiStreamUrl = `http://localhost:8100/stream/${activeId}`;
 
     return (
       <div 
@@ -160,7 +191,11 @@ export default function RealtimeMonitorPage() {
         style={{ display: (expandedCamId && !isExpanded) ? 'none' : 'block' }}
         onDoubleClick={() => toggleExpand(cam.id)}
       >
-        <iframe src={streamUrl} allow="autoplay; camera; microphone" title={cam.name} />
+        {isAI ? (
+          <img src={aiStreamUrl} alt={cam.name} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />
+        ) : (
+          <iframe src={rawStreamUrl} allow="autoplay; camera; microphone" title={cam.name} />
+        )}
         <canvas className="nvr-overlay" />
         
         <div className="nvr-hud-t">

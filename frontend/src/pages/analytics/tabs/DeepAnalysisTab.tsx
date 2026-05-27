@@ -167,6 +167,14 @@ export default function DeepAnalysisTab() {
   const [cabId, setCabId] = useState('tu471');
   const [rangeMs, setRangeMs] = useState(86_400_000);
 
+  if (CABINETS.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--admin-text-muted)', fontSize: '0.85rem' }}>
+        Không có dữ liệu tủ điện. Hãy cấu hình thiết bị trước.
+      </div>
+    );
+  }
+
   const cab = CABINETS.find(c => c.id === cabId)!;
   const STATUS_COLOR = { good: '#10B981', warning: '#F59E0B', danger: '#EF4444' };
 

@@ -5,6 +5,7 @@
 // ============================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { stationApi, Device, CameraDevice, RoiPoint } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
@@ -13,6 +14,7 @@ import { DEVICE_TYPE_LABELS } from '@/constants/devices';
 const TYPE_LABELS = DEVICE_TYPE_LABELS;
 
 export default function DeviceManagementPage() {
+  const navigate = useNavigate();
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -316,8 +318,8 @@ export default function DeviceManagementPage() {
     setScanResults(null);
     try {
       setScanResults(await stationApi.scanLan(scanSubnet));
-    } catch {
-      alert('Lỗi quét LAN');
+    } catch (err: any) {
+      alert(`Lỗi quét LAN: ${err.message || err}`);
     } finally {
       setIsScanning(false);
     }
@@ -328,8 +330,8 @@ export default function DeviceManagementPage() {
     setOnvifResults(null);
     try {
       setOnvifResults(await stationApi.discoverOnvif());
-    } catch {
-      alert('Lỗi tìm ONVIF');
+    } catch (err: any) {
+      alert(`Lỗi tìm ONVIF: ${err.message || err}`);
     } finally {
       setIsOnvifScanning(false);
     }
@@ -512,7 +514,7 @@ export default function DeviceManagementPage() {
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
                           <button className="btn-industrial btn-sm"
                             style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                            onClick={() => { selectRoiCamera(d as CameraDevice); setRoiTab(2); }}>⊕ ROI</button>
+                            onClick={() => navigate(`/device-management/${d.id}/thermal-config`)}>⊕ ROI</button>
                         )}
                       </td>
                     </tr>

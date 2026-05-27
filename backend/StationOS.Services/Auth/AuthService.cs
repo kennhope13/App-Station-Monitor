@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // AuthService — Xử lý đăng nhập và tạo JWT token
 // Dùng: BCrypt để hash/verify password
 //        System.IdentityModel.Tokens.Jwt để tạo token
@@ -45,6 +45,9 @@ public class AuthService
         var token = GenerateJwt(user);
         var refreshToken = GenerateRefreshToken();
 
+        // Update last login timestamp
+        user.LastLoginAt = DateTime.UtcNow;
+
         // Ghi log đăng nhập vào bảng LoginLogs
         _db.LoginLogs.Add(new LoginLog
         {
@@ -55,6 +58,39 @@ public class AuthService
         await _db.SaveChangesAsync();
 
         return (token, refreshToken, user);
+    }
+
+    /// <summary>
+    /// Đổi password user — verify password cũ + set hash mới + clear MustChangePassword.
+    /// Validate password mạnh (tối thiểu 12 ký tự, có HOA, thường, số, ký tự đặc biệt).
+    /// </summary>
+    public async Task<(bool ok, string? error)> ChangePasswordAsync(Guid userId, string oldPassword, string newPassword)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return (false, "Không tìm thấy người dùng");
+
+        if (!BCrypt.Net.BCrypt.Verify(oldPassword, user.PasswordHash))
+            return (false, "Mật khẩu cũ không chính xác");
+
+        // Validate strength - Cấp độ sản xuất (min 12 ký tự, HOA, thường, số, ký tự đặc biệt)
+        if (newPassword.Length < 12)
+            return (false, "Mật khẩu mới phải có độ dài tối thiểu 12 ký tự");
+        if (!newPassword.Any(char.IsUpper))
+            return (false, "Mật khẩu mới phải chứa ít nhất 1 chữ cái viết HOA");
+        if (!newPassword.Any(char.IsLower))
+            return (false, "Mật khẩu mới phải chứa ít nhất 1 chữ cái viết thường");
+        if (!newPassword.Any(char.IsDigit))
+            return (false, "Mật khẩu mới phải chứa ít nhất 1 chữ số");
+        if (!newPassword.Any(c => !char.IsLetterOrDigit(c)))
+            return (false, "Mật khẩu mới phải chứa ít nhất 1 ký tự đặc biệt (ví dụ: @, #, $, ...)");
+        if (newPassword == oldPassword)
+            return (false, "Mật khẩu mới không được trùng với mật khẩu cũ");
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
+        user.MustChangePassword = false;
+        user.LastPasswordChangedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return (true, null);
     }
 
     /// <summary>
@@ -108,11 +144,12 @@ public class AuthService
             _db.Users.Add(new User
             {
                 Username = "admin",
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123", workFactor: 12),
                 FullName = "Quản trị viên",
                 Email = "admin@StationOS.vn",
                 Role = "admin",
-                IsActive = true
+                IsActive = true,
+                MustChangePassword = true,  // Bắt buộc đổi password lần đầu (security)
             });
             await _db.SaveChangesAsync();
         }

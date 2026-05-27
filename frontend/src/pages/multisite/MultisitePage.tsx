@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GO2RTC_URL } from '@/utils/env';
 import { useStationStore, useAlertStore, useDeviceStore } from '@/store';
 import type { Station, StationLocation } from '@/types/api.types';
 import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';

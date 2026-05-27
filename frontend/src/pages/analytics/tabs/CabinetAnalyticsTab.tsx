@@ -11,20 +11,6 @@ const RANGES: { label: string; value: Range; days: number }[] = [
   { label: '90 ngày', value: '90d', days: 90 },
 ];
 
-function TrendArrow({ rate, direction }: { rate: number; direction: CabinetSummary['trendDirection'] }) {
-  if (direction === 'falling') return <span style={{ color: '#10B981', fontWeight: 800 }}>↓ {Math.abs(rate).toFixed(1)}°C/ngày</span>;
-  if (direction === 'stable') return <span style={{ color: '#6B7280', fontWeight: 700 }}>→ ổn định</span>;
-  const color = rate >= 1.5 ? '#EF4444' : '#F59E0B';
-  return <span style={{ color, fontWeight: 800 }}>↑ +{rate.toFixed(1)}°C/ngày</span>;
-}
-
-function ForecastBadge({ days }: { days: number | null }) {
-  if (days === null) return <span style={{ color: '#10B981', fontSize: '.72rem', fontWeight: 700 }}>An toàn</span>;
-  if (days <= 7) return <span style={{ color: '#EF4444', fontSize: '.72rem', fontWeight: 800 }}>⚠ ~{days} ngày</span>;
-  if (days <= 30) return <span style={{ color: '#F59E0B', fontSize: '.72rem', fontWeight: 700 }}>~{days} ngày</span>;
-  return <span style={{ color: '#6B7280', fontSize: '.72rem' }}>~{days} ngày</span>;
-}
-
 function TempChart({ cabId, range }: { cabId: string; range: Range }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const inst = useRef<Chart | null>(null);
@@ -185,6 +171,14 @@ function DrillPanel({ cab, range, setRange }: { cab: CabinetSummary; range: Rang
 export default function CabinetAnalyticsTab() {
   const [selectedId, setSelectedId] = useState<string | null>('tu471');
   const [range, setRange] = useState<Range>('7d');
+
+  if (CABINETS.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--admin-text-muted)', fontSize: '0.85rem' }}>
+        Không có dữ liệu tủ điện. Hãy cấu hình thiết bị trước.
+      </div>
+    );
+  }
 
   const sorted = [...CABINETS].sort((a, b) => a.urgencyOrder - b.urgencyOrder);
   const selected = selectedId ? CABINETS.find(c => c.id === selectedId) ?? null : null;

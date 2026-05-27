@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // RuleEvaluationWorker — Đánh giá Rules sau mỗi PLC poll
 // Chạy nền, kiểm tra mỗi 5 giây
 //
@@ -75,6 +75,7 @@ public class RuleEvaluationWorker : BackgroundService
         }
     }
 
+    /// <summary>Duyệt tất cả rule enabled, đọc latest readings từ cache và đánh giá từng rule.</summary>
     private async Task EvaluateAllRulesAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -89,12 +90,13 @@ public class RuleEvaluationWorker : BackgroundService
         var rules = await db.Rules.Where(r => r.Enabled).ToListAsync(ct);
         if (rules.Count == 0) return;
 
-        var latestReadings = await db.SensorReadings
-            .FromSqlRaw(@"
-                SELECT DISTINCT ON (""PointId"") *
-                FROM ""SensorReadings""
-                ORDER BY ""PointId"", ""Time"" DESC")
-            .ToDictionaryAsync(r => r.PointId, r => r, ct);
+        var cache = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+        Dictionary<string, SensorReading>? latestReadings;
+        if (!Microsoft.Extensions.Caching.Memory.CacheExtensions.TryGetValue<Dictionary<string, SensorReading>>(
+                cache, "LatestReadings", out latestReadings) || latestReadings == null)
+        {
+            latestReadings = new Dictionary<string, SensorReading>();
+        }
 
         foreach (var rule in rules)
         {
@@ -102,6 +104,7 @@ public class RuleEvaluationWorker : BackgroundService
         }
     }
 
+    /// <summary>Đánh giá 1 rule: kiểm tra điều kiện, dual threshold, xử lý alert + maintenance.</summary>
     private async Task EvaluateRuleAsync(
         IServiceProvider services,
         AppDbContext db,

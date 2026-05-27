@@ -110,7 +110,8 @@ export const useAlertStore = create<AlertStore>((set, get) => ({
       // Thêm vào cache "all"
       if (next.all) next.all = [alert, ...next.all];
       // Thêm vào cache cùng status
-      if (next[alert.status]) next[alert.status] = [alert, ...next[alert.status]];
+      const list = next[alert.status];
+      if (list) next[alert.status] = [alert, ...list];
       return { alertsByFilter: next };
     });
   },

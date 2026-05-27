@@ -8,6 +8,7 @@ interface RealtimeHandlers {
   onAlertUpdated?: (data: any) => void;
 }
 
+/** Hook quản lý vòng đời kết nối SignalR WebSocket: tự động connect khi mount, cleanup khi unmount. */
 export function useRealtime(handlers: RealtimeHandlers, dependencies: any[] = []) {
   const hubRef = useRef<HubConnection | null>(null);
 

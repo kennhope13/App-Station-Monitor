@@ -29,6 +29,7 @@ public class PermissionService
     /// Trả về danh sách StationId được phép xem.
     /// null = không hạn chế (admin/manager hoặc operator chưa phân trạm).
     /// </summary>
+    /// <summary>Lấy danh sách station ID mà user hiện tại được phép truy cập. null = tất cả (admin).</summary>
     public async Task<Guid[]?> GetAllowedStationIdsAsync()
     {
         var user = _http.HttpContext?.User;

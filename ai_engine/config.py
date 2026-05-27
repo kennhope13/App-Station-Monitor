@@ -27,4 +27,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Khởi tạo cấu hình từ biến môi trường (env) và file .env, cached singleton."""
     return Settings()

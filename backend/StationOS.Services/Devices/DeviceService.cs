@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // DeviceService — Xử lý kết nối thiết bị
 // - Test kết nối (ping + protocol check)
 // - Quét LAN tìm thiết bị mới
@@ -125,22 +125,9 @@ public class DeviceService
         if (config == null) return;
 
         var ip       = config.GetValueOrDefault("ip")?.ToString();
-        var rtspPath = config.GetValueOrDefault("rtsp_path")?.ToString() ?? "/stream1";
         var username = config.GetValueOrDefault("username")?.ToString() ?? "admin";
         var password = config.GetValueOrDefault("password")?.ToString() ?? "admin";
-        var streamId = config.GetValueOrDefault("go2rtc_id")?.ToString()
-                       ?? device.Id.ToString()[..8];
-
-        // Encode password để tránh ký tự đặc biệt trong URL (@, #, ...)
         var encodedPassword = Uri.EscapeDataString(password);
-        var rtspUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{rtspPath}";
-
-        // Auto-derive sub-stream cho Hikvision: /Channels/101 → /Channels/102
-        var subRtspPath = DeriveHikvisionSubPath(rtspPath);
-        var subStreamId = subRtspPath != null ? streamId + "_sub" : null;
-        var subRtspUrl  = subRtspPath != null
-            ? $"rtsp://{username}:{encodedPassword}@{ip}:554{subRtspPath}"
-            : null;
 
         try
         {
@@ -159,7 +146,6 @@ public class DeviceService
                     {
                         foreach (var kv in parsed)
                         {
-                            // Lấy URL từ producers[0].url
                             if (kv.Value.TryGetProperty("producers", out var producers) &&
                                 producers.GetArrayLength() > 0 &&
                                 producers[0].TryGetProperty("url", out var urlEl))
@@ -172,21 +158,73 @@ public class DeviceService
             }
             catch { /* go2rtc chưa sẵn sàng, bỏ qua */ }
 
-            // Bước 2: Thêm/cập nhật main stream
-            existingStreams[streamId] = rtspUrl;
+            if (device.Type == "camera_dual")
+            {
+                // Đăng ký cả 2 luồng: quang học và nhiệt
+                var opticalPath = config.GetValueOrDefault("rtsp_optical")?.ToString() ?? "/Streaming/Channels/101";
+                var opticalId   = config.GetValueOrDefault("go2rtc_optical")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_optical";
+                var thermalPath = config.GetValueOrDefault("rtsp_thermal")?.ToString() ?? "/Streaming/Channels/201";
+                var thermalId   = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_thermal";
 
-            // Bước 2b: Thêm sub-stream nếu Hikvision có /Channels/101
-            if (subStreamId != null && subRtspUrl != null)
-                existingStreams[subStreamId] = subRtspUrl;
+                var rtspOpticalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{opticalPath}";
+                var rtspThermalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
 
-            // Bước 3: PUT toàn bộ map → go2rtc sync lại tất cả
-            var response = await client.PutAsJsonAsync(
-                $"{Go2RtcUrl}/api/streams",
-                existingStreams
-            );
-            var subInfo = subStreamId != null ? $" + sub ({subStreamId})" : "";
-            _logger.LogInformation("[go2rtc] Đăng ký stream {StreamId}{SubInfo} → {Status} (tổng: {Count} streams)",
-                streamId, subInfo, response.StatusCode, existingStreams.Count);
+                existingStreams[opticalId] = rtspOpticalUrl;
+                existingStreams[thermalId] = rtspThermalUrl;
+
+                // Thêm sub-stream cho luồng quang học nếu có
+                var subOpticalPath = DeriveHikvisionSubPath(opticalPath);
+                if (subOpticalPath != null)
+                {
+                    var subOpticalId = opticalId + "_sub";
+                    existingStreams[subOpticalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subOpticalPath}";
+                }
+
+                _logger.LogInformation("[go2rtc] Đăng ký camera_dual: {OptId} ({OptPath}) + {ThId} ({ThPath})",
+                    opticalId, opticalPath, thermalId, thermalPath);
+            }
+            else
+            {
+                var rtspPath = config.GetValueOrDefault("rtsp_path")?.ToString() ?? "/stream1";
+                var streamId = config.GetValueOrDefault("go2rtc_id")?.ToString() ?? device.Id.ToString()[..8];
+                var rtspUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{rtspPath}";
+
+                existingStreams[streamId] = rtspUrl;
+
+                var subRtspPath = DeriveHikvisionSubPath(rtspPath);
+                if (subRtspPath != null)
+                {
+                    var subStreamId = streamId + "_sub";
+                    existingStreams[subStreamId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subRtspPath}";
+                }
+
+                _logger.LogInformation("[go2rtc] Đăng ký stream {StreamId} -> {RtspPath}", streamId, rtspPath);
+            }
+
+            // Bước 3: Đăng ký từng stream qua go2rtc API
+            // Format đúng: PUT /api/streams?name=<id>&src=<rtsp_url>
+            // (KHÔNG phải PUT body JSON — go2rtc không support format đó)
+            int registered = 0, failed = 0;
+            foreach (var kv in existingStreams)
+            {
+                try
+                {
+                    var url = $"{Go2RtcUrl}/api/streams?name={Uri.EscapeDataString(kv.Key)}&src={Uri.EscapeDataString(kv.Value)}";
+                    var resp = await client.PutAsync(url, null);
+                    if (resp.IsSuccessStatusCode) registered++;
+                    else
+                    {
+                        failed++;
+                        _logger.LogWarning("[go2rtc] Đăng ký {Name} thất bại: {Status}", kv.Key, resp.StatusCode);
+                    }
+                }
+                catch (Exception inner)
+                {
+                    failed++;
+                    _logger.LogWarning("[go2rtc] Lỗi PUT {Name}: {Msg}", kv.Key, inner.Message);
+                }
+            }
+            _logger.LogInformation("[go2rtc] Sync xong {Reg} streams ({Failed} fail)", registered, failed);
         }
         catch (Exception ex)
         {
@@ -215,21 +253,36 @@ public class DeviceService
     public async Task UnregisterCameraStreamAsync(Device device)
     {
         var config = ParseConfig(device.Config);
-        var streamId = config?.GetValueOrDefault("go2rtc_id")?.ToString()
-                       ?? device.Id.ToString()[..8];
-        var rtspPath = config?.GetValueOrDefault("rtsp_path")?.ToString();
+        if (config == null) return;
         try
         {
             var client = _http.CreateClient();
-            await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={streamId}");
-            _logger.LogInformation("[go2rtc] Đã xóa stream {StreamId}", streamId);
-
-            // Xóa sub-stream nếu camera có /Channels/101
-            if (rtspPath != null && DeriveHikvisionSubPath(rtspPath) != null)
+            if (device.Type == "camera_dual")
             {
-                var subStreamId = streamId + "_sub";
-                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={subStreamId}");
-                _logger.LogInformation("[go2rtc] Đã xóa sub-stream {SubStreamId}", subStreamId);
+                var opticalId = config.GetValueOrDefault("go2rtc_optical")?.ToString() ?? $"cam_{config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_")}_optical";
+                var thermalId = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_")}_thermal";
+
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={opticalId}");
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={opticalId}_sub");
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={thermalId}");
+                _logger.LogInformation("[go2rtc] Đã xóa camera_dual streams: {OptId}, {ThId}", opticalId, thermalId);
+            }
+            else
+            {
+                var streamId = config.GetValueOrDefault("go2rtc_id")?.ToString()
+                               ?? device.Id.ToString()[..8];
+                var rtspPath = config?.GetValueOrDefault("rtsp_path")?.ToString();
+
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={streamId}");
+                _logger.LogInformation("[go2rtc] Đã xóa stream {StreamId}", streamId);
+
+                // Xóa sub-stream nếu camera có /Channels/101
+                if (rtspPath != null && DeriveHikvisionSubPath(rtspPath) != null)
+                {
+                    var subStreamId = streamId + "_sub";
+                    await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={subStreamId}");
+                    _logger.LogInformation("[go2rtc] Đã xóa sub-stream {SubStreamId}", subStreamId);
+                }
             }
         }
         catch (Exception ex)

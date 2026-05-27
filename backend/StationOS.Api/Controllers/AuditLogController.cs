@@ -1,8 +1,9 @@
-﻿// ============================================================
+// ============================================================
 // AuditLogController — Nhật ký hành động hệ thống
 // GET /api/v1/logs/audit   — Hành động (join username)
 // GET /api/v1/logs/login   — Đăng nhập / thất bại
 // GET /api/v1/logs/notify  — Thông báo email đã gửi
+// GET /api/v1/logs/rule-triggers — Lịch sử kích hoạt rule
 // ============================================================
 
 using Microsoft.AspNetCore.Authorization;
@@ -20,6 +21,14 @@ public class AuditLogController : ControllerBase
     private readonly AppDbContext _db;
     public AuditLogController(AppDbContext db) => _db = db;
 
+    /// <summary>Lấy nhật ký hành động (audit log) — các thao tác POST/PUT/DELETE.</summary>
+    /// <param name="action">Lọc theo hành động: create, update, delete, ack_alert, close_alert.</param>
+    /// <param name="entityType">Lọc theo loại entity: device, rule, alert, station...</param>
+    /// <param name="userId">Lọc theo người thực hiện.</param>
+    /// <param name="from">Từ thời điểm.</param>
+    /// <param name="to">Đến thời điểm.</param>
+    /// <param name="limit">Số lượng tối đa (default 200).</param>
+    /// <returns>Danh sách audit log kèm username người thực hiện.</returns>
     // GET /api/v1/logs/audit?action=&entityType=&userId=&from=&to=&limit=200
     [HttpGet("audit")]
     public async Task<IActionResult> GetAudit(
@@ -77,6 +86,11 @@ public class AuditLogController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lấy nhật ký đăng nhập (login log).</summary>
+    /// <param name="from">Từ thời điểm.</param>
+    /// <param name="to">Đến thời điểm.</param>
+    /// <param name="limit">Số lượng tối đa (default 200).</param>
+    /// <returns>Danh sách lần đăng nhập (username, action, IP, thời gian).</returns>
     // GET /api/v1/logs/login?from=&to=&limit=200
     [HttpGet("login")]
     public async Task<IActionResult> GetLogin(
@@ -100,6 +114,13 @@ public class AuditLogController : ControllerBase
         return Ok(logs);
     }
 
+    /// <summary>Lấy nhật ký kích hoạt rule (rule trigger log).</summary>
+    /// <param name="ruleId">Lọc theo rule.</param>
+    /// <param name="deviceId">Lọc theo thiết bị.</param>
+    /// <param name="from">Từ thời điểm.</param>
+    /// <param name="to">Đến thời điểm.</param>
+    /// <param name="limit">Số lượng tối đa (default 200).</param>
+    /// <returns>Danh sách lần rule được trigger kèm tên rule + tên thiết bị.</returns>
     // GET /api/v1/logs/rule-triggers?from=&to=&ruleId=&limit=200
     [HttpGet("rule-triggers")]
     public async Task<IActionResult> GetRuleTriggers(
@@ -144,6 +165,13 @@ public class AuditLogController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Lấy nhật ký gửi thông báo (email, SMS...).</summary>
+    /// <param name="status">Lọc theo trạng thái: sent, failed.</param>
+    /// <param name="channel">Lọc theo kênh: email.</param>
+    /// <param name="from">Từ thời điểm.</param>
+    /// <param name="to">Đến thời điểm.</param>
+    /// <param name="limit">Số lượng tối đa (default 200).</param>
+    /// <returns>Danh sách notify log (channel, recipient, status, error).</returns>
     // GET /api/v1/logs/notify?from=&to=&status=&limit=200
     [HttpGet("notify")]
     public async Task<IActionResult> GetNotify(

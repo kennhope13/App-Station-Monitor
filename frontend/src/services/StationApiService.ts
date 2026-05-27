@@ -55,6 +55,7 @@ class StationApiService {
   getThermalReadings = deviceService.getThermalReadings.bind(deviceService);
   getCameraSnapshot = deviceService.getCameraSnapshot.bind(deviceService);
 
+  /** Lấy danh sách camera từ trạm đầu tiên (fallback cho UI khi chưa chọn trạm). */
   async getCamerasFromFirstStation(): Promise<CameraDevice[]> {
     const stations = await this.getStations();
     if (!stations[0]) return [];

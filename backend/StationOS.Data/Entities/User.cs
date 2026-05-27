@@ -12,5 +12,13 @@ public class User
     [Required] public string Role { get; set; } = "operator"; // operator | manager | admin
     public Guid[]? StationIds { get; set; }
     public bool IsActive { get; set; } = true;
+
+    /// <summary>true = user phải đổi password trước khi dùng tiếp.
+    /// Set true cho admin seed mặc định, và mỗi khi admin reset password user khác.</summary>
+    public bool MustChangePassword { get; set; } = false;
+
+    public DateTime? LastPasswordChangedAt { get; set; }
+    public DateTime? LastLoginAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

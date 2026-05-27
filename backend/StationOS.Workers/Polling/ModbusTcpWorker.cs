@@ -62,6 +62,7 @@ public class ModbusTcpWorker : BackgroundService
         }
     }
 
+    /// <summary>Duyệt tất cả thiết bị Modbus TCP trong DB và đọc holding registers.</summary>
     private async Task PollAllAsync(CancellationToken ct)
     {
         using var scope = _scopeFactory.CreateScope();

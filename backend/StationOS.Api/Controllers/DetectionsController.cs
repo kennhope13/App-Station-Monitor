@@ -19,6 +19,13 @@ public class DetectionsController : ControllerBase
     private readonly AppDbContext _db;
     public DetectionsController(AppDbContext db) => _db = db;
 
+    /// <summary>Lấy danh sách sự kiện phát hiện từ camera (AI detection events).</summary>
+    /// <param name="deviceId">Lọc theo camera.</param>
+    /// <param name="type">Lọc theo loại phát hiện.</param>
+    /// <param name="from">Từ thời điểm.</param>
+    /// <param name="to">Đến thời điểm.</param>
+    /// <param name="limit">Số lượng tối đa (max 500).</param>
+    /// <returns>Danh sách detection event kèm tên camera.</returns>
     // GET /api/v1/detections?deviceId=&type=&from=&to=&limit=100
     [HttpGet]
     public async Task<IActionResult> List(
@@ -57,6 +64,9 @@ public class DetectionsController : ControllerBase
         return Ok(events);
     }
 
+    /// <summary>Lấy chi tiết 1 sự kiện phát hiện theo ID.</summary>
+    /// <param name="id">Detection event ID.</param>
+    /// <returns>Chi tiết event kèm tên camera hoặc 404.</returns>
     // GET /api/v1/detections/{id}
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> Get(Guid id)

@@ -88,6 +88,14 @@ function CabinetDetail({ cab }: { cab: CabinetSummary }) {
 export default function OverviewTab() {
   const [selected, setSelected] = useState<string | null>('tu471');
 
+  if (CABINETS.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--admin-text-muted)', fontSize: '0.85rem' }}>
+        Không có dữ liệu tủ điện. Hãy cấu hình thiết bị trước.
+      </div>
+    );
+  }
+
   const good    = CABINETS.filter(c => c.healthStatus === 'good').length;
   const warning = CABINETS.filter(c => c.healthStatus === 'warning').length;
   const danger  = CABINETS.filter(c => c.healthStatus === 'danger').length;

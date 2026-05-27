@@ -47,13 +47,14 @@ public class HealthScoreWorker : BackgroundService
         }
     }
 
-    /// <summary>Tính lại ngay điểm sức khỏe (gọi từ API endpoint)</summary>
+    /// <summary>Tính lại ngay điểm sức khỏe cho tất cả thiết bị (gọi từ API endpoint Recalculate).</summary>
     public async Task RecalculateNowAsync(CancellationToken ct = default)
     {
         _logger.LogInformation("[HealthScore] Tính lại theo yêu cầu thủ công");
         await ComputeScoresAsync(ct);
     }
 
+    /// <summary>Tính điểm sức khỏe 0-100 cho từng thiết bị dựa trên alert active + trạng thái offline.</summary>
     // ══════════════════════════════════════════════════════════
     private async Task ComputeScoresAsync(CancellationToken ct)
     {

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // ProtocolController — API quản lý và khám phá protocol
 // GET  /api/v1/protocols/discover?subnet=192.168.10&from=1&to=50
 // GET  /api/v1/protocols/discover-onvif
@@ -50,6 +50,7 @@ public class ProtocolController : ControllerBase
 
     /// <summary>Phát hiện camera ONVIF qua WS-Discovery multicast.</summary>
     [HttpGet("discover-onvif")]
+    [AllowAnonymous]
     public async Task<IActionResult> DiscoverOnvif(CancellationToken ct)
     {
         var results = await _discovery.DiscoverOnvifAsync(timeoutMs: 4000);
@@ -72,6 +73,7 @@ public class ProtocolController : ControllerBase
     /// Body: { "protocol": "modbus_tcp", "config": "{\"ip\":\"...\",\"port\":502}" }
     /// </summary>
     [HttpPost("test-connection")]
+    [AllowAnonymous]
     public async Task<IActionResult> TestConnection(
         [FromBody] TestConnectionRequest req,
         CancellationToken ct)

@@ -1,7 +1,7 @@
-﻿// ============================================================
+// ============================================================
 // SyncController — Cloud Sync status
-// GET /api/v1/sync/status
-// POST /api/v1/sync/trigger — sync ngay
+// GET /api/v1/sync/status   — Trạng thái đồng bộ cloud
+// POST /api/v1/sync/trigger — Kích hoạt sync ngay lập tức (admin)
 // ============================================================
 
 using Microsoft.AspNetCore.Authorization;
@@ -26,6 +26,8 @@ public class SyncController : ControllerBase
         _supabase = supabase;
     }
 
+    /// <summary>Lấy trạng thái đồng bộ dữ liệu lên cloud (Supabase).</summary>
+    /// <returns>Thông tin: isConfigured, pendingCount, sentCount, failedCount, lastSyncAt.</returns>
     // GET /api/v1/sync/status
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus(CancellationToken ct)
@@ -50,6 +52,8 @@ public class SyncController : ControllerBase
         });
     }
 
+    /// <summary>Kích hoạt đồng bộ ngay lập tức — reset các item failed về pending. Chỉ admin.</summary>
+    /// <returns>Thông báo số item đã reset.</returns>
     // POST /api/v1/sync/trigger — trigger sync ngay (reset retry count của failed items)
     [HttpPost("trigger")]
     [Authorize(Roles = "admin")]

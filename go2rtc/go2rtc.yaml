@@ -1,16 +1,26 @@
 api:
   listen: ":1984"
+  origin: "*"   # Cho phép mọi origin (dev). Production restrict cụ thể.
 
 streams:
-  # Camera streams được thêm động qua API
-  # go2rtc API: POST /api/streams?name=cam1&src=rtsp://...
-  # Hoặc thêm tĩnh ở đây:
-  #
-  # cam_thermal: rtsp://admin:password@192.168.x.x/Streaming/Channels/201
-  # cam_optical: rtsp://admin:password@192.168.x.x/Streaming/Channels/101
+  # Camera streams được thêm động qua API từ backend StationOS
+  # vd: PUT /api/streams?name=cam_192_168_10_152_optical&src=rtsp://...
+  camera_192_168_10_153_pd:
+    - rtsp://admin:Demo%402024@192.168.10.153:554/Streaming/Channels/101
+  camera_192_168_10_153_pd_sub:
+    - rtsp://admin:Demo%402024@192.168.10.153:554/Streaming/Channels/102
+  cam_192_168_10_152_optical:
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/101
+  cam_192_168_10_152_thermal:
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/201
+  cam_192_168_10_152_optical_sub:
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/102
 
 webrtc:
   listen: ":8555"
+
+rtsp:
+  listen: ":8554"
 
 log:
   level: info

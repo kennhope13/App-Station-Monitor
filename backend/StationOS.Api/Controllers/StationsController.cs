@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // StationsController — CRUD trạm biến áp
 // GET    /api/v1/stations        — Danh sách trạm
 // GET    /api/v1/stations/{id}   — Chi tiết 1 trạm
@@ -29,6 +29,8 @@ public class StationsController : ControllerBase
         _permissions = permissions;
     }
 
+    /// <summary>Lấy danh sách trạm biến áp. Operator chỉ thấy trạm được phân quyền.</summary>
+    /// <returns>Danh sách trạm (id, name, code, location, status, createdAt).</returns>
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -44,6 +46,9 @@ public class StationsController : ControllerBase
         return Ok(stations);
     }
 
+    /// <summary>Lấy chi tiết 1 trạm theo ID.</summary>
+    /// <param name="id">Station ID.</param>
+    /// <returns>Đối tượng Station hoặc 404.</returns>
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
@@ -52,6 +57,9 @@ public class StationsController : ControllerBase
         return Ok(s);
     }
 
+    /// <summary>Tạo trạm mới. Chỉ admin.</summary>
+    /// <param name="req">Thông tin trạm (name, code, location).</param>
+    /// <returns>Station vừa tạo với status 201 Created.</returns>
     [HttpPost]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Create([FromBody] StationRequest req)
@@ -68,6 +76,10 @@ public class StationsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = station.Id }, station);
     }
 
+    /// <summary>Cập nhật thông tin trạm. Chỉ admin.</summary>
+    /// <param name="id">Station ID.</param>
+    /// <param name="req">Thông tin cần cập nhật.</param>
+    /// <returns>Station đã cập nhật.</returns>
     [HttpPut("{id}")]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] StationRequest req)
@@ -85,6 +97,9 @@ public class StationsController : ControllerBase
         return Ok(station);
     }
 
+    /// <summary>Xóa trạm. Chỉ admin, và chỉ khi trạm không còn thiết bị nào.</summary>
+    /// <param name="id">Station ID.</param>
+    /// <returns>204 NoContent hoặc 400 nếu còn thiết bị.</returns>
     [HttpDelete("{id}")]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Delete(Guid id)
@@ -103,4 +118,9 @@ public class StationsController : ControllerBase
     }
 }
 
+/// <summary>Request DTO cho tạo/cập nhật trạm.</summary>
+/// <param name="Name">Tên trạm (bắt buộc).</param>
+/// <param name="Code">Mã trạm.</param>
+/// <param name="Location">Vị trí dạng JSON {"lat","lng","address"}.</param>
+/// <param name="Status">Trạng thái: active | inactive | maintenance.</param>
 public record StationRequest(string Name, string? Code, string? Location, string? Status);

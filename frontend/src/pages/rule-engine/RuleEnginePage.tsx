@@ -1,17 +1,17 @@
 // ============================================================
 // RuleEnginePage.tsx — Quản lý quy tắc giám sát tự động
-// Mỗi quy tắc gồm: điểm đo + ngưỡng + hành động (cảnh báo/sức khỏe/bảo trì)
-// Quy tắc được nhóm theo ruleSet (tủ/thiết bị), có thể bật/tắt riêng lẻ
+// Mỗi quy tắc gồm: thiết bị + điểm đo + ngưỡng + tác động (cảnh báo/sức khỏe/bảo trì)
+// Hỗ trợ chọn thiết bị cụ thể, nhân bản (clone) quy tắc, và hiển thị màu chuẩn
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { stationApi, Rule } from '@/services/StationApiService';
+import { stationApi, Rule, Device } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS } from '@/constants/points';
 
-// Danh sách điểm đo mặc định — dùng khi API không trả về sensor list
+// Danh sách điểm đo mặc định dùng dự phòng
 const FALLBACK_POINTS = [
-  ...(PT_CAM_IDS as readonly string[]).map(id => ({ value: id, label: `${id} — Cam nhiệt (°C)` })),
+  ...(PT_CAM_IDS as readonly string[]).map(id => ({ value: id, label: `Điểm camera ${id} — Nhiệt độ (°C)` })),
   { value: PT_TEMP_1, label: `${TEMP_LABELS[PT_TEMP_1]} (°C)` },
   { value: PT_TEMP_2, label: `${TEMP_LABELS[PT_TEMP_2]} (°C)` },
   { value: PT_TEMP_3, label: `${TEMP_LABELS[PT_TEMP_3]} (°C)` },
@@ -20,32 +20,41 @@ const FALLBACK_POINTS = [
 
 export default function RuleEnginePage() {
   const [rules, setRules] = useState<Rule[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [pointOptions, setPointOptions] = useState(FALLBACK_POINTS);
-  // Tập hợp ruleSet đang được mở rộng (hiển thị danh sách quy tắc bên trong)
   const [expandedSets, setExpandedSets] = useState<Set<string>>(new Set());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null); // null = tạo mới
 
-  // Dữ liệu form quy tắc — preAlarm=cảnh báo (warning), alarm=nguy hiểm
+  // Dữ liệu form quy tắc — preAlarm=Cảnh báo (Vàng), alarm=Nguy hiểm (Đỏ)
   const [formData, setFormData] = useState({
-    name: '', ruleSet: '', point: 'P1', op: '>=',
-    preAlarm: '', alarm: '',
-    doAlert: true, doHealth: false, doMaintenance: false,
-    penalty: 10, maintType: 'inspection', maintDays: 30
+    name: '',
+    ruleSet: '',
+    deviceId: '', // Thiết bị áp dụng (rỗng = Tất cả thiết bị)
+    point: 'P1',
+    op: '>=',
+    preAlarm: '',
+    alarm: '',
+    doAlert: true,
+    doHealth: false,
+    doMaintenance: false,
+    penalty: 10,
+    maintType: 'inspection',
+    maintDays: 30
   });
 
   useEffect(() => {
     loadData();
   }, []);
 
-  // Parse JSON condition từ API — trả fallback an toàn nếu JSON lỗi
+  // Parse JSON điều kiện từ API
   const parseCondition = (json: string): any => {
-    try { return JSON.parse(json); } catch { return { point: '?', op: '>', value: 0 }; }
+    try { return JSON.parse(json); } catch { return { point: '?', op: '>=', value: 0 }; }
   };
 
-  // Parse JSON actions từ API — tách ra thành các flag doAlert/doHealth/doMaintenance
+  // Parse JSON hành động từ API
   const parseActions = (actionsJson: string): any => {
     try {
       const arr: any[] = JSON.parse(actionsJson);
@@ -65,24 +74,30 @@ export default function RuleEnginePage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [rulesData, pts] = await Promise.all([
+      const stations = await stationApi.getStations();
+      const firstStationId = stations[0]?.id;
+      
+      const [rulesData, pts, devs] = await Promise.all([
         stationApi.getRules(),
-        stationApi.getLatestPoints().catch(() => [])
+        (firstStationId ? stationApi.getLatestPoints(firstStationId) : Promise.resolve([])).catch(() => []),
+        (firstStationId ? stationApi.getDevices(firstStationId) : Promise.resolve([])).catch(() => [])
       ]);
 
-      // Handle Points
+      setDevices(devs);
+
+      // Xử lý các điểm đo
       const seen = new Set<string>();
       const apiPoints = pts
         .filter(p => { const ok = !seen.has(p.pointId); seen.add(p.pointId); return ok; })
         .map(p => {
-          const name = TEMP_LABELS[p.pointId] ?? (p.pointId.startsWith('P') ? `Điểm đo ${p.pointId} (Camera Nhiệt)` : p.pointId.replace(/_/g, ' '));
+          const name = TEMP_LABELS[p.pointId] ?? (p.pointId.startsWith('P') ? `Điểm camera ${p.pointId}` : p.pointId.replace(/_/g, ' '));
           return { value: p.pointId, label: p.unit ? `${name} (${p.unit})` : name };
         });
 
-      const thermalPoints = (PT_CAM_IDS as readonly string[]).map(id => ({ value: id, label: `Điểm đo ${id} (Camera Nhiệt)` }));
+      const thermalPoints = (PT_CAM_IDS as readonly string[]).map(id => ({ value: id, label: `Điểm đo nhiệt ${id} (Camera)` }));
       setPointOptions([...thermalPoints, ...apiPoints]);
 
-      // Sync rules
+      // Đồng bộ các rule nhiệt độ nếu cần
       const isSynced = localStorage.getItem('thermal_rules_sync_v3');
       let finalRules = rulesData;
       if (!isSynced && rulesData.length > 0) {
@@ -108,7 +123,7 @@ export default function RuleEnginePage() {
 
       setRules(finalRules);
     } catch (e) {
-      console.error(e);
+      console.error('Lỗi khi tải danh sách quy tắc:', e);
     } finally {
       setLoading(false);
     }
@@ -126,12 +141,12 @@ export default function RuleEnginePage() {
       await stationApi.toggleRule(id);
       setRules(rules.map(r => r.id === id ? { ...r, enabled: !currentEnabled } : r));
     } catch (e) {
-      alert('Không thể bật/tắt quy tắc: ' + e);
+      alert('Không thể thay đổi trạng thái quy tắc: ' + e);
     }
   };
 
   const deleteRule = async (id: string) => {
-    if (!await confirmDialog({ title: 'Xóa quy tắc', message: 'Xóa quy tắc này?', confirmText: 'Xóa', danger: true })) return;
+    if (!await confirmDialog({ title: 'Xác nhận xóa', message: 'Bạn có chắc chắn muốn xóa quy tắc giám sát này không?', confirmText: 'Xóa quy tắc', danger: true })) return;
     try {
       await stationApi.deleteRule(id);
       setRules(rules.filter(r => r.id !== id));
@@ -143,10 +158,19 @@ export default function RuleEnginePage() {
   const openAddModal = (presetSet = '') => {
     setEditingId(null);
     setFormData({
-      name: '', ruleSet: presetSet || 'Các điểm đo của cam nhiệt', point: 'P1', op: '>=',
-      preAlarm: '', alarm: '',
-      doAlert: true, doHealth: false, doMaintenance: false,
-      penalty: 10, maintType: 'inspection', maintDays: 30
+      name: '',
+      ruleSet: presetSet || 'Quy tắc máy biến áp',
+      deviceId: '',
+      point: 'P1',
+      op: '>=',
+      preAlarm: '',
+      alarm: '',
+      doAlert: true,
+      doHealth: false,
+      doMaintenance: false,
+      penalty: 10,
+      maintType: 'inspection',
+      maintDays: 30
     });
     setIsModalOpen(true);
   };
@@ -159,16 +183,51 @@ export default function RuleEnginePage() {
     if (setVal === 'camera_thermal_zones') setVal = 'Các điểm đo của cam nhiệt';
 
     setFormData({
-      name: r.name, ruleSet: setVal, point: cond.point, op: cond.op || '>=',
-      preAlarm: cond.pre_alarm ?? cond.value ?? '', alarm: cond.alarm ?? '',
-      doAlert: actions.doAlert, doHealth: actions.doHealth, doMaintenance: actions.doMaintenance,
-      penalty: actions.penalty, maintType: actions.maintType, maintDays: actions.maintDays
+      name: r.name,
+      ruleSet: setVal,
+      deviceId: r.deviceId || '',
+      point: cond.point,
+      op: cond.op || '>=',
+      preAlarm: cond.pre_alarm ?? cond.value ?? '',
+      alarm: cond.alarm ?? '',
+      doAlert: actions.doAlert,
+      doHealth: actions.doHealth,
+      doMaintenance: actions.doMaintenance,
+      penalty: actions.penalty,
+      maintType: actions.maintType,
+      maintDays: actions.maintDays
+    });
+    setIsModalOpen(true);
+  };
+
+  // Tính năng Clone (Sao chép) quy tắc
+  const cloneRule = (r: Rule) => {
+    const cond = parseCondition(r.condition);
+    const actions = parseActions(r.actions);
+    let setVal = r.ruleSet || '';
+    if (setVal === 'camera_thermal_zones') setVal = 'Các điểm đo của cam nhiệt';
+
+    setEditingId(null); // Đặt thành null để khi lưu sẽ tạo mới
+    setFormData({
+      name: `${r.name} (Bản sao)`,
+      ruleSet: setVal,
+      deviceId: r.deviceId || '',
+      point: cond.point,
+      op: cond.op || '>=',
+      preAlarm: cond.pre_alarm ?? cond.value ?? '',
+      alarm: cond.alarm ?? '',
+      doAlert: actions.doAlert,
+      doHealth: actions.doHealth,
+      doMaintenance: actions.doMaintenance,
+      penalty: actions.penalty,
+      maintType: actions.maintType,
+      maintDays: actions.maintDays
     });
     setIsModalOpen(true);
   };
 
   const saveRule = async () => {
-    const { name, point, op, preAlarm, alarm, doAlert, doHealth, doMaintenance, penalty, maintType, maintDays } = formData;
+    const { name, point, op, preAlarm, alarm, doAlert, doHealth, doMaintenance, penalty, maintType, maintDays, deviceId } = formData;
     const ruleSet = formData.ruleSet.trim() || undefined;
 
     if (!name) { alert('Vui lòng nhập tên quy tắc'); return; }
@@ -176,8 +235,8 @@ export default function RuleEnginePage() {
     const preA = preAlarm === '' ? null : parseFloat(preAlarm);
     const alA = alarm === '' ? null : parseFloat(alarm);
 
-    if (preA === null && alA === null) { alert('Vui lòng nhập ít nhất 1 ngưỡng'); return; }
-    if (!doAlert && !doHealth && !doMaintenance) { alert('Vui lòng chọn ít nhất 1 tác động'); return; }
+    if (preA === null && alA === null) { alert('Vui lòng cấu hình ít nhất 1 ngưỡng cảnh báo hoặc nguy hiểm'); return; }
+    if (!doAlert && !doHealth && !doMaintenance) { alert('Vui lòng chọn ít nhất 1 hành động tác động'); return; }
 
     const condition = JSON.stringify({ type: 'analog', point, op, pre_alarm: preA, alarm: alA });
     
@@ -187,12 +246,13 @@ export default function RuleEnginePage() {
     if (doMaintenance) actionList.push({ type: 'maintenance', taskType: maintType, scheduledInDays: maintDays });
 
     const actions = JSON.stringify(actionList);
+    const devIdParam = deviceId ? deviceId : null;
 
     try {
       if (editingId) {
-        await stationApi.updateRule(editingId, { name, ruleSet, condition, actions });
+        await stationApi.updateRule(editingId, { name, ruleSet, condition, actions, deviceId: devIdParam });
       } else {
-        await stationApi.createRule({ name, ruleSet, condition, actions, enabled: true });
+        await stationApi.createRule({ name, ruleSet, condition, actions, enabled: true, deviceId: devIdParam });
       }
       setIsModalOpen(false);
       loadData();
@@ -201,7 +261,7 @@ export default function RuleEnginePage() {
     }
   };
 
-  // Tính toán Stats
+  // Tính toán số liệu thống kê
   const total = rules.length;
   const enabled = rules.filter(r => r.enabled).length;
   let totalWarning = 0;
@@ -217,70 +277,86 @@ export default function RuleEnginePage() {
     else if (actions.level === 'warning' || actions.level === 'hybrid') totalWarning++;
   });
 
-  // Gom nhóm
+  // Gom nhóm quy tắc theo thiết bị + nhóm quy tắc
   const grouped = new Map<string, Rule[]>();
   for (const r of rules) {
-    let key = r.ruleSet || '';
+    let key = r.ruleSet || 'Chưa phân nhóm';
     if (key === 'camera_thermal_zones') key = 'Các điểm đo của cam nhiệt';
+    
+    // Nếu có gắn thiết bị, hiển thị kèm tên thiết bị
+    if (r.deviceName) {
+      key = `${r.deviceName} — ${key}`;
+    }
+    
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(r);
   }
-  const sortedGroups = [...grouped.entries()].sort((a, b) => a[0] && !b[0] ? -1 : !a[0] && b[0] ? 1 : a[0].localeCompare(b[0]));
+  const sortedGroups = [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   return (
-    <div className="alerts-history-page" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto', padding: 8, background: 'var(--admin-bg)', boxSizing: 'border-box', gap: 8 }}>
+    <div className="alerts-history-page" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto', padding: 12, background: 'var(--admin-bg)', boxSizing: 'border-box', gap: 12 }}>
       <style>{`
-        .re-grid-header, .re-grid-row { display: grid; grid-template-columns: 1fr 140px 90px 90px 100px; align-items: center; }
+        .re-grid-header, .re-grid-row { display: grid; grid-template-columns: 1.5fr 1fr 100px 100px 80px 160px; align-items: center; }
         .re-grid-header { border-bottom: 1px solid var(--admin-border); background: var(--admin-layer-1); }
-        .re-grid-header > div { padding: 10px 14px; font-size: .65rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--admin-text); opacity: 0.45; font-family: 'Consolas', monospace; }
-        .re-grid-row { border-bottom: 1px solid var(--admin-border-light); background: var(--admin-card-bg); transition: background .1s; }
+        .re-grid-header > div { padding: 10px 14px; font-size: .68rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--admin-text); opacity: 0.7; font-family: 'Consolas', monospace; }
+        .re-grid-row { border-bottom: 1px solid var(--admin-border-light); background: var(--admin-card-bg); transition: background .15s; }
         .re-grid-row:hover { background: var(--admin-layer-2); }
-        .re-grid-row > div { padding: 12px 16px; font-size: .82rem; color: var(--admin-text); }
-        .row-warning { border-left: 3px solid var(--admin-warning); }
-        .row-alarm { border-left: 3px solid var(--admin-danger); }
+        .re-grid-row > div { padding: 12px 16px; font-size: 0.8rem; color: var(--admin-text); }
+        .row-warning { border-left: 4px solid var(--admin-warning); }
+        .row-alarm { border-left: 4px solid var(--admin-danger); }
         .toggle-switch { position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; }
         .toggle-switch input { opacity:0; width:0; height:0; }
         .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:var(--admin-layer-3); border-radius:22px; transition:.2s; }
         .toggle-slider:before { position:absolute; content:""; height:16px; width:16px; left:3px; bottom:3px; background:white; border-radius:50%; transition:.2s; }
         .toggle-switch input:checked + .toggle-slider { background:var(--admin-accent); }
         .toggle-switch input:checked + .toggle-slider:before { transform:translateX(18px); }
+        .action-btns { display: flex; gap: 6px; justify-content: flex-end; }
+        .hint-text { font-size: 0.72rem; color: var(--admin-text-muted); margin-top: 4px; line-height: 1.3; }
+        .badge-type { font-size: 0.62rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
       `}</style>
 
-      <div className="page-toolbar-row" style={{ marginBottom: 8 }}>
+      {/* Toolbar */}
+      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div className="page-title-cell">
-          <h2>RULE ENGINE</h2>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--admin-text)' }}>BỘ QUY TẮC GIÁM SÁT TỰ ĐỘNG (RULE ENGINE)</h2>
+          <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>Thiết lập các ngưỡng cảnh báo màu sắc trên giao diện và tự động hóa kích hoạt các tác vụ bảo trì</div>
         </div>
-        <button className="btn-industrial btn-primary" onClick={() => openAddModal()} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>+ Thêm quy tắc</button>
+        <button className="btn-industrial btn-primary" onClick={() => openAddModal()} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+          + Thêm quy tắc mới
+        </button>
       </div>
 
-      <div className="page-stat-grid">
-        <div className="page-stat-card">
-          <div className="page-stat-label">Tổng</div>
-          <div className="page-stat-value">{loading ? '—' : total}</div>
+      {/* Stats Cards */}
+      <div className="page-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
+          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Tổng quy tắc</div>
+          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4 }}>{loading ? '—' : total}</div>
         </div>
-        <div className="page-stat-card">
-          <div className="page-stat-label">Đang bật</div>
-          <div className="page-stat-value" style={{ color: 'var(--admin-success)' }}>{loading ? '—' : enabled}</div>
+        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
+          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Đang kích hoạt</div>
+          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4, color: 'var(--admin-success)' }}>{loading ? '—' : enabled}</div>
         </div>
-        <div className="page-stat-card">
-          <div className="page-stat-label">Cảnh báo</div>
-          <div className="page-stat-value" style={{ color: 'var(--admin-warning)' }}>{loading ? '—' : totalWarning}</div>
+        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
+          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Ngưỡng Cảnh báo (Vàng)</div>
+          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4, color: 'var(--admin-warning)' }}>{loading ? '—' : totalWarning}</div>
         </div>
-        <div className="page-stat-card">
-          <div className="page-stat-label">Nguy hiểm</div>
-          <div className="page-stat-value" style={{ color: 'var(--admin-danger)' }}>{loading ? '—' : totalAlarm}</div>
+        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
+          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Ngưỡng Nguy hiểm (Đỏ)</div>
+          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4, color: 'var(--admin-danger)' }}>{loading ? '—' : totalAlarm}</div>
         </div>
       </div>
 
+      {/* Main List */}
       <div>
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 50, color: 'var(--admin-text-muted)' }}>Đang tải...</div>
+          <div style={{ textAlign: 'center', padding: 50, color: 'var(--admin-text-muted)' }}>Đang tải dữ liệu quy tắc...</div>
         ) : total === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 50, fontSize: '0.85rem' }}>Chưa có quy tắc nào. Nhấn <b>+ Thêm quy tắc</b> để bắt đầu.</div>
+          <div style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 50, fontSize: '0.85rem', border: '1px dashed var(--admin-border)', borderRadius: 6 }}>
+            Hệ thống chưa có quy tắc nào. Nhấp vào <b>+ Thêm quy tắc mới</b> để bắt đầu thiết lập giám sát.
+          </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {sortedGroups.map(([groupName, groupRules]) => {
-              const displayName = groupName || 'Chưa phân nhóm';
               const enabledCount = groupRules.filter(r => r.enabled).length;
               let groupWarning = 0, groupAlarm = 0;
               for (const r of groupRules) {
@@ -291,29 +367,52 @@ export default function RuleEnginePage() {
                 if (cond.pre_alarm !== null && cond.pre_alarm !== undefined && cond.pre_alarm !== '') groupWarning++;
                 else if (actions.level === 'warning' || actions.level === 'hybrid') groupWarning++;
               }
-              const isExpanded = expandedSets.has(groupName) || groupName === 'Các điểm đo của cam nhiệt';
+              const isExpanded = expandedSets.has(groupName);
 
               return (
-                <div key={groupName} className="admin-card" style={{ marginBottom: 8, borderRadius: 4, overflow: 'hidden', padding: 0, background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)' }}>
-                  <div style={{ padding: '12px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--admin-border)', borderLeft: '4px solid var(--admin-accent)' }} onClick={() => toggleGroup(groupName)}>
+                <div key={groupName} className="admin-card" style={{ borderRadius: 6, overflow: 'hidden', padding: 0, background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)' }}>
+                  {/* Group Header */}
+                  <div 
+                    style={{ padding: '12px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--admin-layer-1)', borderLeft: '4px solid var(--admin-accent)' }} 
+                    onClick={() => toggleGroup(groupName)}
+                  >
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--admin-text)' }}>{displayName}</div>
+                      <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--admin-text)' }}>{groupName}</div>
                       <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 2, fontWeight: 600 }}>
-                        {groupRules.length} quy tắc &nbsp;·&nbsp;
-                        <span style={{ color: 'var(--admin-success)' }}>{enabledCount} đang bật</span> &nbsp;·&nbsp;
-                        <span style={{ color: 'var(--admin-warning)' }}>{groupWarning} cảnh báo</span> &nbsp;·&nbsp;
-                        <span style={{ color: 'var(--admin-danger)' }}>{groupAlarm} nguy hiểm</span>
+                        {groupRules.length} Quy tắc &nbsp;·&nbsp;
+                        <span style={{ color: 'var(--admin-success)' }}>{enabledCount} Hoạt động</span> &nbsp;·&nbsp;
+                        <span style={{ color: 'var(--admin-warning)' }}>{groupWarning} Cảnh báo (Vàng)</span> &nbsp;·&nbsp;
+                        <span style={{ color: 'var(--admin-danger)' }}>{groupAlarm} Nguy hiểm (Đỏ)</span>
                       </div>
                     </div>
-                    <button className="btn-industrial btn-primary" onClick={(e) => { e.stopPropagation(); openAddModal(groupName); }} style={{ fontSize: '0.65rem', padding: '4px 12px', height: 26, fontWeight: 900 }}>+ Thêm quy tắc</button>
-                    <span style={{ opacity: .5, fontSize: '0.6rem', transform: `rotate(${isExpanded ? 0 : -90}deg)`, transition: '0.2s' }}>▼</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <button 
+                        className="btn-industrial btn-primary" 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          // Trích xuất ruleSet nguyên bản từ tên nhóm (bỏ phần tên thiết bị)
+                          const rawSet = groupName.includes(' — ') ? groupName.split(' — ')[1] : groupName;
+                          openAddModal(rawSet); 
+                        }} 
+                        style={{ fontSize: '0.65rem', padding: '4px 12px', height: 26, fontWeight: 800 }}
+                      >
+                        + Thêm quy tắc vào nhóm
+                      </button>
+                      <span style={{ opacity: .7, fontSize: '0.75rem', transform: `rotate(${isExpanded ? 0 : -90}deg)`, transition: '0.2s' }}>▼</span>
+                    </div>
                   </div>
                   
                   {isExpanded && (
                     <div style={{ borderTop: '1px solid var(--admin-border)' }}>
                       <div className="re-grid-header">
-                        <div>Tên quy tắc / Điểm đo</div><div style={{ textAlign: 'center' }}>Mức độ</div><div style={{ textAlign: 'center' }}>Ngưỡng</div><div style={{ textAlign: 'center' }}>Kích hoạt</div><div>Hành động</div>
+                        <div>Tên quy tắc / Điểm đo</div>
+                        <div>Thiết bị / Phân nhóm</div>
+                        <div style={{ textAlign: 'center' }}>Mức độ</div>
+                        <div style={{ textAlign: 'center' }}>Ngưỡng cài đặt</div>
+                        <div style={{ textAlign: 'center' }}>Trạng thái</div>
+                        <div style={{ textAlign: 'right', paddingRight: 20 }}>Thao tác</div>
                       </div>
+                      
                       {groupRules.map(r => {
                         const cond = parseCondition(r.condition);
                         const actions = parseActions(r.actions);
@@ -326,40 +425,89 @@ export default function RuleEnginePage() {
 
                         let badgeHtml, valueHtml, rowClass;
                         if (hasAlarm && hasWarning) {
-                          badgeHtml = <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}><span style={{ padding: '1px 6px', borderRadius: 3, background: 'rgba(239,68,68,.1)', color: 'var(--admin-danger)', fontSize: '0.6rem', fontWeight: 700, textAlign: 'center' }}>Alarm</span><span style={{ padding: '1px 6px', borderRadius: 3, background: 'rgba(245,158,11,.1)', color: 'var(--admin-warning)', fontSize: '0.6rem', fontWeight: 700, textAlign: 'center' }}>️ Warning</span></div>;
-                          valueHtml = <><span style={{ color: 'var(--admin-danger)' }}>{valAlarm}</span> <span style={{ opacity: 0.3, margin: '0 2px' }}>/</span> <span style={{ color: 'var(--admin-warning)' }}>{valWarning}</span></>;
+                          badgeHtml = (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                              <span className="badge-type" style={{ background: 'rgba(239,68,68,.15)', color: 'var(--admin-danger)' }}>Nguy hiểm</span>
+                              <span className="badge-type" style={{ background: 'rgba(245,158,11,.15)', color: 'var(--admin-warning)' }}>Cảnh báo</span>
+                            </div>
+                          );
+                          valueHtml = <><span style={{ color: 'var(--admin-danger)', fontWeight: 800 }}>{valAlarm}</span> <span style={{ opacity: 0.3, margin: '0 2px' }}>/</span> <span style={{ color: 'var(--admin-warning)', fontWeight: 800 }}>{valWarning}</span></>;
                           rowClass = 'row-alarm';
                         } else if (hasAlarm) {
-                          badgeHtml = <span style={{ padding: '2px 6px', borderRadius: 3, background: 'rgba(239,68,68,.1)', color: 'var(--admin-danger)', fontSize: '.65rem', fontWeight: 700 }}>Alarm</span>;
-                          valueHtml = <span style={{ color: 'var(--admin-danger)' }}>{valAlarm}</span>;
+                          badgeHtml = <span className="badge-type" style={{ background: 'rgba(239,68,68,.15)', color: 'var(--admin-danger)' }}>Nguy hiểm</span>;
+                          valueHtml = <span style={{ color: 'var(--admin-danger)', fontWeight: 800 }}>{valAlarm}</span>;
                           rowClass = 'row-alarm';
                         } else {
-                          badgeHtml = <span style={{ padding: '2px 6px', borderRadius: 3, background: 'rgba(245,158,11,.1)', color: 'var(--admin-warning)', fontSize: '.65rem', fontWeight: 700 }}>️ Warning</span>;
-                          valueHtml = <span style={{ color: 'var(--admin-warning)' }}>{valWarning}</span>;
+                          badgeHtml = <span className="badge-type" style={{ background: 'rgba(245,158,11,.15)', color: 'var(--admin-warning)' }}>Cảnh báo</span>;
+                          valueHtml = <span style={{ color: 'var(--admin-warning)', fontWeight: 800 }}>{valWarning}</span>;
                           rowClass = 'row-warning';
                         }
 
+                        // Phân biệt nhãn loại cảm biến
+                        const isCameraPoint = cond.point.startsWith('P') && cond.point.length <= 3;
+                        const typeLabel = isCameraPoint ? 'Camera' : 'Cảm biến';
+
                         return (
                           <div key={r.id} className={`re-grid-row ${rowClass}`}>
+                            {/* Cột 1: Tên */}
                             <div style={{ paddingLeft: 14 }}>
-                              <div style={{ fontSize: '0.85rem', color: 'var(--admin-text)', fontWeight: 600 }}>
-                                {r.name}
-                                {actions.doHealth && <span title={`Trừ ${actions.penalty}đ sức khỏe`} style={{ opacity: .6, cursor: 'help', fontSize: '0.75rem', marginLeft: 4 }}></span>}
-                                {actions.doMaintenance && <span title="Tạo phiếu bảo trì" style={{ opacity: .6, cursor: 'help', fontSize: '0.75rem', marginLeft: 4 }}></span>}
+                              <div style={{ fontSize: '0.85rem', color: 'var(--admin-text)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>{r.name}</span>
+                                {actions.doHealth && <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(14,165,233,0.15)', color: 'var(--admin-accent)', borderRadius: 3, fontWeight: 'normal' }}>Sức khỏe (-{actions.penalty}đ)</span>}
+                                {actions.doMaintenance && <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(34,197,94,0.15)', color: 'var(--admin-success)', borderRadius: 3, fontWeight: 'normal' }}>Bảo trì tự động</span>}
                               </div>
-                              <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 3 }}>{pointLabel} <code>{cond.op || '≥'}</code></div>
+                              <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span>{typeLabel}: {pointLabel}</span>
+                                <code style={{ background: 'var(--admin-layer-2)', padding: '1px 4px', borderRadius: 3, fontSize: '0.65rem' }}>{cond.op || '≥'}</code>
+                              </div>
                             </div>
+                            
+                            {/* Cột 2: Thiết bị */}
+                            <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>
+                              <div style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{r.deviceName || 'Áp dụng chung (Tất cả thiết bị)'}</div>
+                              <div style={{ fontSize: '0.68rem', marginTop: 2 }}>Nhóm: {r.ruleSet || 'Mặc định'}</div>
+                            </div>
+                            
+                            {/* Cột 3: Loại cảnh báo */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{badgeHtml}</div>
-                            <div style={{ fontWeight: 800, fontSize: '0.9rem', textAlign: 'center' }}>{valueHtml}</div>
+                            
+                            {/* Cột 4: Ngưỡng */}
+                            <div style={{ fontSize: '0.85rem', textAlign: 'center', fontFamily: 'Consolas, monospace' }}>{valueHtml}</div>
+                            
+                            {/* Cột 5: Toggle */}
                             <div style={{ display: 'flex', justifyContent: 'center' }}>
                               <label className="toggle-switch">
                                 <input type="checkbox" checked={r.enabled} onChange={() => toggleRule(r.id, r.enabled)} />
                                 <span className="toggle-slider"></span>
                               </label>
                             </div>
-                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', paddingRight: 10 }}>
-                              <button className="btn-industrial btn-sm" onClick={() => openEditModal(r)}></button>
-                              <button className="btn-industrial btn-sm btn-danger" onClick={() => deleteRule(r.id)}></button>
+                            
+                            {/* Cột 6: Buttons */}
+                            <div className="action-btns" style={{ paddingRight: 20 }}>
+                              <button 
+                                className="btn-industrial btn-sm" 
+                                onClick={() => openEditModal(r)}
+                                title="Chỉnh sửa quy tắc"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                              >
+                                Sửa
+                              </button>
+                              <button 
+                                className="btn-industrial btn-sm" 
+                                onClick={() => cloneRule(r)}
+                                title="Sao chép quy tắc sang thiết bị khác"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem', background: 'var(--admin-layer-3)' }}
+                              >
+                                Sao chép
+                              </button>
+                              <button 
+                                className="btn-industrial btn-sm btn-danger" 
+                                onClick={() => deleteRule(r.id)}
+                                title="Xóa quy tắc này"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
+                              >
+                                Xóa
+                              </button>
                             </div>
                           </div>
                         );
@@ -373,115 +521,168 @@ export default function RuleEnginePage() {
         )}
       </div>
 
+      {/* Modal Thêm/Sửa */}
       {isModalOpen && (
-        <div className="modal-overlay active">
-          <div className="modal-content" style={{ width: 550 }}>
-            <div className="modal-header">
-              <h3>{editingId ? 'Sửa quy tắc' : 'Thêm quy tắc'}</h3>
-              <button className="modal-close-btn" onClick={() => setIsModalOpen(false)}></button>
+        <div className="modal-overlay active" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+          <div className="modal-content" style={{ width: 550, background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 8, overflow: 'hidden', boxShadow: 'var(--admin-shadow)', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header" style={{ padding: '14px 20px', borderBottom: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--admin-layer-1)' }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>{editingId ? 'Cập nhật quy tắc giám sát' : 'Thiết lập quy tắc giám sát mới'}</h3>
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--admin-text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
             </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            
+            <div className="modal-body" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '75vh', overflowY: 'auto' }}>
+              
+              {/* Tên Rule */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label>Tên quy tắc <span style={{ color: 'var(--admin-danger)' }}>*</span></label>
-                <input className="form-input" placeholder="VD: Nhiệt độ Pha 1 quá cao" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Tên quy tắc <span style={{ color: 'var(--admin-danger)' }}>*</span></label>
+                <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} placeholder="VD: Quá nhiệt máy biến áp Tủ 471" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                <div className="hint-text">Đặt tên mô tả rõ ràng để khi kích hoạt cảnh báo, người vận hành hiểu ngay sự cố nằm ở đâu.</div>
               </div>
+              
+              {/* Thiết bị áp dụng */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label>Nhóm quy tắc <small style={{ color: 'var(--admin-text-muted)' }}>(theo tủ/thiết bị)</small></label>
-                <input className="form-input" list="ruleSetDatalist" placeholder="VD: Tủ 471 — CBM" value={formData.ruleSet} onChange={e => setFormData({ ...formData, ruleSet: e.target.value })} />
-                <datalist id="ruleSetDatalist">
-                  {[...new Set(rules.map(r => r.ruleSet).filter(Boolean))].map(s => <option key={s as string} value={s as string} />)}
-                </datalist>
-              </div>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label>Điểm đo <span style={{ color: 'var(--admin-danger)' }}>*</span></label>
-                <select className="form-select" value={formData.point} onChange={e => setFormData({ ...formData, point: e.target.value })}>
-                  {pointOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Thiết bị áp dụng <span style={{ color: 'var(--admin-accent)' }}>(Khuyên dùng)</span></label>
+                <select 
+                  className="form-select" 
+                  style={{ width: '100%', boxSizing: 'border-box' }} 
+                  value={formData.deviceId} 
+                  onChange={e => setFormData({ ...formData, deviceId: e.target.value })}
+                >
+                  <option value="">-- Áp dụng chung cho tất cả thiết bị phù hợp --</option>
+                  {devices.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} ({d.type === 'plc_s7' ? 'PLC Siemens' : d.type === 'camera_thermal' ? 'Camera Nhiệt' : d.type === 'camera_dual' ? 'Camera 2 Mắt' : d.type})
+                    </option>
+                  ))}
                 </select>
+                <div className="hint-text">Chọn một thiết bị cụ thể để quy tắc này chỉ áp dụng riêng cho thiết bị đó. Để trống nếu muốn áp dụng cho mọi thiết bị có chung điểm đo.</div>
               </div>
 
-              <div style={{ border: '1px solid var(--admin-border)', padding: 16, borderRadius: 8, background: 'var(--admin-layer-1)' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', fontWeight: 700, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ngưỡng kích hoạt</div>
-                <div className="form-group" style={{ marginBottom: 12 }}>
-                  <label>Phép so sánh</label>
-                  <select className="form-select" value={formData.op} onChange={e => setFormData({ ...formData, op: e.target.value })}>
-                    <option value=">">&gt; Lớn hơn</option><option value="<">&lt; Nhỏ hơn</option>
-                    <option value=">=">&gt;= Lớn hơn hoặc bằng</option><option value="<=">&lt;= Nhỏ hơn hoặc bằng</option>
-                    <option value="==">== Bằng</option>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {/* Điểm đo */}
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Điểm đo cảm biến <span style={{ color: 'var(--admin-danger)' }}>*</span></label>
+                  <select className="form-select" style={{ width: '100%' }} value={formData.point} onChange={e => setFormData({ ...formData, point: e.target.value })}>
+                    {pointOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ color: 'var(--admin-warning)' }}>Cảnh báo (Warning)</label>
-                    <input className="form-input" type="number" placeholder="Trống = Tắt" style={{ borderColor: 'rgba(245,158,11,.2)' }} step="any" value={formData.preAlarm} onChange={e => setFormData({ ...formData, preAlarm: e.target.value })} />
-                  </div>
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ color: 'var(--admin-danger)' }}>Nguy hiểm (Alarm)</label>
-                    <input className="form-input" type="number" placeholder="Trống = Tắt" style={{ borderColor: 'rgba(239,68,68,.2)' }} step="any" value={formData.alarm} onChange={e => setFormData({ ...formData, alarm: e.target.value })} />
-                  </div>
+                
+                {/* Phân nhóm */}
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Phân nhóm quy tắc</label>
+                  <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} list="ruleSetDatalist" placeholder="VD: Cảnh báo nhiệt độ" value={formData.ruleSet} onChange={e => setFormData({ ...formData, ruleSet: e.target.value })} />
+                  <datalist id="ruleSetDatalist">
+                    {[...new Set(rules.map(r => r.ruleSet).filter(Boolean))].map(s => <option key={s as string} value={s as string} />)}
+                  </datalist>
                 </div>
               </div>
 
+              {/* Ngưỡng kích hoạt */}
+              <div style={{ border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6, background: 'var(--admin-layer-1)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--admin-accent)', fontWeight: 800, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ngưỡng và Điều kiện so sánh</div>
+                
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, marginBottom: 4 }}>Phép toán so sánh</label>
+                  <select className="form-select" style={{ width: '100%' }} value={formData.op} onChange={e => setFormData({ ...formData, op: e.target.value })}>
+                    <option value=">=">&gt;= Lớn hơn hoặc bằng (Mặc định cho nhiệt độ)</option>
+                    <option value=">">&gt; Lớn hơn hẳn</option>
+                    <option value="<=">&lt;= Nhỏ hơn hoặc bằng</option>
+                    <option value="<">&lt; Nhỏ hơn hẳn</option>
+                    <option value="==">== Bằng chính xác</option>
+                  </select>
+                </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: 'var(--admin-warning)', marginBottom: 4 }}>Ngưỡng Cảnh báo (Vàng)</label>
+                    <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} type="number" placeholder="Bỏ trống nếu không dùng" step="any" value={formData.preAlarm} onChange={e => setFormData({ ...formData, preAlarm: e.target.value })} />
+                  </div>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: 'var(--admin-danger)', marginBottom: 4 }}>Ngưỡng Nguy hiểm (Đỏ)</label>
+                    <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} type="number" placeholder="Bỏ trống nếu không dùng" step="any" value={formData.alarm} onChange={e => setFormData({ ...formData, alarm: e.target.value })} />
+                  </div>
+                </div>
+                
+                <div className="hint-text" style={{ marginTop: 8 }}>
+                  <b>Hướng dẫn đặt màu sắc:</b> Khi giá trị đo vượt ngưỡng <i>Cảnh báo</i>, thông số trên SLD/Bản đồ nhiệt sẽ đổi sang <b>màu Vàng</b>. Khi vượt ngưỡng <i>Nguy hiểm</i>, thông số sẽ đổi sang <b>màu Đỏ</b> đồng thời kích hoạt camera tự động ghi lại bằng chứng video sự cố.
+                </div>
+              </div>
+
+              {/* Tác động khi vi phạm */}
               <div className="form-group" style={{ margin: 0 }}>
-                <label>Tác động <span style={{ color: 'var(--admin-text-muted)', fontSize: '.75rem' }}>(chọn ít nhất 1)</span></label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                  <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Tác động và Tự động hóa hệ thống</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                  
+                  {/* Cảnh báo Alert */}
+                  <div style={{ padding: '10px 12px', borderRadius: 6, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
                       <input type="checkbox" checked={formData.doAlert} onChange={e => setFormData({ ...formData, doAlert: e.target.checked })} style={{ accentColor: 'var(--admin-warning)', width: 16, height: 16 }} />
                       <div>
-                        <span style={{ fontWeight: 600, fontSize: '.85rem' }}>Tạo cảnh báo</span>
-                        <div style={{ fontSize: '.73rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Tạo cảnh báo và gửi thông báo</div>
+                        <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--admin-text)' }}>Kích hoạt cảnh báo hệ thống</span>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Hiển thị trên bảng cảnh báo thời gian thực và lưu nhật ký sự cố.</div>
                       </div>
                     </label>
                   </div>
                   
-                  <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                  {/* Sức khỏe thiết bị */}
+                  <div style={{ padding: '10px 12px', borderRadius: 6, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
                       <input type="checkbox" checked={formData.doHealth} onChange={e => setFormData({ ...formData, doHealth: e.target.checked })} style={{ accentColor: '#0ea5e9', width: 16, height: 16 }} />
                       <div>
-                        <span style={{ fontWeight: 600, fontSize: '.85rem' }}>Chỉ số sức khỏe</span>
-                        <div style={{ fontSize: '.73rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Giảm sức khỏe thiết bị khi vượt ngưỡng</div>
+                        <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--admin-text)' }}>Ảnh hưởng sức khỏe thiết bị</span>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Trừ điểm sức khỏe tự động của thiết bị này khi có sự cố xảy ra.</div>
                       </div>
                     </label>
                     {formData.doHealth && (
-                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,.07)' }}>
-                        <label style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 6 }}>Điểm trừ (0-100)</label>
-                        <input type="number" className="form-input" value={formData.penalty} onChange={e => setFormData({ ...formData, penalty: Number(e.target.value) })} />
+                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)' }}>Số điểm trừ mỗi lần vi phạm (1-100):</span>
+                        <input type="number" className="form-input" style={{ width: 80, padding: '4px 8px' }} min="1" max="100" value={formData.penalty} onChange={e => setFormData({ ...formData, penalty: Number(e.target.value) })} />
                       </div>
                     )}
                   </div>
 
-                  <div style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                  {/* Bảo trì CMMS */}
+                  <div style={{ padding: '10px 12px', borderRadius: 6, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
                       <input type="checkbox" checked={formData.doMaintenance} onChange={e => setFormData({ ...formData, doMaintenance: e.target.checked })} style={{ accentColor: 'var(--admin-success)', width: 16, height: 16 }} />
                       <div>
-                        <span style={{ fontWeight: 600, fontSize: '.85rem' }}>Kế hoạch bảo trì</span>
-                        <div style={{ fontSize: '.73rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Tự động mở công việc bảo trì</div>
+                        <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--admin-text)' }}>Lập phiếu bảo trì tự động (CMMS)</span>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Tự động tạo một công việc bảo trì khi thiết bị vượt ngưỡng đỏ.</div>
                       </div>
                     </label>
                     {formData.doMaintenance && (
-                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,.07)' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                           <div>
-                            <label style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 6 }}>Loại việc</label>
-                            <select className="form-select" style={{ padding: '6px 10px', fontSize: '.75rem' }} value={formData.maintType} onChange={e => setFormData({ ...formData, maintType: e.target.value })}>
-                              <option value="inspection">Kiểm tra</option><option value="repair">Sửa chữa</option>
-                              <option value="cleaning">Vệ sinh</option><option value="calibration">Hiệu chuẩn</option>
+                            <label style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 4 }}>Loại công việc bảo trì</label>
+                            <select className="form-select" style={{ width: '100%', padding: '4px 8px', fontSize: '0.72rem' }} value={formData.maintType} onChange={e => setFormData({ ...formData, maintType: e.target.value })}>
+                              <option value="inspection">Kiểm tra thiết bị</option>
+                              <option value="repair">Sửa chữa khẩn cấp</option>
+                              <option value="cleaning">Vệ sinh công nghiệp</option>
+                              <option value="calibration">Hiệu chuẩn thông số</option>
                             </select>
                           </div>
                           <div>
-                            <label style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 6 }}>Thời hạn (ngày)</label>
-                            <input type="number" className="form-input" style={{ padding: '6px 10px', fontSize: '.75rem' }} value={formData.maintDays} onChange={e => setFormData({ ...formData, maintDays: Number(e.target.value) })} />
+                            <label style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 4 }}>Thời hạn hoàn thành (ngày)</label>
+                            <input type="number" className="form-input" style={{ width: '100%', padding: '4px 8px', fontSize: '0.72rem', boxSizing: 'border-box' }} min="1" max="365" value={formData.maintDays} onChange={e => setFormData({ ...formData, maintDays: Number(e.target.value) })} />
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
+
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn-industrial" onClick={() => setIsModalOpen(false)}>Hủy</button>
-              <button className="btn-industrial btn-primary" onClick={saveRule}>Lưu quy tắc</button>
+            
+            <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: 8, background: 'var(--admin-layer-1)' }}>
+              <button className="btn-industrial" style={{ padding: '6px 16px', fontSize: '0.75rem' }} onClick={() => setIsModalOpen(false)}>Hủy bỏ</button>
+              <button className="btn-industrial btn-primary" style={{ padding: '6px 16px', fontSize: '0.75rem' }} onClick={saveRule}>Lưu cấu hình</button>
             </div>
           </div>
         </div>

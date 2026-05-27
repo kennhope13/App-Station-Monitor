@@ -55,12 +55,12 @@ export class DeviceService {
 
   /** Phát hiện camera ONVIF trong mạng nội bộ qua WS-Discovery. */
   async discoverOnvif(): Promise<any> {
-    return apiFetch('/protocol/discover-onvif');
+    return apiFetch('/protocols/discover-onvif');
   }
 
   /** Kiểm tra kết nối giao thức (ONVIF, Modbus, ...) trước khi tạo thiết bị. */
   async testProtocolConnection(ip: string, port: number, protocol: string): Promise<{ success: boolean; message: string; latencyMs?: number }> {
-    return apiMutate('POST', '/protocol/test-connection', { ip, port, protocol });
+    return apiMutate('POST', '/protocols/test-connection', { ip, port, protocol });
   }
 
   /** Phát hiện và lấy thông tin camera Hikvision theo IP. */

@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using StationOS.Data;
 using StationOS.Data.Entities;
@@ -40,6 +41,7 @@ public class AuthController : ControllerBase
     /// Lỗi 401: sai thông tin hoặc tài khoản bị khóa
     /// </summary>
     [HttpPost("login")]
+    [EnableRateLimiting("login")]  // 5 attempts/min/IP — chống brute force
     public async Task<IActionResult> Login([FromBody] LoginRequest req)
     {
         var result = await _auth.LoginAsync(req.Username, req.Password);
@@ -63,6 +65,7 @@ public class AuthController : ControllerBase
             token,
             refreshToken,
             licenseReason = reason, // "no_license" | "expired" | ""
+            mustChangePassword = user.MustChangePassword, // FE chuyển sang trang đổi password
             user = new
             {
                 id = user.Id,
@@ -72,6 +75,23 @@ public class AuthController : ControllerBase
                 email = user.Email
             }
         });
+    }
+
+    /// <summary>
+    /// Đổi password user hiện tại.
+    /// Body: { oldPassword, newPassword }
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] SelfChangePasswordRequest req)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var (ok, error) = await _auth.ChangePasswordAsync(userId, req.OldPassword, req.NewPassword);
+        if (!ok) return BadRequest(new { message = error });
+        return Ok(new { message = "Đổi mật khẩu thành công" });
     }
 
     /// <summary>
@@ -181,3 +201,4 @@ public class AuthController : ControllerBase
 // ── Request Models ────────────────────────────────────────
 public record LoginRequest(string Username, string Password);
 public record RefreshRequest(string RefreshToken);
+public record SelfChangePasswordRequest(string OldPassword, string NewPassword);

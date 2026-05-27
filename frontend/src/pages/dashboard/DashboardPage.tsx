@@ -78,11 +78,12 @@ export default function DashboardPage() {
     [sensors]
   );
 
-  const liveCameraSrc = useMemo(
-    () => devices.find(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)) && (d as any).config?.go2rtc_id)
-                 ?.config?.go2rtc_id as string | undefined,
-    [devices]
-  );
+  const liveCameraSrc = useMemo(() => {
+    const cam = devices.find(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)));
+    if (!cam) return undefined;
+    const cfg = (cam as any).config || {};
+    return (cfg.go2rtc_optical || cfg.go2rtc_id || cfg.go2rtc_thermal) as string | undefined;
+  }, [devices]);
 
   // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
