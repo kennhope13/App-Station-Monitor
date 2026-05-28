@@ -95,10 +95,10 @@ export default function ThermalAnalyticsTab() {
       <div style={{ display: 'flex', gap: 16, flexShrink: 0 }}>
         <div style={{ flex: 1, background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace' }}>CAMERA ĐANG CHỌN</div>
+            <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'var(--font-mono)' }}>CAMERA ĐANG CHỌN</div>
             <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-text)', marginTop: 4 }}>Cam Nhiệt Tủ Hạ Thế (TC-01)</div>
           </div>
-          <button style={{ background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', padding: '6px 12px', borderRadius: 4, fontSize: '.7rem', cursor: 'pointer', fontFamily: 'Consolas,monospace' }}>
+          <button style={{ background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', padding: '6px 12px', borderRadius: 4, fontSize: '.7rem', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
             ĐỔI CAMERA ▾
           </button>
         </div>
@@ -108,8 +108,8 @@ export default function ThermalAnalyticsTab() {
         
         {/* ROI Leaderboard */}
         <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace', background: 'var(--admin-layer-1)' }}>
-            ĐIỂM NHIỆT (ROI)
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'var(--font-mono)', background: 'var(--admin-layer-1)' }}>
+            ĐIỂM NHIỆT
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 8 }}>
             {MOCK_THERMAL_ROIS.map(roi => {
@@ -132,9 +132,9 @@ export default function ThermalAnalyticsTab() {
                 >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <div style={{ fontSize: '.75rem', fontWeight: 700, color: 'var(--admin-text)' }}>{roi.label}</div>
-                    <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontFamily: 'Consolas,monospace' }}>{roi.id}</div>
+                    <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)' }}>{roi.id}</div>
                   </div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace' }}>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color, fontFamily: 'var(--font-mono)' }}>
                     {roi.currentTmax.toFixed(1)}°C
                   </div>
                 </div>
@@ -145,7 +145,7 @@ export default function ThermalAnalyticsTab() {
 
         {/* Time Trend Chart */}
         <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: 16, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace', marginBottom: 16 }}>
+          <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>
             XU HƯỚNG NHIỆT ĐỘ TMAX 24H QUA
           </div>
           <div style={{ flex: 1 }}>

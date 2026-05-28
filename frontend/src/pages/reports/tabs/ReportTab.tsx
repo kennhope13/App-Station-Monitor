@@ -160,7 +160,7 @@ export default function ReportTab({ stationId }: { stationId: string }) {
     const sortedCabs = [...CABINETS].sort((a, b) => a.urgencyOrder - b.urgencyOrder);
 
     return `
-      <div id="rp-html-preview" style="background:#fff;color:#111;padding:28px;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;max-width:900px;margin:0 auto;box-shadow:0 0 0 1px rgba(0,0,0,0.1);">
+      <div id="rp-html-preview" style="background:#fff;color:#111;padding:28px;font-family:var(--font-body);font-size:13px;max-width:900px;margin:0 auto;box-shadow:0 0 0 1px rgba(0,0,0,0.1);">
 
         <!-- HEADER -->
         <div style="border-bottom:3px solid #1a56db;padding-bottom:14px;margin-bottom:20px;">
@@ -350,7 +350,7 @@ export default function ReportTab({ stationId }: { stationId: string }) {
       html = html.replace('<canvas id="rp-inline-chart"></canvas>', `<img src="${img}" style="width:100%;height:100%;object-fit:contain;" />`);
     }
 
-    win.document.write(`<!DOCTYPE html><html><head><title>Báo cáo Station Monitor</title><style>body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; } @media print { body { margin: 0; } }</style></head><body>${html}</body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><title>Báo cáo Station Monitor</title><style>body { margin: 0; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; } @media print { body { margin: 0; } }</style></head><body>${html}</body></html>`);
     win.document.close();
     setTimeout(() => win.print(), 400);
   };

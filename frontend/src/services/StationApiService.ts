@@ -13,12 +13,13 @@ import { analyticsService } from './api/AnalyticsService';
 import { systemService } from './api/SystemService';
 import { ruleService } from './api/RuleService';
 import { logService } from './api/LogService';
+import { boundaryService } from './api/BoundaryService';
 
 import type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
   AlertHistoryEntry, AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry, UserItem,
   SldPoint, SldUnpinnedDevice, SldData, ReportItem, MaintenanceTask, MaintenanceSuggestion,
-  SmtpConfig, HealthScore, TrendItem, SyncStatus
+  SmtpConfig, HealthScore, TrendItem, SyncStatus, Boundary
 } from '@/types/api.types';
 
 // Re-export tất cả types để component không cần import từ 2 nơi
@@ -26,7 +27,7 @@ export type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
   AlertHistoryEntry, AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry, UserItem,
   SldPoint, SldUnpinnedDevice, SldData, ReportItem, MaintenanceTask, MaintenanceSuggestion,
-  SmtpConfig, HealthScore, TrendItem, SyncStatus
+  SmtpConfig, HealthScore, TrendItem, SyncStatus, Boundary
 };
 
 class StationApiService {
@@ -54,6 +55,14 @@ class StationApiService {
   deleteRoiPoint = deviceService.deleteRoiPoint.bind(deviceService);
   getThermalReadings = deviceService.getThermalReadings.bind(deviceService);
   getCameraSnapshot = deviceService.getCameraSnapshot.bind(deviceService);
+  getThermalMapping = deviceService.getThermalMapping.bind(deviceService);
+
+  // ── Boundaries ───────────────────────────────────────────
+  getBoundaries = boundaryService.getBoundaries.bind(boundaryService);
+  getBoundary = boundaryService.getBoundary.bind(boundaryService);
+  createBoundary = boundaryService.createBoundary.bind(boundaryService);
+  updateBoundary = boundaryService.updateBoundary.bind(boundaryService);
+  deleteBoundary = boundaryService.deleteBoundary.bind(boundaryService);
 
   /** Lấy danh sách camera từ trạm đầu tiên (fallback cho UI khi chưa chọn trạm). */
   async getCamerasFromFirstStation(): Promise<CameraDevice[]> {

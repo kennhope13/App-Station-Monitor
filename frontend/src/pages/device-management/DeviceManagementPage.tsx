@@ -4,17 +4,18 @@
 // Tính năng: Thêm/sửa/xóa, kiểm tra kết nối, dò tìm mạng (scan)
 // ============================================================
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { stationApi, Device, CameraDevice, RoiPoint } from '@/services/StationApiService';
+import { useState, useEffect } from 'react';
+import { Edit2, LayoutList, Trash2, Thermometer } from 'lucide-react';
+import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
+import ThermalConfigTab from './ThermalConfigTab';
+import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
 // Nhãn hiển thị theo loại thiết bị — import từ constants để dùng chung
 const TYPE_LABELS = DEVICE_TYPE_LABELS;
 
 export default function DeviceManagementPage() {
-  const navigate = useNavigate();
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,101 +42,9 @@ export default function DeviceManagementPage() {
     enableHealthScore: false
   });
 
-  // ROI Editor state
-  const [roiTab, setRoiTab] = useState(0); // page tabs: 0=all, 1=camera, 2=roi
-  const [roiSelectedCamera, setRoiSelectedCamera] = useState<CameraDevice | null>(null);
-  const [roiPoints, setRoiPoints] = useState<RoiPoint[]>([]);
-  const [roiLoading, setRoiLoading] = useState(false);
-  const [roiSaving, setRoiSaving] = useState(false);
-  const [roiEditingPoint, setRoiEditingPoint] = useState<RoiPoint | null>(null);
-  const [roiDraftLabel, setRoiDraftLabel] = useState('');
-  const [roiDraftAlarm, setRoiDraftAlarm] = useState('');
-  const [roiDraftWarn, setRoiDraftWarn] = useState('');
-  const [roiDraftPointId, setRoiDraftPointId] = useState('');
-  const roiImageRef = useRef<HTMLDivElement>(null);
-  const [roiDraftPos, setRoiDraftPos] = useState<{ x: number; y: number } | null>(null);
 
-  const thermalCameras = (devices as CameraDevice[]).filter(d =>
-    d.type === 'camera_thermal' || d.type === 'camera_dual'
-  );
-
-  const loadRoiPoints = useCallback(async (cam: CameraDevice) => {
-    setRoiLoading(true);
-    try {
-      // Try API first; fall back to embedded roiPoints if API returns 404
-      const pts = cam.roiPoints ?? await stationApi.getRoiPoints(cam.id).catch(() => []);
-      setRoiPoints(pts);
-    } finally {
-      setRoiLoading(false);
-    }
-  }, []);
-
-  const selectRoiCamera = (cam: CameraDevice) => {
-    setRoiSelectedCamera(cam);
-    setRoiEditingPoint(null);
-    setRoiDraftPos(null);
-    loadRoiPoints(cam);
-  };
-
-  const handleRoiImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!roiSelectedCamera || roiEditingPoint) return;
-    const rect = roiImageRef.current!.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-    setRoiDraftPos({ x, y });
-    setRoiDraftLabel('');
-    setRoiDraftAlarm('80');
-    setRoiDraftWarn('60');
-    setRoiDraftPointId('');
-    setRoiEditingPoint({ id: '__new__', label: '', x, y });
-  };
-
-  const saveRoiPoint = async () => {
-    if (!roiSelectedCamera || !roiEditingPoint || !roiDraftLabel.trim()) return;
-    setRoiSaving(true);
-    try {
-      const payload: Omit<RoiPoint, 'id'> = {
-        label: roiDraftLabel.trim(),
-        x: roiEditingPoint.x,
-        y: roiEditingPoint.y,
-        pointId: roiDraftPointId.trim() || undefined,
-        alarmThreshold: roiDraftAlarm ? Number(roiDraftAlarm) : undefined,
-        warningThreshold: roiDraftWarn ? Number(roiDraftWarn) : undefined,
-        sortOrder: roiPoints.length,
-      };
-      if (roiEditingPoint.id === '__new__') {
-        const created = await stationApi.createRoiPoint(roiSelectedCamera.id, payload).catch(() => ({
-          ...payload, id: `local_${Date.now()}`
-        } as RoiPoint));
-        setRoiPoints(prev => [...prev, created]);
-      } else {
-        const updated = await stationApi.updateRoiPoint(roiSelectedCamera.id, roiEditingPoint.id, payload).catch(() => ({
-          ...roiEditingPoint, ...payload
-        } as RoiPoint));
-        setRoiPoints(prev => prev.map(p => p.id === roiEditingPoint.id ? updated : p));
-      }
-      setRoiEditingPoint(null);
-      setRoiDraftPos(null);
-    } finally {
-      setRoiSaving(false);
-    }
-  };
-
-  const deleteRoiPoint = async (pt: RoiPoint) => {
-    if (!roiSelectedCamera) return;
-    if (!await confirmDialog({ title: 'Xóa điểm đo', message: `Xóa điểm "${pt.label}"?`, danger: true })) return;
-    await stationApi.deleteRoiPoint(roiSelectedCamera.id, pt.id).catch(() => {});
-    setRoiPoints(prev => prev.filter(p => p.id !== pt.id));
-  };
-
-  const editRoiPoint = (pt: RoiPoint) => {
-    setRoiEditingPoint(pt);
-    setRoiDraftLabel(pt.label);
-    setRoiDraftAlarm(String(pt.alarmThreshold ?? 80));
-    setRoiDraftWarn(String(pt.warningThreshold ?? 60));
-    setRoiDraftPointId(pt.pointId ?? '');
-    setRoiDraftPos({ x: pt.x, y: pt.y });
-  };
+  const [roiTab, setRoiTab] = useState(0); // page tabs: 0=all, 1=camera, 2=roi (thermal config)
+  const [selectedRoiDevice, setSelectedRoiDevice] = useState<CameraDevice | null>(null);
 
   // Trạng thái modal dò tìm thiết bị trên mạng
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
@@ -352,51 +261,55 @@ export default function DeviceManagementPage() {
 
   const online = devices.filter(d => d.status === 'online').length;
 
-  // Temp color helper for ROI
-  const roiColor = (pt: RoiPoint, temp?: number) => {
-    if (temp === undefined) return 'var(--admin-accent)';
-    if (pt.alarmThreshold && temp >= pt.alarmThreshold) return 'var(--admin-danger)';
-    if (pt.warningThreshold && temp >= pt.warningThreshold) return 'var(--admin-warning)';
-    return 'var(--admin-success)';
-  };
+  const PAGE_TABS = ['Tất cả thiết bị', 'Camera & Stream'];
 
-  const PAGE_TABS = ['Tất cả thiết bị', 'Camera & Stream', 'Điểm chấm ROI'];
 
   return (
     <div className="admin-page-container">
       {/* TOOLBAR */}
-      <div className="page-toolbar-row">
+      <div className="page-toolbar-row" style={{ display: 'flex', flexWrap: 'wrap', rowGap: 8 }}>
         <div className="page-title-cell">
           <h2>QUẢN LÝ THIẾT BỊ</h2>
         </div>
-        <div className="page-toolbar-group">
-          {/* Page tabs */}
-          <div className="page-toolbar-cell" style={{ gap: 0, padding: 0, overflow: 'hidden' }}>
+        <div className="page-toolbar-group" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Page tabs - Standard Unified Buttons Pattern */}
+          <div style={{ display: 'flex', gap: '4px' }}>
             {PAGE_TABS.map((t, i) => (
               <button
                 key={i}
                 onClick={() => setRoiTab(i)}
-                style={{
-                  height: 34, padding: '0 14px', border: 'none', cursor: 'pointer',
-                  fontSize: '.72rem', fontWeight: 700, letterSpacing: '.4px',
-                  background: roiTab === i ? 'var(--admin-accent)' : 'transparent',
-                  color: roiTab === i ? '#fff' : 'var(--admin-text-muted)',
-                  borderRight: i < PAGE_TABS.length - 1 ? '1px solid var(--admin-border)' : 'none',
-                  transition: '.15s',
+                className={`btn-industrial${roiTab === i ? ' btn-primary' : ''}`}
+                style={{ 
+                  height: 34, 
+                  padding: '0 16px', 
+                  fontSize: '.75rem', 
+                  fontWeight: 700, 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '.5px' 
                 }}
-              >{t}</button>
+              >
+                {t}
+              </button>
             ))}
           </div>
+
+          {/* Status Indicators */}
           <div className="page-toolbar-cell">
             <span style={{ color: 'var(--admin-success)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>🟢 {online} ONLINE</span>
             <span style={{ color: 'var(--admin-text-muted)', opacity: 0.3, fontSize: '.7rem' }}>|</span>
             <span style={{ color: 'var(--admin-danger)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>{devices.length - online} OFFLINE</span>
           </div>
-          {roiTab === 0 && <>
-            <button className="btn-industrial btn-primary" onClick={() => openDeviceModal()}>+ Thêm thiết bị</button>
-            <button className="btn-industrial" onClick={() => setIsScanModalOpen(true)}>Quét LAN</button>
-          </>}
-          {roiTab === 1 && <button className="btn-industrial btn-primary" onClick={() => { setFormData(f => ({ ...f, type: 'camera_thermal' })); openDeviceModal(); }}>+ Thêm camera</button>}
+
+          {/* Action Buttons */}
+          {roiTab === 0 && (
+            <>
+              <button className="btn-industrial btn-primary" onClick={() => openDeviceModal()}>+ Thêm thiết bị</button>
+              <button className="btn-industrial" onClick={() => setIsScanModalOpen(true)}>Quét LAN</button>
+            </>
+          )}
+          {roiTab === 1 && (
+            <button className="btn-industrial btn-primary" onClick={() => { setFormData(f => ({ ...f, type: 'camera_thermal' })); openDeviceModal(); }}>+ Thêm camera</button>
+          )}
         </div>
       </div>
 
@@ -433,19 +346,19 @@ export default function DeviceManagementPage() {
                     </td>
                     <td>
                       <span className="status-dot" style={{ background: d.status === 'online' ? 'var(--admin-success)' : 'var(--admin-danger)' }}></span>
-                      {d.status === 'online' ? ' 🟢 Online' : ' Offline'}
+                      {d.status === 'online' ? ' Online' : ' Offline'}
                     </td>
                     <td style={{ fontSize: '.8rem', opacity: .7 }}>{new Date(d.createdAt).toLocaleDateString('vi-VN')}</td>
-                    <td style={{ display: 'flex', gap: 4 }}>
-                      <button className="btn-industrial btn-sm" onClick={() => handleTestDevice(d.id)} title="Kiểm tra kết nối">Kiểm tra</button>
-                      <button className="btn-industrial btn-sm" onClick={() => openDeviceModal(d)} title="Sửa">Sửa</button>
-                      {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                        <button className="btn-industrial btn-sm"
-                          style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                          onClick={() => { selectRoiCamera(d as CameraDevice); setRoiTab(2); }}
-                          title="Cấu hình điểm chấm ROI">ROI</button>
-                      )}
-                      <button className="btn-industrial btn-sm btn-danger" onClick={() => handleDelete(d)} title="Xóa">Xóa</button>
+
+                    <td style={{ textAlign: 'center' }}>
+                      <ActionDropdown>
+                        <ActionDropdownItem icon={<Edit2 size={14} />} label="Sửa thiết bị" onClick={() => openDeviceModal(d)} />
+                        <ActionDropdownItem icon={<LayoutList size={14} />} label="Kiểm tra kết nối" onClick={() => handleTestDevice(d.id)} />
+                        {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
+                          <ActionDropdownItem icon={<Thermometer size={14} />} label="Cấu hình nhiệt" onClick={() => { setSelectedRoiDevice(d as CameraDevice); }} />
+                        )}
+                        <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa thiết bị" danger onClick={() => handleDelete(d)} />
+                      </ActionDropdown>
                     </td>
                   </tr>
                 ))
@@ -514,7 +427,7 @@ export default function DeviceManagementPage() {
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
                           <button className="btn-industrial btn-sm"
                             style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                            onClick={() => navigate(`/device-management/${d.id}/thermal-config`)}>⊕ ROI</button>
+                            onClick={() => { setSelectedRoiDevice(d as CameraDevice); setRoiTab(2); }}>⊕ Nhiệt</button>
                         )}
                       </td>
                     </tr>
@@ -526,187 +439,7 @@ export default function DeviceManagementPage() {
         </div>
       )}
 
-      {/* ═══ TAB 2: ROI EDITOR ═══ */}
-      {roiTab === 2 && (
-        <div style={{ display: 'flex', flex: 1, gap: 8, overflow: 'hidden', minHeight: 0 }}>
-          {/* Left: camera selector */}
-          <div className="admin-card" style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--admin-border)', fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px' }}>
-              Camera nhiệt ({thermalCameras.length})
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {thermalCameras.length === 0 ? (
-                <div style={{ padding: 16, fontSize: '.78rem', color: 'var(--admin-text-muted)', textAlign: 'center' }}>
-                  Chưa có camera nhiệt.<br/>Thêm ở tab Camera & Stream.
-                </div>
-              ) : thermalCameras.map(cam => (
-                <div key={cam.id}
-                  onClick={() => selectRoiCamera(cam)}
-                  style={{
-                    padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid var(--admin-border)',
-                    background: roiSelectedCamera?.id === cam.id ? 'rgba(59,130,246,.08)' : 'transparent',
-                    borderLeft: roiSelectedCamera?.id === cam.id ? '3px solid var(--admin-accent)' : '3px solid transparent',
-                    transition: '.12s',
-                  }}>
-                  <div style={{ fontWeight: 700, fontSize: '.8rem', color: 'var(--admin-text)' }}>{cam.name}</div>
-                  <div style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)', marginTop: 2 }}>{cam.config?.ip}</div>
-                  <div style={{ fontSize: '.65rem', marginTop: 3,
-                    color: roiSelectedCamera?.id === cam.id ? 'var(--admin-accent)' : 'var(--admin-text-muted)' }}>
-                    {roiSelectedCamera?.id === cam.id
-                      ? `${roiPoints.length} điểm đo`
-                      : cam.type === 'camera_dual' ? '⚡ DUAL' : '🌡 NHIỆT'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Center: image canvas with SVG overlay */}
-          <div className="admin-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--admin-border)', fontSize: '.65rem', fontWeight: 700, color: 'var(--admin-text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}>
-              {roiSelectedCamera
-                ? <><span style={{ color: 'var(--admin-text)' }}>{roiSelectedCamera.name}</span> — Click lên ảnh để chấm điểm đo mới</>
-                : 'Chọn camera bên trái để bắt đầu'}
-              {roiLoading && <span style={{ marginLeft: 'auto', color: 'var(--admin-text-muted)', fontSize: '.65rem' }}>⏳ Đang tải...</span>}
-            </div>
-            <div
-              ref={roiImageRef}
-              onClick={handleRoiImageClick}
-              style={{
-                flex: 1, position: 'relative', overflow: 'hidden',
-                cursor: roiSelectedCamera && !roiEditingPoint ? 'crosshair' : 'default',
-                background: 'repeating-linear-gradient(45deg, var(--admin-layer-1) 0px, var(--admin-layer-1) 10px, var(--admin-layer-2) 10px, var(--admin-layer-2) 20px)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              {!roiSelectedCamera && (
-                <div style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.82rem' }}>
-                  <div style={{ fontSize: '3rem', opacity: .12, marginBottom: 8 }}>🌡</div>
-                  Chọn camera bên trái để cấu hình điểm chấm nhiệt
-                </div>
-              )}
-              {roiSelectedCamera && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'var(--admin-text-muted)', fontSize: '.75rem', opacity: .3, userSelect: 'none', pointerEvents: 'none' }}>
-                  {/* TODO: thay bằng <img> snapshot thật khi backend hỗ trợ /devices/{id}/snapshot */}
-                  📷 Frame Camera — {roiSelectedCamera.name}
-                </div>
-              )}
-
-              {/* SVG overlay — ROI points */}
-              {roiSelectedCamera && (
-                <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
-                  {roiPoints.map((pt) => (
-                    <g key={pt.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); editRoiPoint(pt); }}>
-                      <circle cx={`${pt.x}%`} cy={`${pt.y}%`} r={8}
-                        fill={roiColor(pt)} opacity={0.85}
-                        stroke="white" strokeWidth={1.5} />
-                      <text x={`${pt.x}%`} y={`${pt.y}%`} dy={-14} textAnchor="middle"
-                        fontSize={10} fill="var(--admin-text)"
-                        style={{ fontFamily: 'Consolas, monospace', paintOrder: 'stroke', stroke: 'var(--admin-bg)', strokeWidth: 3 }}>
-                        {pt.label}
-                      </text>
-                    </g>
-                  ))}
-                  {/* Draft point (new, not yet saved) */}
-                  {roiDraftPos && roiEditingPoint?.id === '__new__' && (
-                    <circle cx={`${roiDraftPos.x}%`} cy={`${roiDraftPos.y}%`} r={8}
-                      fill="var(--admin-accent)" opacity={.6}
-                      stroke="white" strokeWidth={1.5} strokeDasharray="3 2" />
-                  )}
-                </svg>
-              )}
-            </div>
-          </div>
-
-          {/* Right: point config + list */}
-          <div className="admin-card" style={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-            {/* Edit form (appears when placing/editing a point) */}
-            {roiEditingPoint && (
-              <div style={{ padding: 14, borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: '.65rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--admin-accent)', letterSpacing: '.8px' }}>
-                  {roiEditingPoint.id === '__new__' ? '⊕ Điểm mới' : '✎ Chỉnh sửa điểm'}
-                  <span style={{ float: 'right', color: 'var(--admin-text-muted)', fontWeight: 400 }}>({roiEditingPoint.x}%, {roiEditingPoint.y}%)</span>
-                </div>
-                <div>
-                  <label style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>Nhãn *</label>
-                  <input className="form-input" style={{ marginTop: 4 }} placeholder="VD: Đầu cáp Pha A"
-                    value={roiDraftLabel} onChange={e => setRoiDraftLabel(e.target.value)} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div>
-                    <label style={{ fontSize: '.7rem', color: 'var(--admin-warning)', fontWeight: 600 }}>Ngưỡng vàng (°C)</label>
-                    <input className="form-input" style={{ marginTop: 4 }} type="number" placeholder="60"
-                      value={roiDraftWarn} onChange={e => setRoiDraftWarn(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '.7rem', color: 'var(--admin-danger)', fontWeight: 600 }}>Ngưỡng đỏ (°C)</label>
-                    <input className="form-input" style={{ marginTop: 4 }} type="number" placeholder="80"
-                      value={roiDraftAlarm} onChange={e => setRoiDraftAlarm(e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <label style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>
-                    Sensor Point ID <small style={{ opacity: .6 }}>(tùy chọn)</small>
-                  </label>
-                  <input className="form-input" style={{ marginTop: 4 }} placeholder="VD: tu471_nhiet_t1"
-                    value={roiDraftPointId} onChange={e => setRoiDraftPointId(e.target.value)} />
-                  <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', marginTop: 4, opacity: .7 }}>
-                    Gắn với sensor để hiển thị nhiệt độ thực
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn-industrial" style={{ flex: 1 }}
-                    onClick={() => { setRoiEditingPoint(null); setRoiDraftPos(null); }}>Hủy</button>
-                  <button className="btn-industrial btn-primary" style={{ flex: 1 }}
-                    onClick={saveRoiPoint} disabled={roiSaving || !roiDraftLabel.trim()}>
-                    {roiSaving ? '⏳' : 'Lưu điểm'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Point list */}
-            <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--admin-border)', fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px' }}>
-              Danh sách điểm ({roiPoints.length})
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              {!roiSelectedCamera ? (
-                <div style={{ padding: 16, fontSize: '.78rem', color: 'var(--admin-text-muted)', textAlign: 'center' }}>Chọn camera trước</div>
-              ) : roiLoading ? (
-                <div style={{ padding: 16, textAlign: 'center', color: 'var(--admin-text-muted)' }}>⏳</div>
-              ) : roiPoints.length === 0 ? (
-                <div style={{ padding: 16, fontSize: '.78rem', color: 'var(--admin-text-muted)', textAlign: 'center' }}>
-                  Chưa có điểm nào.<br/>Click lên ảnh để thêm.
-                </div>
-              ) : roiPoints.map((pt, idx) => (
-                <div key={pt.id} style={{
-                  padding: '10px 14px', borderBottom: '1px solid var(--admin-border)',
-                  background: roiEditingPoint?.id === pt.id ? 'rgba(59,130,246,.06)' : 'transparent',
-                  display: 'flex', alignItems: 'center', gap: 8
-                }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: roiColor(pt), flexShrink: 0, border: '1.5px solid rgba(255,255,255,.3)' }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: '.8rem', color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {idx + 1}. {pt.label}
-                    </div>
-                    <div style={{ fontSize: '.67rem', color: 'var(--admin-text-muted)', marginTop: 2 }}>
-                      {pt.warningThreshold && <span style={{ color: 'var(--admin-warning)' }}>⚠{pt.warningThreshold}°</span>}
-                      {pt.warningThreshold && pt.alarmThreshold && ' / '}
-                      {pt.alarmThreshold && <span style={{ color: 'var(--admin-danger)' }}>🔴{pt.alarmThreshold}°</span>}
-                      {pt.pointId && <span style={{ color: 'var(--admin-accent)', marginLeft: 4 }}>· {pt.pointId}</span>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 3, flexShrink: 0 }}>
-                    <button className="btn-industrial btn-sm" onClick={() => editRoiPoint(pt)} title="Sửa">✎</button>
-                    <button className="btn-industrial btn-sm btn-danger" onClick={() => deleteRoiPoint(pt)} title="Xóa">✕</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* DEVICE MODAL */}
       {isDeviceModalOpen && (
@@ -1019,6 +752,24 @@ export default function DeviceManagementPage() {
               >{isAutoConfiguring ? '⏳ Đang xử lý...' : 'Tự động cấu hình'}</button>
             </div>
           </div>
+        </div>
+      )}
+      {/* ╔═══ ROI CONFIGURATION MODAL OVERLAY ═══╗ */}
+      {selectedRoiDevice && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--admin-overlay)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+        }}>
+          <ThermalConfigTab
+            device={selectedRoiDevice}
+            onBack={() => setSelectedRoiDevice(null)}
+          />
         </div>
       )}
     </div>

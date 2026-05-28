@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True)
 
     # Backend StationOS API
-    backend_url: str = "http://localhost:5056"
+    backend_url: str = "http://localhost:5000"
     backend_token: str = ""           # JWT token (có thể để trống nếu webhook AllowAnonymous)
 
     # go2rtc

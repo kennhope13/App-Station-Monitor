@@ -67,9 +67,19 @@ public class CameraWebhookController : ControllerBase
                     if (v.TrimStart().StartsWith('<')) { xml = v; break; }
                 }
 
-            // Đón 2 ảnh từ OpenCV (Ảnh bự và Ảnh hạt tiêu Thumbnail)
-            var hdFile = Request.Form.Files.FirstOrDefault(f => f.Name == "image_hd" || f.FileName.EndsWith(".jpg") || f.FileName.EndsWith(".jpeg"));
-            var thumbFile = Request.Form.Files.FirstOrDefault(f => f.Name == "image_thumb");
+            // Đón ảnh từ Camera (Hỗ trợ nhiều field name khác nhau của Hikvision/OpenCV)
+            var hdFile = Request.Form.Files.FirstOrDefault(f => 
+                f.Name is "image_hd" or "snap" or "snapshot" or "pic" or "picture" or "img" || 
+                f.FileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || 
+                f.FileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase));
+            
+            // Nếu vẫn không tìm thấy theo tên, lấy file đầu tiên là ảnh
+            if (hdFile == null)
+            {
+                hdFile = Request.Form.Files.FirstOrDefault(f => f.ContentType.StartsWith("image/"));
+            }
+
+            var thumbFile = Request.Form.Files.FirstOrDefault(f => f.Name is "image_thumb" or "thumb" or "thumbnail");
             
             if (hdFile != null && hdFile.Length > 0)
             {

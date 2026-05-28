@@ -6,7 +6,8 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Calendar } from 'lucide-react';
+import { AlertTriangle, Check, XCircle, Camera, Image as ImageIcon } from 'lucide-react';
+import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 import { useSearchParams } from 'react-router-dom';
 import { stationApi, AlertItem, AlertHistoryEntry } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore } from '@/store';
@@ -14,7 +15,32 @@ import { ALERT_STATUS, ALERT_LEVEL, alertStatusLabel, alertLevelLabel } from '@/
 import { createRealtimeHub } from '@/services/realtime.service';
 import { fmtDateTime } from '@/utils/format';
 import { confirmDialog } from '@/utils/confirm';
+import { API_BASE_URL } from '@/utils/env';
 import './AlertsHistoryPage.css';
+
+/** Helper gắn domain cho ảnh/video nếu nó là path tương đối. Hỗ trợ fallback từ metadata và PascalCase. */
+const resolveUrl = (a: any, type: 'thumb' | 'full' = 'full') => {
+  if (!a) return '';
+  
+  // Parse metadata nếu nó là string
+  let meta = a.metadata || a.Metadata;
+  if (typeof meta === 'string' && meta.startsWith('{')) {
+    try { meta = JSON.parse(meta); } catch { meta = {}; }
+  } else if (!meta) {
+    meta = {};
+  }
+
+  let path = '';
+  if (type === 'thumb') {
+    path = a.thumbnailUrl || a.ThumbnailUrl || a.imageUrl || a.ImageUrl || meta.thumbnailUrl || meta.ThumbnailUrl || meta.snapshotUrl || meta.SnapshotUrl || '';
+  } else {
+    path = a.imageUrl || a.ImageUrl || meta.snapshotUrl || meta.SnapshotUrl || a.videoUrl || a.VideoUrl || meta.videoUrl || meta.VideoUrl || '';
+  }
+  
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) return path;
+  return `${API_BASE_URL}${path}`;
+};
 
 type SortCol = 'time' | 'level';
 type SortDir = 'asc' | 'desc';
@@ -40,15 +66,13 @@ export default function AlertsHistoryPage() {
   // Devices từ store (chia sẻ với Dashboard, Maintenance...)
   const fetchStations = useStationStore(s => s.fetch);
   const fetchDevices = useDeviceStore(s => s.fetch);
-  const allDevicesByStation = useDeviceStore(s => s.devicesByStation);
-  const devices = useMemo(() => Object.values(allDevicesByStation).flat(), [allDevicesByStation]);
   const ackAlertInStore = useAlertStore(s => s.ack);
   const closeAlertInStore = useAlertStore(s => s.close);
-  const [filterDevice, setFilterDevice] = useState('');
+  const [filterDevice] = useState('');
 
   // Bộ lọc nâng cao — loại sự kiện và cấp độ
   const [filterType, setFilterType] = useState('');
-  const [filterLevel, setFilterLevel] = useState('');
+  const [filterLevel] = useState('');
 
   // Modal chọn khoảng ngày tùy chỉnh
   const [dateModalOpen, setDateModalOpen] = useState(false);
@@ -145,7 +169,8 @@ export default function AlertsHistoryPage() {
         triggeredAt: alert.triggeredAt || alert.TriggeredAt || new Date().toISOString(),
         thumbnailUrl: alert.thumbnailUrl || alert.ThumbnailUrl,
         imageUrl: alert.imageUrl || alert.ImageUrl,
-        videoUrl: alert.videoUrl || alert.VideoUrl
+        videoUrl: alert.videoUrl || alert.VideoUrl,
+        metadata: alert.metadata || alert.Metadata
       };
 
       if (filterStatus && filterStatus !== normalized.status) return;
@@ -157,14 +182,20 @@ export default function AlertsHistoryPage() {
     });
 
     hubConnection.on('AlertUpdated', (data: any) => {
+      const aid = data.id || data.Id;
       setAlerts(prev => prev.map(a => {
-        if (a.id === data.id) {
-          return { ...a, videoUrl: data.videoUrl || a.videoUrl, status: data.status || a.status };
+        if (a.id === aid) {
+          return { 
+            ...a, 
+            status: data.status || data.Status || a.status,
+            videoUrl: data.videoUrl || data.VideoUrl || a.videoUrl,
+            imageUrl: data.imageUrl || data.ImageUrl || a.imageUrl
+          };
         }
         return a;
       }));
-      if (selectedId === data.id) {
-        loadDetail(data.id);
+      if (selectedId === aid) {
+        loadDetail(aid);
       }
     });
 
@@ -224,19 +255,7 @@ export default function AlertsHistoryPage() {
     if (selectedId === id) loadDetail(selectedId);
   };
 
-  const exportCsv = () => {
-    const opts = {
-      status: filterStatus || undefined,
-      from: startDate ? new Date(startDate + 'T00:00:00').toISOString() : undefined,
-      to: endDate ? new Date(endDate + 'T23:59:59').toISOString() : undefined,
-    };
-    stationApi.exportAlertsCsv(opts).then(blob => {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `alerts_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-    }).catch(err => console.warn('[AlertsHistory] Export lỗi:', err));
-  };
+
 
   const sortedAlerts = useMemo(() => {
     let result = [...alerts];
@@ -279,82 +298,33 @@ export default function AlertsHistoryPage() {
 
   return (
     <div className="alerts-history-page">
-      <div className="ah-toolbar-container">
-        {/* Title Cell */}
-        <div className="ah-toolbar-cell title-cell">
-          <h2 style={{ margin: 0, fontSize: '.8rem', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Consolas, monospace' }}>
-            NHẬT KÝ CẢNH BÁO
-          </h2>
-        </div>
+      {/* Redesigned Toolbar */}
+      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '0 8px 12px 8px' }}>
+        
+        <select className="btn-industrial" style={{ height: 34, padding: '0 12px', fontSize: '.75rem' }} value={timeRange} onChange={e => { setTimeRange(e.target.value); if (e.target.value === 'custom') setDateModalOpen(true); }}>
+          <option value="today">Hôm nay</option>
+          <option value="yesterday">Hôm qua</option>
+          <option value="7d">7 ngày qua</option>
+          <option value="all">Tất cả</option>
+        </select>
+        
+        <select className="btn-industrial" style={{ height: 34, padding: '0 12px', fontSize: '.75rem' }} value={filterType} onChange={e => setFilterType(e.target.value)}>
+          <option value="">Loại: Tất cả</option>
+          <option value="nguoi">Người</option>
+          <option value="chay">Cháy / Khói</option>
+          <option value="diem">Điểm nhiệt</option>
+        </select>
 
-        <div className="ah-toolbar-group" style={{ flexWrap: 'nowrap' }}>
-          {/* Preset Selector + Calendar Button */}
-          <div className="ah-toolbar-cell" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <span className="ah-cell-label">LỌC NHANH:</span>
-            <select className="form-select" style={{ width: 100, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={timeRange} onChange={e => { setTimeRange(e.target.value); if (e.target.value === 'custom') setDateModalOpen(true); }}>
-              <option value="today">Hôm nay</option>
-              <option value="yesterday">Hôm qua</option>
-              <option value="7d">7 ngày qua</option>
-              <option value="30d">30 ngày qua</option>
-              <option value="all">Tất cả</option>
-              <option value="custom">Tùy chỉnh</option>
-            </select>
-            <button className="btn-industrial" style={{ height: 24, width: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.8rem', border: 'none', background: 'transparent', opacity: 0.8 }} title="Chọn ngày tùy chỉnh" onClick={() => setDateModalOpen(true)}><Calendar size={14} strokeWidth={1.8} /></button>
-          </div>
+        <select className="btn-industrial" style={{ height: 34, padding: '0 12px', fontSize: '.75rem' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <option value="">Trạng thái: Tất cả</option>
+          <option value="open">Chưa xử lý</option>
+          <option value="acked">Đang xử lý</option>
+          <option value="closed">Đã đóng</option>
+        </select>
 
-          {/* Dynamic Devices selector */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">THIẾT BỊ:</span>
-            <select className="form-select" style={{ width: 120, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterDevice} onChange={e => setFilterDevice(e.target.value)}>
-              <option value="">Tất cả ({devices.length})</option>
-              {devices.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Alert Event Types selector */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">SỰ KIỆN:</span>
-            <select className="form-select" style={{ width: 100, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterType} onChange={e => setFilterType(e.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="nguoi">Người</option>
-              <option value="chay">Cháy / Khói</option>
-              <option value="diem">Điểm nhiệt</option>
-            </select>
-          </div>
-
-          {/* Alert Level Cell */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">MỨC ĐỘ:</span>
-            <select className="form-select" style={{ width: 90, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="alarm">Báo động</option>
-              <option value="warning">Cảnh báo</option>
-            </select>
-          </div>
-
-          {/* Status Filter Cell */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">TRẠNG THÁI:</span>
-            <select className="form-select" style={{ width: 100, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="open">Chưa xử lý</option>
-              <option value="acked">Đang xử lý</option>
-              <option value="closed">Đã đóng</option>
-            </select>
-          </div>
-
-          {/* CSV Cell */}
-          <div className="ah-toolbar-cell" style={{ padding: '0 6px' }}>
-            <button className="btn-industrial" style={{ height: 24, padding: '0 8px', fontSize: '.72rem', border: 'none', background: 'transparent' }} title="Xuất CSV" onClick={exportCsv}>⬇ CSV</button>
-          </div>
-
-          {/* Refresh Cell */}
-          <div className="ah-toolbar-cell" style={{ padding: '0 6px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.2)' }}>
-            <button className="btn-industrial btn-primary" style={{ height: 24, padding: '0 8px', fontSize: '.72rem', border: 'none', background: 'transparent', color: 'var(--admin-btn-secondary-text)', fontWeight: 'bold' }} onClick={loadAlerts}>↺ Làm mới</button>
-          </div>
-        </div>
+        <button className="btn-industrial btn-primary" style={{ height: 34, padding: '0 16px', fontSize: '.75rem' }} onClick={() => loadAlerts()}>
+          ↻ Làm mới
+        </button>
       </div>
 
       <div className={`ah-layout ${selectedId ? 'has-detail' : ''}`}>
@@ -372,7 +342,6 @@ export default function AlertsHistoryPage() {
               </div>
               <div>NỘI DUNG</div>
               <div>TRẠNG THÁI</div>
-              <div>HÀNH ĐỘNG</div>
             </div>
             
             <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -388,9 +357,9 @@ export default function AlertsHistoryPage() {
                     onClick={(e) => handleRowClick(e, a.id)}
                   >
                     <div>
-                      {a.thumbnailUrl ? (
+                      {resolveUrl(a, 'thumb') ? (
                         <div style={{ position: 'relative', width: 40, height: 40 }}>
-                          <img src={a.thumbnailUrl} alt="Thumb" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4, border: '1px solid var(--admin-border-light)' }} />
+                          <img src={resolveUrl(a, 'thumb')} alt="Thumb" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4, border: '1px solid var(--admin-border-light)' }} />
                           {a.videoUrl && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: '.8rem', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>▶️</div>}
                         </div>
                       ) : (
@@ -408,13 +377,6 @@ export default function AlertsHistoryPage() {
                       {a.status === ALERT_STATUS.OPEN  ? <span className="tag tag-danger">{alertStatusLabel(a.status)}</span> :
                        a.status === ALERT_STATUS.ACKED ? <span className="tag tag-warning">{alertStatusLabel(a.status)}</span> :
                                                         <span className="tag tag-success">{alertStatusLabel(a.status)}</span>}
-                    </div>
-                    <div>
-                      {a.status === ALERT_STATUS.OPEN ? (
-                        <button className="btn-industrial btn-sm" onClick={(e) => handleAckClick(e, a.id)}>Tiếp nhận</button>
-                      ) : a.status === ALERT_STATUS.ACKED ? (
-                        <button className="btn-industrial btn-sm" onClick={(e) => handleCloseAlert(e, a.id)}>Đóng</button>
-                      ) : null}
                     </div>
                   </div>
                 ))
@@ -530,23 +492,52 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert }: { data: AlertDe
     manual: 'Thủ công', maintenance: 'Bảo trì',
   };
 
+  const fullUrl = resolveUrl(data, 'full');
+  const hasVideo = !!(data.videoUrl || data.VideoUrl);
+
   return (
     <>
       <div className="ah-detail-header">
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 8px ${color}`, flexShrink: 0 }}></div>
         <span style={{ fontWeight: 800, color, fontSize: '.9rem' }}>{levelText}</span>
         <span style={{ fontFamily: 'monospace', fontSize: '.72rem', opacity: .4, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>#{data.id.slice(0, 8)}</span>
-        <button className="btn-industrial" style={{ padding: '4px 10px', fontSize: '.8rem' }} onClick={onClose}></button>
+        <button 
+          onClick={onClose}
+          style={{ 
+            background: 'none', border: 'none', color: 'var(--admin-text-muted)', 
+            cursor: 'pointer', padding: '4px', borderRadius: 4,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.2s'
+          }}
+          onMouseOver={(e) => { e.currentTarget.style.background = 'var(--admin-border-light)'; e.currentTarget.style.color = 'var(--admin-text)'; }}
+          onMouseOut={(e) => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--admin-text-muted)'; }}
+        >
+          <XCircle size={18} />
+        </button>
       </div>
 
-      {(data.imageUrl || data.videoUrl) && (
+      {fullUrl ? (
         <div className="ah-detail-section" style={{ padding: 0, borderBottom: '1px solid var(--admin-border-light)', background: '#000' }}>
-          {data.videoUrl ? (
+          {hasVideo ? (
             <video style={{ width: '100%', maxHeight: 260, objectFit: 'contain', display: 'block' }} controls autoPlay loop muted>
-              <source src={data.videoUrl} type="video/mp4" />
+              <source src={fullUrl} type="video/mp4" />
             </video>
           ) : (
-            <img src={data.imageUrl} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', display: 'block' }} alt="Alert Evidence" />
+            <img src={fullUrl} style={{ width: '100%', maxHeight: 260, objectFit: 'contain', display: 'block' }} alt="Alert Evidence" />
+          )}
+        </div>
+      ) : (
+        <div className="ah-detail-section" style={{ padding: '40px 0', borderBottom: '1px solid var(--admin-border-light)', background: 'var(--admin-hover)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, opacity: 0.5 }}>
+          <ImageIcon size={48} strokeWidth={1} />
+          <div style={{ fontSize: '.75rem', fontWeight: 600 }}>KHÔNG CÓ HÌNH ẢNH BẰNG CHỨNG</div>
+          {data.deviceId && (
+            <button 
+              className="btn-industrial" 
+              style={{ fontSize: '.65rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => window.open(`/realtime?deviceId=${data.deviceId}`, '_blank')}
+            >
+              <Camera size={12} /> XEM TRỰC TIẾP CAMERA
+            </button>
           )}
         </div>
       )}
@@ -590,12 +581,32 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert }: { data: AlertDe
         )}
       </div>
 
-      <div className="ah-detail-actions">
+      <div className="ah-detail-actions" style={{ display: 'flex', gap: 10, padding: '16px 20px', borderTop: '1px solid var(--admin-border-light)', background: 'var(--admin-hover)' }}>
         {data.status !== 'closed' && (
-          <button className="btn-industrial btn-danger" style={{ flex: 1, fontWeight: 700 }} onClick={onCloseAlert}>Đóng cảnh báo</button>
+          <button 
+            className="btn-industrial btn-danger" 
+            style={{ 
+              flex: 1, height: 40, fontWeight: 800, fontSize: '.75rem', 
+              letterSpacing: '.5px', textTransform: 'uppercase',
+              borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+            }} 
+            onClick={onCloseAlert}
+          >
+            <XCircle size={14} /> Đóng cảnh báo
+          </button>
         )}
         {data.status === 'open' && (
-          <button className="btn-industrial btn-primary" style={{ flex: 1 }} onClick={onAck}>Tiếp nhận</button>
+          <button 
+            className="btn-industrial btn-primary" 
+            style={{ 
+              flex: 1, height: 40, fontWeight: 800, fontSize: '.75rem', 
+              letterSpacing: '.5px', textTransform: 'uppercase',
+              borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
+            }} 
+            onClick={onAck}
+          >
+            <Check size={14} /> Tiếp nhận
+          </button>
         )}
       </div>
     </>

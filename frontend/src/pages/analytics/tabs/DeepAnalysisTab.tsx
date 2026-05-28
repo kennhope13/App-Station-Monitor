@@ -23,7 +23,7 @@ function useChart(
 
 function SectionLabel({ title }: { title: string }) {
   return (
-    <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontFamily: 'Consolas,monospace', marginBottom: 10 }}>
+    <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
       {title}
     </div>
   );
@@ -182,22 +182,22 @@ export default function DeepAnalysisTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', overflow: 'auto' }}>
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, padding: '6px 10px', background: 'var(--admin-layer-1)', border: '1px solid var(--admin-border)', borderRadius: 4 }}>
-        <span style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'Consolas,monospace' }}>TỦ:</span>
+        <span style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'var(--font-mono)' }}>TỦ:</span>
         {CABINETS.map(c => (
           <button key={c.id} onClick={() => setCabId(c.id)} style={{ height: 26, padding: '0 10px', fontSize: '.72rem', fontWeight: 700, border: `1px solid ${cabId === c.id ? STATUS_COLOR[c.healthStatus] : 'var(--admin-border)'}`, borderRadius: 3, background: cabId === c.id ? `${STATUS_COLOR[c.healthStatus]}18` : 'transparent', color: cabId === c.id ? STATUS_COLOR[c.healthStatus] : 'var(--admin-text-muted)', cursor: 'pointer', transition: '.15s' }}>
             {c.name}
           </button>
         ))}
         <div style={{ width: 1, height: 20, background: 'var(--admin-border)', margin: '0 4px' }} />
-        <span style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'Consolas,monospace' }}>PHẠM VI:</span>
+        <span style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'var(--font-mono)' }}>PHẠM VI:</span>
         {RANGE_OPTIONS.map(r => (
           <button key={r.ms} onClick={() => setRangeMs(r.ms)} style={{ height: 26, padding: '0 10px', fontSize: '.72rem', fontWeight: 700, border: 'none', borderRadius: 3, background: rangeMs === r.ms ? 'var(--admin-hover)' : 'transparent', color: rangeMs === r.ms ? 'var(--admin-text)' : 'var(--admin-text-muted)', cursor: 'pointer', transition: '.15s' }}>
             {r.label}
           </button>
         ))}
         <div style={{ marginLeft: 'auto', fontSize: '.72rem', color: 'var(--admin-text-muted)' }}>
-          Nhiệt max: <strong style={{ color: cab.tempMax > 80 ? '#EF4444' : '#F59E0B', fontFamily: 'Consolas,monospace' }}>{cab.tempMax}°C</strong>
-          &nbsp;&nbsp;PD 24h: <strong style={{ color: cab.pdCount > 100 ? '#EF4444' : '#F59E0B', fontFamily: 'Consolas,monospace' }}>{cab.pdCount} xung</strong>
+          Nhiệt max: <strong style={{ color: cab.tempMax > 80 ? '#EF4444' : '#F59E0B', fontFamily: 'var(--font-mono)' }}>{cab.tempMax}°C</strong>
+          &nbsp;&nbsp;PD 24h: <strong style={{ color: cab.pdCount > 100 ? '#EF4444' : '#F59E0B', fontFamily: 'var(--font-mono)' }}>{cab.pdCount} xung</strong>
         </div>
       </div>
 
@@ -214,7 +214,7 @@ export default function DeepAnalysisTab() {
             return (
               <div key={t} style={{ fontSize: '.72rem', color: 'var(--admin-text-muted)' }}>
                 <span style={{ color: T_COLORS[i], fontWeight: 700 }}>{t}</span>
-                {' '}[Min:<strong style={{ fontFamily: 'Consolas,monospace' }}>{mn}°C</strong> Max:<strong style={{ color: mx > 80 ? '#EF4444' : 'inherit', fontFamily: 'Consolas,monospace' }}>{mx}°C</strong> TB:<strong style={{ fontFamily: 'Consolas,monospace' }}>{avg}°C</strong>]
+                {' '}[Min:<strong style={{ fontFamily: 'var(--font-mono)' }}>{mn}°C</strong> Max:<strong style={{ color: mx > 80 ? '#EF4444' : 'inherit', fontFamily: 'var(--font-mono)' }}>{mx}°C</strong> TB:<strong style={{ fontFamily: 'var(--font-mono)' }}>{avg}°C</strong>]
               </div>
             );
           })}
@@ -258,10 +258,10 @@ export default function DeepAnalysisTab() {
                 <div style={{ width: 60, fontSize: '.75rem', fontWeight: 700, color: 'var(--admin-text)', flexShrink: 0 }}>{c.name}</div>
                 <div style={{ flex: 1, height: 18, background: 'var(--admin-border)', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width .5s ease', display: 'flex', alignItems: 'center', paddingLeft: 6 }}>
-                    <span style={{ fontSize: '.65rem', fontWeight: 800, color: '#fff', fontFamily: 'Consolas,monospace', whiteSpace: 'nowrap' }}>{c.tempMax}°C</span>
+                    <span style={{ fontSize: '.65rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{c.tempMax}°C</span>
                   </div>
                 </div>
-                <div style={{ width: 50, fontSize: '.7rem', color: 'var(--admin-text-muted)', flexShrink: 0, fontFamily: 'Consolas,monospace' }}>SK: {c.healthScore}%</div>
+                <div style={{ width: 50, fontSize: '.7rem', color: 'var(--admin-text-muted)', flexShrink: 0, fontFamily: 'var(--font-mono)' }}>SK: {c.healthScore}%</div>
               </div>
             );
           })}

@@ -62,7 +62,7 @@
   background: var(--admin-card-bg, var(--admin-panel)); border-radius: 0px; border: 1px solid var(--admin-border, var(--admin-border-light));
 }
 .diff-item b { display: block; margin-bottom: 6px; font-size: 0.62rem; color: var(--admin-text-muted); opacity: 0.8; border-bottom: 1px solid var(--admin-border-light); padding-bottom: 3px; }
-.diff-content { font-family: monospace; font-size: 0.72rem; white-space: pre-wrap; color: var(--admin-text, var(--admin-text)); }
+.diff-content { font-family: var(--font-mono); font-size: 0.72rem; white-space: pre-wrap; color: var(--admin-text, var(--admin-text)); }
 
 .audit-footer { display: flex; justify-content: space-between; margin-top: 16px; color: var(--admin-text, var(--admin-text)); opacity: 0.5; font-size: 0.7rem; }
 

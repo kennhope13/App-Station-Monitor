@@ -35,6 +35,20 @@ class ThermalPoint:
 
 
 @dataclass
+class ThermalZone:
+    """Một vùng (polygon) đo nhiệt độ trên camera."""
+    id:          str
+    polygon:     list[list[float]]  # Danh sách điểm [[x,y], [x,y], ...] (0.0-1.0)
+    pre_alarm:   float = 50.0
+    alarm:       float = 70.0
+    label:       str = ""
+
+    def __post_init__(self):
+        if not self.label:
+            self.label = self.id
+
+
+@dataclass
 class ThermalAnalyzer:
     """Xử lý một camera nhiệt: đọc RTSP + ISAPI + annotate + gửi webhook."""
     device_id:   str
@@ -43,9 +57,12 @@ class ThermalAnalyzer:
     password:    str
     stream_id:   str           # go2rtc stream ID (ví dụ: camera_152_thermal)
     points:      list[ThermalPoint] = field(default_factory=list)
+    zones:       list[ThermalZone]  = field(default_factory=list)
 
     _reader:     RtspReader | None = field(default=None, init=False, repr=False)
     _last_alert: dict[str, float]  = field(default_factory=dict, init=False, repr=False)
+    _consecutive_auth_failures: int = field(default=0, init=False, repr=False)
+    _auth_cooldown_until:       float = field(default=0.0, init=False, repr=False)
 
     def start(self) -> None:
         rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
@@ -59,159 +76,274 @@ class ThermalAnalyzer:
     # ── Main process (gọi định kỳ từ scheduler) ──────────────
 
     async def process(self) -> None:
-        """Đọc nhiệt độ tại tất cả điểm, annotate frame, gửi alert nếu cần."""
-        temps = await self._read_all_temperatures()
-        if not temps:
+        """Đọc nhiệt độ tại các điểm và vùng, annotate frame, gửi alert nếu cần."""
+        # 1. Đọc matrix nhiệt từ camera
+        matrix_data = await self._read_thermal_matrix()
+        if not matrix_data:
             return
 
+        floats, w, h = matrix_data
+
+        # 2. Trích xuất nhiệt độ cho points
+        point_temps = {}
+        for pt in self.points:
+            px = int(pt.x * w)
+            py = int(pt.y * h)
+            px = max(0, min(px, w - 1))
+            py = max(0, min(py, h - 1))
+            idx = py * w + px
+            point_temps[pt.id] = float(floats[idx])
+
+        # 3. Trích xuất nhiệt độ cho zones (Max temp trong vùng)
+        zone_results = {} # id -> {"max": val, "x": px, "y": py}
+        for zn in self.zones:
+            if not zn.polygon or len(zn.polygon) < 3:
+                continue
+            
+            # Tạo mask cho polygon trên matrix nhỏ
+            poly_pts = np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)
+            mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.fillPoly(mask, [poly_pts], 255)
+            
+            # Lọc các giá trị nhiệt độ trong vùng
+            masked_floats = floats.reshape((h, w))[mask == 255]
+            if masked_floats.size > 0:
+                max_val = float(np.max(masked_floats))
+                # Tìm tọa độ điểm nóng nhất (để vẽ lên frame)
+                # Lưu ý: argmax trả về index trong flat array của masked_floats, 
+                # ta cần tìm index trong matrix (h,w) ban đầu.
+                
+                # Cách đơn giản: lấy sub-matrix và findNonZero hoặc tương tự
+                # Nhưng matrix nhỏ, ta có thể dùng np.where trên matrix đã mask
+                full_matrix = floats.reshape((h, w))
+                full_matrix_masked = np.where(mask == 255, full_matrix, -1000.0)
+                max_idx = np.argmax(full_matrix_masked)
+                max_y, max_x = divmod(max_idx, w)
+                
+                zone_results[zn.id] = {
+                    "max": max_val,
+                    "x": float(max_x / w),
+                    "y": float(max_y / h)
+                }
+
+        # 4. Gửi nhiệt độ thực tế về backend
+        await self._ingest_measurements(point_temps, zone_results)
+
+        # 5. Annotate và Serve MJPEG
         frame = self._reader.latest_frame if self._reader else None
         if frame is not None:
-            annotated = self._annotate(frame, temps)
-            # Lưu frame đã annotate để MJPEG endpoint serve
+            annotated = self._annotate(frame, point_temps, zone_results)
             _annotated_frames[self.stream_id] = annotated
 
-        await self._check_and_alert(temps)
+        # 6. Check alert
+        await self._check_and_alert(point_temps, zone_results)
+
+    async def _ingest_measurements(self, point_temps: dict[str, float], zone_results: dict[str, dict]) -> None:
+        """Gửi các giá trị nhiệt độ tức thời về backend."""
+        payload = []
+        # Points
+        for pt in self.points:
+            temp = point_temps.get(pt.id)
+            if temp is None: continue
+            payload.append({
+                "deviceId": self.device_id,
+                "pointId": pt.id,
+                "value": temp,
+                "unit": "°C",
+                "tx": pt.x, "ty": pt.y
+            })
+        
+        # Zones (chỉ gửi giá trị Max)
+        for zn in self.zones:
+            res = zone_results.get(zn.id)
+            if not res: continue
+            payload.append({
+                "deviceId": self.device_id,
+                "pointId": zn.id,
+                "value": res["max"],
+                "unit": "°C",
+                "tx": res["x"], "ty": res["y"],
+                "isZone": True
+            })
+
+        if not payload:
+            return
+        
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                await client.post(
+                    f"{cfg.backend_url}/api/v1/measurements/ingest",
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+        except Exception:
+            pass
 
     # ── Đọc nhiệt độ từ Hikvision ISAPI ─────────────────────
 
-    async def _read_all_temperatures(self) -> dict[str, float]:
-        """
-        Gọi ISAPI để đọc nhiệt độ tại tọa độ pixel cho từng điểm.
-        API: GET /ISAPI/Thermal/channels/1/thermometry/pixelToPoint
-             Body: <PixelToPoint><point><x>{px}</x><y>{py}</y></point></PixelToPoint>
-        """
-        result: dict[str, float] = {}
+    async def _read_thermal_matrix(self) -> tuple[np.ndarray, int, int] | None:
+        """Trả về (floats_matrix, width, height)."""
+        if not self.points and not self.zones:
+            return None
 
-        # Lấy kích thước frame để tính pixel coords
-        frame = self._reader.latest_frame if self._reader else None
-        if frame is None:
-            # Dùng resolution mặc định Hikvision thermal 256x192 nếu chưa có frame
-            h, w = 192, 256
-        else:
-            h, w = frame.shape[:2]
+        now = time.time()
+        if now < self._auth_cooldown_until:
+            return None
 
         async with httpx.AsyncClient(timeout=5.0) as client:
-            for pt in self.points:
-                px = int(pt.x * w)
-                py = int(pt.y * h)
+            for ch in [2, 1]:
+                url = f"http://{self.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/jpegPicWithAppendData?format=json"
                 try:
-                    xml_body = (
-                        f'<PixelToPoint version="2.0">'
-                        f'<point><x>{px}</x><y>{py}</y></point>'
-                        f'</PixelToPoint>'
-                    )
                     resp = await client.get(
-                        f"http://{self.camera_ip}/ISAPI/Thermal/channels/1/thermometry/pixelToPoint",
-                        content=xml_body,
-                        headers={"Content-Type": "application/xml"},
-                        auth=(self.username, self.password),
+                        url,
+                        auth=httpx.DigestAuth(self.username, self.password),
                     )
+                    if resp.status_code == 401:
+                        self._consecutive_auth_failures += 1
+                        if self._consecutive_auth_failures >= 3:
+                            self._auth_cooldown_until = now + 300
+                        break
+
                     if resp.status_code == 200:
-                        temp = self._parse_temp_xml(resp.text)
-                        if temp is not None:
-                            result[pt.id] = temp
-                except Exception as ex:
-                    logger.debug("[Thermal] ISAPI error %s %s: %s", self.camera_ip, pt.id, ex)
+                        self._consecutive_auth_failures = 0
+                        content = resp.content
+                        boundary = b'--boundary'
+                        ct = resp.headers.get("content-type", "")
+                        if "boundary=" in ct:
+                            b_str = ct.split("boundary=")[-1].strip()
+                            boundary = f"--{b_str}".encode('ascii')
 
-        return result
-
-    @staticmethod
-    def _parse_temp_xml(xml: str) -> float | None:
-        """Lấy giá trị <temperature> từ XML response của ISAPI."""
-        import xml.etree.ElementTree as ET
-        try:
-            root = ET.fromstring(xml)
-            ns = {"hik": "http://www.hikvision.com/ver20/XMLSchema"}
-            el = root.find(".//hik:temperature", ns) or root.find(".//temperature")
-            if el is not None and el.text:
-                return float(el.text)
-        except Exception:
-            pass
+                        parts = content.split(boundary)
+                        w, h, data_len = 256, 192, 196608
+                        for part in parts:
+                            if b'application/json' in part:
+                                header_end = part.find(b'\r\n\r\n')
+                                if header_end != -1:
+                                    import json
+                                    json_data = json.loads(part[header_end+4:].decode('utf-8', errors='ignore').strip())
+                                    info = json_data.get("JpegPictureWithAppendData", {})
+                                    w = info.get("jpegPicWidth", 256)
+                                    h = info.get("jpegPicHeight", 192)
+                                    data_len = info.get("p2pDataLen") or (w * h * 4)
+                                        
+                        for part in parts:
+                            if b'application/octet-stream' in part:
+                                header_end = part.find(b'\r\n\r\n')
+                                if header_end != -1:
+                                    matrix_bytes = part[header_end+4:][:data_len]
+                                    if len(matrix_bytes) >= w * h * 4:
+                                        floats = np.frombuffer(matrix_bytes, dtype=np.float32)
+                                        return floats, w, h
+                        break
+                except Exception:
+                    pass
         return None
 
     # ── Vẽ annotations lên frame ─────────────────────────────
 
-    def _annotate(self, frame: np.ndarray, temps: dict[str, float]) -> np.ndarray:
-        """Vẽ hình tròn + nhãn nhiệt độ tại từng điểm đo."""
+    def _annotate(self, frame: np.ndarray, point_temps: dict[str, float], zone_results: dict[str, dict]) -> np.ndarray:
+        """Vẽ points + zones + nhãn nhiệt độ."""
         out = frame.copy()
         h, w = out.shape[:2]
+        font = cv2.FONT_HERSHEY_SIMPLEX
 
-        for pt in self.points:
-            temp = temps.get(pt.id)
-            if temp is None:
-                continue
+        # 1. Vẽ Zones
+        for zn in self.zones:
+            res = zone_results.get(zn.id)
+            if not res: continue
 
-            cx = int(pt.x * w)
-            cy = int(pt.y * h)
+            poly_pts = np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)
+            temp = res["max"]
 
             # Màu theo mức nhiệt độ
-            if temp >= pt.alarm:
-                color = (0, 0, 255)    # Đỏ — nguy hiểm
-            elif temp >= pt.pre_alarm:
-                color = (0, 165, 255)  # Cam — cảnh báo sớm
-            else:
-                color = (0, 255, 0)    # Xanh — bình thường
+            if temp >= zn.alarm: color = (0, 0, 255)
+            elif temp >= zn.pre_alarm: color = (0, 165, 255)
+            else: color = (0, 255, 0)
 
-            # Vòng tròn + chấm trung tâm
+            # Vẽ polygon rỗng + điểm nóng nhất
+            cv2.polylines(out, [poly_pts], True, color, 1)
+            
+            mx, my = int(res["x"]*w), int(res["y"]*h)
+            cv2.drawMarker(out, (mx, my), color, cv2.MARKER_CROSS, 10, 1)
+
+            # Nhãn tại đỉnh đầu tiên của polygon
+            lx, ly = poly_pts[0]
+            label = f"{zn.label}: {temp:.1f}C"
+            cv2.putText(out, label, (lx, ly - 5), font, 0.45, color, 1, cv2.LINE_AA)
+
+        # 2. Vẽ Points (giữ nguyên logic cũ)
+        for pt in self.points:
+            temp = point_temps.get(pt.id)
+            if temp is None: continue
+
+            cx, cy = int(pt.x * w), int(pt.y * h)
+            if temp >= pt.alarm: color = (0, 0, 255)
+            elif temp >= pt.pre_alarm: color = (0, 165, 255)
+            else: color = (0, 255, 0)
+
             cv2.circle(out, (cx, cy), 12, color, 2)
             cv2.circle(out, (cx, cy), 3,  color, -1)
-
-            # Nhãn: "P1\n45.3°C"
-            label = f"{pt.label}"
-            temp_str = f"{temp:.1f}C"
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(out, label,    (cx + 15, cy - 4),  font, 0.45, color, 1, cv2.LINE_AA)
-            cv2.putText(out, temp_str, (cx + 15, cy + 12), font, 0.5,  color, 1, cv2.LINE_AA)
+            cv2.putText(out, pt.label, (cx + 15, cy - 4), font, 0.45, color, 1, cv2.LINE_AA)
+            cv2.putText(out, f"{temp:.1f}C", (cx + 15, cy + 12), font, 0.5, color, 1, cv2.LINE_AA)
 
         return out
 
     # ── Gửi alert về backend ─────────────────────────────────
 
-    async def _check_and_alert(self, temps: dict[str, float]) -> None:
+    async def _check_and_alert(self, point_temps: dict[str, float], zone_results: dict[str, dict]) -> None:
         now = time.time()
+        
+        # Check Points
         for pt in self.points:
-            temp = temps.get(pt.id)
-            if temp is None:
-                continue
+            temp = point_temps.get(pt.id)
+            if temp is None: continue
+            level = "alarm" if temp >= pt.alarm else "pre_alarm" if temp >= pt.pre_alarm else None
+            if level:
+                cooldown_key = f"{pt.id}:{level}"
+                if now - self._last_alert.get(cooldown_key, 0) >= cfg.alert_cooldown:
+                    self._last_alert[cooldown_key] = now
+                    await self._send_webhook(pt.label, self.camera_ip, temp, level)
 
-            level: str | None = None
-            if temp >= pt.alarm:
-                level = "alarm"
-            elif temp >= pt.pre_alarm:
-                level = "pre_alarm"
+        # Check Zones
+        for zn in self.zones:
+            res = zone_results.get(zn.id)
+            if not res: continue
+            temp = res["max"]
+            level = "alarm" if temp >= zn.alarm else "pre_alarm" if temp >= zn.pre_alarm else None
+            if level:
+                cooldown_key = f"{zn.id}:{level}"
+                if now - self._last_alert.get(cooldown_key, 0) >= cfg.alert_cooldown:
+                    self._last_alert[cooldown_key] = now
+                    await self._send_webhook(zn.label, self.camera_ip, temp, level)
 
-            if level is None:
-                continue
-
-            # Cooldown: không spam alert
-            cooldown_key = f"{pt.id}:{level}"
-            if now - self._last_alert.get(cooldown_key, 0) < cfg.alert_cooldown:
-                continue
-
-            self._last_alert[cooldown_key] = now
-            await self._send_webhook(pt, temp, level)
-
-    async def _send_webhook(self, pt: ThermalPoint, temp: float, level: str) -> None:
+    async def _send_webhook(self, label: str, ip: str, temp: float, level: str) -> None:
         event_type = "temperaturealarm" if level == "alarm" else "thermalexception"
         xml = (
             f'<EventNotificationAlert version="2.0">'
-            f'<ipAddress>{self.camera_ip}</ipAddress>'
+            f'<ipAddress>{ip}</ipAddress>'
             f'<eventType>{event_type}</eventType>'
             f'<eventState>active</eventState>'
             f'<channelID>2</channelID>'
             f'<dateTime>{_now_iso()}</dateTime>'
             f'<maxTemp>{temp:.2f}</maxTemp>'
-            f'<eventDescription>Điểm {pt.label}: {temp:.1f}°C</eventDescription>'
+            f'<eventDescription>Vùng/Điểm {label}: {temp:.1f}°C</eventDescription>'
             f'</EventNotificationAlert>'
         )
+
+        # Đính kèm ảnh snapshot nếu có
+        files = {"event": (None, xml, "application/xml")}
+        frame = get_annotated_frame(self.stream_id)
+        if frame is None and self._reader:
+            frame = self._reader.latest_frame
+        
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    f"{cfg.backend_url}/api/v1/camera-webhook",
-                    content=xml,
-                    headers={"Content-Type": "application/xml"},
-                )
-            logger.info("[Thermal] Alert sent: %s %s %.1f°C (%s)", self.camera_ip, pt.id, temp, level)
+                if frame is not None:
+                    _, buffer = cv2.imencode(".jpg", frame)
+                    files["snapshot"] = ("snapshot.jpg", buffer.tobytes(), "image/jpeg")
+                    await client.post(f"{cfg.backend_url}/api/v1/camera-webhook", files=files)
+                else:
+                    await client.post(f"{cfg.backend_url}/api/v1/camera-webhook", content=xml, headers={"Content-Type": "application/xml"})
         except Exception as ex:
             logger.warning("[Thermal] Webhook failed: %s", ex)
 

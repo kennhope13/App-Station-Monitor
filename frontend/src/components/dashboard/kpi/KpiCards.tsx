@@ -88,12 +88,12 @@ export default function KpiCards({ plcOnline }: KpiCardsProps) {
                 </span>
 
                 {/* Temp */}
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: tempColor, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: tempColor, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                   {cab.t1}°C
                 </span>
 
                 {/* PD */}
-                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: cab.pdLevel === 'high' ? '#EF4444' : cab.pdLevel === 'medium' ? '#F59E0B' : '#6B7280', fontFamily: 'Consolas,monospace', flexShrink: 0 }}>
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: cab.pdLevel === 'high' ? '#EF4444' : cab.pdLevel === 'medium' ? '#F59E0B' : '#6B7280', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                   {cab.pdCount} PD
                 </span>
 

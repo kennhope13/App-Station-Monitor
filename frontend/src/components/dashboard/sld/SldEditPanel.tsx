@@ -16,7 +16,7 @@ interface Props {
 const labelStyle: React.CSSProperties = {
   fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)',
   textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6,
-  fontFamily: 'Consolas,monospace',
+  fontFamily: 'var(--font-mono)',
 };
 
 const inputStyle: React.CSSProperties = {
@@ -142,7 +142,7 @@ export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos
 
           {pendingPos && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 10px', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 3 }}>
-              <div style={{ fontSize: '.65rem', color: '#10B981', fontWeight: 700, fontFamily: 'Consolas,monospace' }}>
+              <div style={{ fontSize: '.65rem', color: '#10B981', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
                 Vị trí đã chọn: ({pendingPos.x}, {pendingPos.y})
               </div>
               <input placeholder="Nhãn (vd: Pha A, Thanh cái...)" value={form.label}
@@ -182,7 +182,7 @@ export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos
                 <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.label || p.pointId || 'node'}
                 </div>
-                <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontFamily: 'Consolas,monospace' }}>
+                <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)' }}>
                   x:{Math.round(p.x)} y:{Math.round(p.y)} r:{p.r}
                 </div>
               </div>

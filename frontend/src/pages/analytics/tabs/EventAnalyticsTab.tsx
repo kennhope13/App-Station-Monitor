@@ -100,8 +100,8 @@ export default function EventAnalyticsTab() {
           { label: 'SỰ KIỆN AI (HÔM NAY)', val: 12, color: '#3B82F6' },
         ].map(kpi => (
           <div key={kpi.label} style={{ background: 'var(--admin-card-bg)', border: `1px solid var(--admin-border)`, borderRadius: 6, padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', opacity: .8, textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace' }}>{kpi.label}</div>
-            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: kpi.color, fontFamily: 'Consolas,monospace', lineHeight: 1 }}>{kpi.val}</div>
+            <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', opacity: .8, textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'var(--font-mono)' }}>{kpi.label}</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 900, color: kpi.color, fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{kpi.val}</div>
           </div>
         ))}
       </div>
@@ -110,13 +110,13 @@ export default function EventAnalyticsTab() {
         
         {/* Source Breakdown */}
         <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: 16, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace', marginBottom: 16 }}>
+          <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>
             PHÂN BỔ THEO NGUỒN (SOURCE)
           </div>
           <div style={{ flex: 1, position: 'relative' }}>
             <EventSourceChart />
             <div style={{ position: 'absolute', top: '50%', left: '33%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-              <div style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--admin-text)', fontFamily: 'Consolas,monospace' }}>{totalEvents}</div>
+              <div style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--admin-text)', fontFamily: 'var(--font-mono)' }}>{totalEvents}</div>
               <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', textTransform: 'uppercase' }}>Sự kiện</div>
             </div>
           </div>
@@ -124,7 +124,7 @@ export default function EventAnalyticsTab() {
 
         {/* Time Trend */}
         <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: 16, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace', marginBottom: 16 }}>
+          <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'var(--font-mono)', marginBottom: 16 }}>
             TẦN SUẤT BÁO ĐỘNG 7 NGÀY QUA
           </div>
           <div style={{ flex: 1 }}>

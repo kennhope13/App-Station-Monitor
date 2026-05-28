@@ -2,11 +2,15 @@
 rtsp_reader.py — Đọc frame từ RTSP stream (go2rtc hoặc trực tiếp từ camera)
 Chạy trong thread riêng, expose frame mới nhất qua latest_frame
 """
+import os
 import threading
 import time
 import cv2
 import numpy as np
 import logging
+
+# Force FFMPEG backend in OpenCV to use TCP transport for RTSP
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +40,8 @@ class RtspReader:
         logger.info("[RTSP] Started reader for %s → %s", self.stream_id, self.stream_url)
 
     def stop(self) -> None:
-        """Dừng thread đọc frame và giải phóng VideoCapture."""
+        """Dừng thread đọc frame."""
         self._running = False
-        if self._cap:
-            self._cap.release()
 
     @property
     def latest_frame(self) -> np.ndarray | None:

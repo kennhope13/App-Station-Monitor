@@ -11,6 +11,7 @@ import { stationApi, type AlertItem, type AlertHistoryEntry } from '@/services/S
 import { useDeviceStore } from '@/store';
 import { fmtDateTime } from '@/utils/format';
 import { showToast } from '@/utils/toast';
+import { API_BASE_URL } from '@/utils/env';
 
 // AlertDetail = dữ liệu cảnh báo + mảng lịch sử thay đổi trạng thái
 type AlertDetail = AlertItem & { history: AlertHistoryEntry[] };
@@ -112,6 +113,13 @@ export default function AlertDetailPage() {
 
   const fmt = (ts?: string) => (ts ? fmtDateTime(ts) : '—');
 
+  const resolveUrl = (a: AlertItem) => {
+    const path = a.imageUrl || a.metadata?.snapshotUrl || a.videoUrl || '';
+    if (!path) return '';
+    if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) return path;
+    return `${API_BASE_URL}${path}`;
+  };
+
   const infoRow = (label: string, value: ReactNode) => (
     <div 
       style={{
@@ -142,7 +150,7 @@ export default function AlertDetailPage() {
       </div>
       <div style={{ flex: 1, paddingTop: 4 }}>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '.7rem', fontFamily: 'monospace', color: 'var(--admin-text-muted)' }}>{o.time}</span>
+          <span style={{ fontSize: '.7rem', fontFamily: 'var(--font-mono)', color: 'var(--admin-text-muted)' }}>{o.time}</span>
           <span 
             style={{
               fontSize: '.65rem', fontWeight: 700, padding: '1px 7px', borderRadius: 0,
@@ -165,7 +173,7 @@ export default function AlertDetailPage() {
         <button className="btn-industrial" onClick={() => navigate(-1)}>← Quay lại</button>
         <span style={{ color: 'var(--admin-text-muted)' }}>Nhật ký cảnh báo</span>
         <span style={{ color: 'var(--admin-text-muted)', opacity: 0.5 }}>/</span>
-        <span style={{ color: '#44ff88', fontSize: '.85rem', fontFamily: 'monospace' }}>{alert.id.slice(0, 8)}…</span>
+        <span style={{ color: '#44ff88', fontSize: '.85rem', fontFamily: 'var(--font-mono)' }}>{alert.id.slice(0, 8)}…</span>
         
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {alert.status === 'open' && (
@@ -195,6 +203,25 @@ export default function AlertDetailPage() {
         <span style={{ opacity: .85, fontSize: '.9rem', color: 'var(--admin-text)' }}>{alert.message}</span>
         <span style={{ marginLeft: 'auto', fontSize: '.8rem', color: 'var(--admin-text-muted)' }}>{fmt(alert.triggeredAt)}</span>
       </div>
+
+      {/* Visual Evidence */}
+      {resolveUrl(alert) && (
+        <div 
+          className="admin-card" 
+          style={{ 
+            padding: 0, marginBottom: 20, overflow: 'hidden', 
+            background: '#000', display: 'flex', justifyContent: 'center' 
+          }}
+        >
+          {alert.videoUrl ? (
+            <video style={{ maxWidth: '100%', maxHeight: 400, display: 'block' }} controls autoPlay loop muted>
+              <source src={resolveUrl(alert)} type="video/mp4" />
+            </video>
+          ) : (
+            <img src={resolveUrl(alert)} style={{ maxWidth: '100%', maxHeight: 400, display: 'block' }} alt="Alert Evidence" />
+          )}
+        </div>
+      )}
 
       {/* 2-column info */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>

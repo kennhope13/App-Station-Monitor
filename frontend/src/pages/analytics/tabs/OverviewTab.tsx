@@ -31,7 +31,7 @@ function ScoreBar({ label, value, max = 50, color }: { label: string; value: num
     <div style={{ marginBottom: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
         <span style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.3px' }}>{label}</span>
-        <span style={{ fontSize: '.7rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace' }}>{value}/{max}</span>
+        <span style={{ fontSize: '.7rem', fontWeight: 800, color, fontFamily: 'var(--font-mono)' }}>{value}/{max}</span>
       </div>
       <div style={{ height: 6, background: 'var(--admin-border)', borderRadius: 3, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 3, transition: 'width .4s ease' }} />
@@ -57,7 +57,7 @@ function CabinetDetail({ cab }: { cab: CabinetSummary }) {
 
       {/* Score breakdown */}
       <div style={{ paddingTop: 6 }}>
-        <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10, fontFamily: 'Consolas,monospace' }}>Phân tích điểm số</div>
+        <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10, fontFamily: 'var(--font-mono)' }}>Phân tích điểm số</div>
         <ScoreBar label="Điểm nhiệt (50%)" value={tempScore} color={tempScore >= 40 ? '#10B981' : tempScore >= 20 ? '#F59E0B' : '#EF4444'} />
         <ScoreBar label="Điểm PD (50%)"    value={pdScore}   color={pdScore   >= 40 ? '#10B981' : pdScore   >= 20 ? '#F59E0B' : '#EF4444'} />
         <div style={{ marginTop: 8, fontSize: '.72rem', color: 'var(--admin-text-muted)' }}>
@@ -69,16 +69,16 @@ function CabinetDetail({ cab }: { cab: CabinetSummary }) {
 
       {/* Sensor readings */}
       <div style={{ paddingTop: 6 }}>
-        <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10, fontFamily: 'Consolas,monospace' }}>Giá trị cảm biến</div>
+        <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10, fontFamily: 'var(--font-mono)' }}>Giá trị cảm biến</div>
         {[['T1', cab.t1], ['T2', cab.t2], ['T3', cab.t3]].map(([k, v]) => (
           <div key={k as string} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--admin-border-light)', fontSize: '.78rem' }}>
             <span style={{ color: 'var(--admin-text-muted)' }}>Nhiệt độ {k}</span>
-            <span style={{ fontWeight: 700, color: (v as number) > 80 ? '#EF4444' : (v as number) > 60 ? '#F59E0B' : '#10B981', fontFamily: 'Consolas,monospace' }}>{v}°C</span>
+            <span style={{ fontWeight: 700, color: (v as number) > 80 ? '#EF4444' : (v as number) > 60 ? '#F59E0B' : '#10B981', fontFamily: 'var(--font-mono)' }}>{v}°C</span>
           </div>
         ))}
         <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: '.78rem' }}>
           <span style={{ color: 'var(--admin-text-muted)' }}>PD 24h</span>
-          <span style={{ fontWeight: 700, color: PD_COLOR[cab.pdLevel], fontFamily: 'Consolas,monospace' }}>{cab.pdCount} xung</span>
+          <span style={{ fontWeight: 700, color: PD_COLOR[cab.pdLevel], fontFamily: 'var(--font-mono)' }}>{cab.pdCount} xung</span>
         </div>
       </div>
     </div>
@@ -114,8 +114,8 @@ export default function OverviewTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, flexShrink: 0 }}>
         {stats.map(s => (
           <div key={s.label} style={{ background: 'var(--admin-card-bg)', border: `1px solid ${s.color}28`, borderRadius: 4, padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ fontSize: '.55rem', fontWeight: 800, color: s.color, opacity: .7, textTransform: 'uppercase', letterSpacing: '.7px', fontFamily: 'Consolas,monospace' }}>{s.label}</div>
-            <div style={{ fontSize: '1.9rem', fontWeight: 800, color: s.color, fontFamily: 'Consolas,monospace', lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: '.55rem', fontWeight: 800, color: s.color, opacity: .7, textTransform: 'uppercase', letterSpacing: '.7px', fontFamily: 'var(--font-mono)' }}>{s.label}</div>
+            <div style={{ fontSize: '1.9rem', fontWeight: 800, color: s.color, fontFamily: 'var(--font-mono)', lineHeight: 1 }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -125,7 +125,7 @@ export default function OverviewTab() {
         {/* Table header */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 90px 100px 90px 70px', padding: '8px 16px', borderBottom: '1px solid var(--admin-border-light)', background: 'var(--admin-layer-1)' }}>
           {['TỦ ĐIỆN', 'ĐIỂM SK', 'NHIỆT MAX', 'TRẠNG THÁI PD', 'SỰ KIỆN', 'XEM'].map(h => (
-            <div key={h} style={{ fontSize: '.6rem', fontWeight: 700, color: 'var(--admin-text)', opacity: .45, textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'Consolas,monospace' }}>{h}</div>
+            <div key={h} style={{ fontSize: '.6rem', fontWeight: 700, color: 'var(--admin-text)', opacity: .45, textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'var(--font-mono)' }}>{h}</div>
           ))}
         </div>
 
@@ -145,11 +145,11 @@ export default function OverviewTab() {
               </div>
               {/* Health score */}
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '.82rem', fontWeight: 800, color: STATUS_COLOR[cab.healthStatus], fontFamily: 'Consolas,monospace' }}>{cab.healthScore}%</span>
+                <span style={{ fontSize: '.82rem', fontWeight: 800, color: STATUS_COLOR[cab.healthStatus], fontFamily: 'var(--font-mono)' }}>{cab.healthScore}%</span>
               </div>
               {/* Temp max */}
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '.82rem', fontFamily: 'Consolas,monospace', color: cab.tempMax > 80 ? '#EF4444' : cab.tempMax > 60 ? '#F59E0B' : 'var(--admin-text)' }}>
+                <span style={{ fontSize: '.82rem', fontFamily: 'var(--font-mono)', color: cab.tempMax > 80 ? '#EF4444' : cab.tempMax > 60 ? '#F59E0B' : 'var(--admin-text)' }}>
                   {cab.tempMax}°C {cab.tempMax > 80 ? '⚠' : ''}
                 </span>
               </div>
@@ -161,7 +161,7 @@ export default function OverviewTab() {
               </div>
               {/* Events */}
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span style={{ fontSize: '.82rem', fontFamily: 'Consolas,monospace', color: cab.eventCount > 0 ? '#F59E0B' : 'var(--admin-text-muted)' }}>{cab.eventCount}</span>
+                <span style={{ fontSize: '.82rem', fontFamily: 'var(--font-mono)', color: cab.eventCount > 0 ? '#F59E0B' : 'var(--admin-text-muted)' }}>{cab.eventCount}</span>
               </div>
               {/* Toggle */}
               <div style={{ display: 'flex', alignItems: 'center' }}>

@@ -4,13 +4,21 @@
 // Điều hướng lọc theo vai trò người dùng (admin / manager / operator)
 // ============================================================
 
-import { useEffect, useState, Suspense } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useState, Suspense, useRef } from 'react';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '@/services/AuthService';
+import { useAlertStore, useSensorStore } from '@/store';
+import { ALERT_STATUS } from '@/types/enums';
+import type { AlertItem, SensorPoint } from '@/types/api.types';
+import { setTheme as setGlobalTheme } from '@/utils/theme-manager';
+import { showToast } from '@/utils/toast';
+import { playAlertSound } from '@/utils/sound-utils';
+import { createRealtimeHub } from '@/services/realtime.service';
+import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
   LayoutDashboard, Video, AlertTriangle, LineChart, FileText,
   Wrench, FileArchive, Map, Radio, Users, Settings2, Settings, LogOut,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Moon, Sun
 } from 'lucide-react';
 
 interface NavSubItem { id: string; path: string; label: string }
@@ -21,12 +29,12 @@ interface NavItem { id: string; path: string; icon: React.ReactNode; label: stri
 // TODO (production): thêm field `roles` để lọc theo vai trò
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', path: '/dashboard', icon: <LayoutDashboard size={19} strokeWidth={1.5} />, label: 'Tổng quan' },
-  { id: 'realtime', path: '/realtime', icon: <Video size={19} strokeWidth={1.5} />, label: 'Giám sát RT' },
-  { id: 'alerts-history', path: '/alerts-history', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Nhật ký' },
+  { id: 'realtime', path: '/realtime', icon: <Video size={19} strokeWidth={1.5} />, label: 'Trực tiếp' },
+  { id: 'alerts-history', path: '/alerts-history', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Lịch sử cảnh báo' },
   { id: 'analytics', path: '/analytics', icon: <LineChart size={19} strokeWidth={1.5} />, label: 'Phân tích' },
   { id: 'reports', path: '/reports', icon: <FileText size={19} strokeWidth={1.5} />, label: 'Báo cáo' },
   { id: 'maintenance', path: '/maintenance', icon: <Wrench size={19} strokeWidth={1.5} />, label: 'Bảo trì' },
-  { id: 'audit-log', path: '/audit-log', icon: <FileArchive size={19} strokeWidth={1.5} />, label: 'Audit Log' },
+  { id: 'audit-log', path: '/audit-log', icon: <FileArchive size={19} strokeWidth={1.5} />, label: 'Nhật ký hệ thống' },
   { id: 'multisite', path: '/multisite', icon: <Map size={19} strokeWidth={1.5} />, label: 'Đa trạm' },
 ];
 
@@ -35,14 +43,98 @@ const NAV_ITEMS: NavItem[] = [
 const ADMIN_NAV: NavItem[] = [
   { id: 'device-management', path: '/device-management', icon: <Radio size={19} strokeWidth={1.5} />, label: 'Thiết bị' },
   { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng' },
-  { id: 'rule-engine', path: '/rule-engine', icon: <Settings2 size={19} strokeWidth={1.5} />, label: 'Rule Engine' },
+  { id: 'rule-engine', path: '/rule-engine', icon: <Settings2 size={19} strokeWidth={1.5} />, label: 'Bộ quy tắc' },
+  { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt' },
 ];
 
 export default function AppShell() {
   const navigate = useNavigate();
-  const user = authService.getUser() || { fullname: 'User', role: 'user' };
+  const location = useLocation();
+  const user = authService.getUser() || { fullname: 'Người dùng', role: 'user' };
+
+  // ── Alerts Management ────────────────────────────────────────
+  const [activeAlert, setActiveAlert] = useState<AlertItem | null>(null);
+  const fetchAlerts = useAlertStore(s => s.fetch);
+  const invalidateAlerts = useAlertStore(s => s.invalidate);
+  
+  useEffect(() => {
+    fetchAlerts(ALERT_STATUS.OPEN);
+
+    // Khởi tạo SignalR Hub toàn cục để lắng nghe mọi sự kiện trên mọi Tab
+    const hub = createRealtimeHub();
+
+    // 1. Lắng nghe cảnh báo mới từ Rule Engine
+    hub.on('AlertNew', (alert: AlertItem) => {
+      invalidateAlerts(ALERT_STATUS.OPEN);
+      fetchAlerts(ALERT_STATUS.OPEN, true);
+    });
+
+    // 2. Lắng nghe cập nhật cảnh báo
+    hub.on('AlertUpdated', (alert: AlertItem) => {
+      invalidateAlerts(ALERT_STATUS.OPEN);
+      fetchAlerts(ALERT_STATUS.OPEN, true);
+    });
+
+    // 3. Lắng nghe sự kiện Camera AI
+    hub.on('CameraEvent', (evt: any) => {
+      const isCritical = ['fire', 'thermal_hotspot', 'intrusion'].includes(evt.detectionType);
+      playAlertSound(isCritical ? 'alarm' : 'warning');
+      
+      if (isCritical) {
+        const mockAlert: any = {
+          id: evt.alertId || evt.id,
+          level: 'alarm',
+          status: 'open',
+          message: `[AI] ${evt.cameraName || 'Camera'}: ${evt.detectionType.toUpperCase()}${evt.maxTemp ? ` (${evt.maxTemp.toFixed(1)}°C)` : ''}`,
+          triggeredAt: evt.detectedAt,
+          deviceId: evt.cameraId,
+          metadata: evt.metadata ? (typeof evt.metadata === 'string' ? JSON.parse(evt.metadata) : evt.metadata) : {}
+        };
+        setActiveAlert(mockAlert);
+      } else {
+        showToast(`Camera: ${evt.detectionType.toUpperCase()}`, 'info');
+      }
+    });
+
+    // 4. Lắng nghe cập nhật cảm biến (để đồng bộ store cho mọi tab)
+    hub.on('SensorUpdate', (data: SensorPoint[]) => {
+      if (!Array.isArray(data)) return;
+      useSensorStore.setState(s => {
+        const nextPoints = { ...s.pointsByStation };
+        data.forEach(d => {
+          // Lưu ý: data từ SignalR có thể không chứa stationId, chúng ta cập nhật vào mọi trạm có deviceId tương ứng
+          Object.keys(nextPoints).forEach(sid => {
+            const list = [...(nextPoints[sid] || [])];
+            const idx = list.findIndex(p => p.pointId === d.pointId && p.deviceId === d.deviceId);
+            if (idx >= 0) {
+              list[idx] = d;
+              nextPoints[sid] = list;
+            }
+          });
+        });
+        return { pointsByStation: nextPoints };
+      });
+    });
+
+    hub.start().catch(err => console.warn('[AppShell] SignalR Global Error:', err));
+
+    return () => {
+      hub.stop();
+    };
+  }, [fetchAlerts, invalidateAlerts]);
+
+  const getRoleLabel = (role?: string) => {
+    const r = (role || '').toLowerCase();
+    if (r === 'admin') return 'QUẢN TRỊ';
+    if (r === 'manager') return 'QUẢN LÝ';
+    if (r === 'operator') return 'VẬN HÀNH';
+    return '';
+  };
   const [time, setTime] = useState(new Date().toLocaleTimeString('vi-VN'));
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
   // Sidebar mở rộng mặc định; lưu preference vào localStorage
   const [expanded, setExpanded] = useState(
     () => localStorage.getItem('sidebar-expanded') !== 'false'
@@ -50,6 +142,33 @@ export default function AppShell() {
   const [theme, setThemeState] = useState<string>(
     () => localStorage.getItem('station-theme') || 'dark'
   );
+
+  const handleSelectTheme = (newTheme: string) => {
+    setThemeState(newTheme);
+    setGlobalTheme(newTheme as any);
+    showToast(`Đã áp dụng giao diện ${newTheme === 'dark' ? 'Tối' : 'Sáng'}`, 'success');
+  };
+
+  useEffect(() => {
+    // Đóng user menu khi đổi route/tab
+    setShowUserMenu(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    // Đóng user menu khi click ra ngoài
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+
+    if (showUserMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showUserMenu]);
 
   useEffect(() => {
     // Áp dụng theme đã lưu ngay khi shell mount
@@ -150,14 +269,6 @@ export default function AppShell() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <div className="header-clock">{time}</div>
-          <div className="header-divider" />
-          <div className="header-user">
-            <span className="user-avatar">{user.fullname?.[0] || 'U'}</span>
-            <span style={{ fontSize: '.85rem', color: 'var(--admin-text)', fontWeight: 600 }}>{user.fullname}</span>
-            {user.role && user.role.toLowerCase() !== 'user' && user.role.toLowerCase() !== user.fullname.toLowerCase() && (
-              <span className={`role-badge role-${user.role}`}>{user.role.toUpperCase()}</span>
-            )}
-          </div>
         </div>
       </header>
 
@@ -186,13 +297,72 @@ export default function AppShell() {
             {/* ── Bottom actions (pinned) ── */}
             <div className="sb-bottom">
               <div className="sb-sep" />
-              <NavLink to="/settings" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`} title={!expanded ? 'Cài đặt' : undefined}>
-                <span className="nav-icon"><Settings size={19} strokeWidth={1.5} /></span>
-                <span className={`nav-label${expanded ? ' nav-label--visible' : ''}`}>Cài đặt</span>
-              </NavLink>
-              <div className="nav-item nav-item--logout" onClick={() => setShowLogoutModal(true)} title={!expanded ? 'Đăng xuất' : undefined}>
-                <span className="nav-icon"><LogOut size={19} strokeWidth={1.5} /></span>
-                <span className={`nav-label${expanded ? ' nav-label--visible' : ''}`}>Đăng xuất</span>
+              
+              {/* Profile & User Menu Combined */}
+              <div className="sb-user-action-wrap" style={{ position: 'relative' }} ref={userMenuRef}>
+                
+                {/* Popover Menu */}
+                {showUserMenu && (
+                  <div className="sb-user-popover">
+                    <div style={{ display: 'flex', gap: 4, padding: '4px 8px 8px' }}>
+                      <button 
+                        onClick={() => handleSelectTheme('dark')}
+                        style={{ 
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, 
+                          padding: '6px', borderRadius: 4, border: '1px solid var(--admin-border)',
+                          background: theme === 'dark' ? 'var(--admin-accent)' : 'transparent',
+                          color: theme === 'dark' ? '#fff' : 'var(--admin-text-muted)',
+                          fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
+                        }}
+                      >
+                        <Moon size={14} /> Tối
+                      </button>
+                      <button 
+                        onClick={() => handleSelectTheme('light')}
+                        style={{ 
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, 
+                          padding: '6px', borderRadius: 4, border: '1px solid var(--admin-border)',
+                          background: theme === 'light' ? 'var(--admin-accent)' : 'transparent',
+                          color: theme === 'light' ? '#fff' : 'var(--admin-text-muted)',
+                          fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
+                        }}
+                      >
+                        <Sun size={14} /> Sáng
+                      </button>
+                    </div>
+                    <div className="sb-popover-sep" style={{ margin: '0 8px 4px' }} />
+                    <div className="sb-popover-item danger" onClick={() => { setShowLogoutModal(true); setShowUserMenu(false); }}>
+                      <LogOut size={15} strokeWidth={2} /> <span>Đăng xuất</span>
+                    </div>
+                  </div>
+                )}
+
+                <div 
+                  className={`sb-user-action ${showUserMenu ? 'active' : ''}`} 
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  title={!expanded ? 'Tài khoản' : undefined}
+                >
+                  <div className="sb-profile">
+                    <span className="user-avatar">{user.fullname?.[0] || 'N'}</span>
+                    {expanded && (
+                      <div className="sb-profile-info">
+                        <div className="sb-profile-name">{user.fullname}</div>
+                        {getRoleLabel(user.role) && <div className="sb-profile-role">{getRoleLabel(user.role)}</div>}
+                      </div>
+                    )}
+                    {expanded && (
+                      <ChevronRight 
+                        size={14} 
+                        strokeWidth={2.5} 
+                        style={{ 
+                          opacity: 0.4, 
+                          transform: showUserMenu ? 'rotate(-90deg)' : 'none',
+                          transition: 'transform 0.2s'
+                        }} 
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -214,6 +384,14 @@ export default function AppShell() {
         </div>
 
       </div>{/* end .app-body */}
+
+      {/* ── Rich Alert Modal ── */}
+      {activeAlert && (
+        <RichAlertModal 
+          alert={activeAlert} 
+          onClose={() => setActiveAlert(null)} 
+        />
+      )}
 
       {/* ── Logout modal ── */}
       {showLogoutModal && (

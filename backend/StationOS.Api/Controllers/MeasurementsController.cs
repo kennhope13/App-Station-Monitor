@@ -274,6 +274,7 @@ public class MeasurementsController : ControllerBase
             ty       = r.Ty,
             ox       = r.Ox,
             oy       = r.Oy,
+            isZone   = r.IsZone,
             time     = DateTime.UtcNow
         }));
 
@@ -456,5 +457,6 @@ public class MeasurementsController : ControllerBase
         public double? Ty { get; set; }
         public double? Ox { get; set; }
         public double? Oy { get; set; }
+        public bool IsZone { get; set; }
     }
 }

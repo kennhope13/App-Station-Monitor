@@ -210,8 +210,8 @@ export default function GeneralTab() {
         }
       `}</style>
 
-      {/* Tiêu đề & Trạng thái tải */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Tiêu đề & Trạng thái tải - Hidden as requested */}
+      <div style={{ display: 'none', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-text)' }}>THÔNG SỐ VẬN HÀNH HỆ THỐNG</h2>
           <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginTop: 2 }}>Điều khiển chu kỳ quét cảm biến Modbus PLC, tối ưu hóa ghi đĩa cứng, và cấu hình email khẩn cấp</div>

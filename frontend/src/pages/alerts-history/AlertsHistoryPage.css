@@ -45,7 +45,7 @@
   opacity: .45;
   text-transform: uppercase;
   letter-spacing: .7px;
-  font-family: 'Consolas', 'Courier New', monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
 }
 
@@ -94,7 +94,7 @@
 /* ── Data grid ── */
 .ah-grid-header, .ah-grid-row {
   display: grid;
-  grid-template-columns: 72px 148px 96px minmax(0,1fr) 115px 96px;
+  grid-template-columns: 72px 148px 90px minmax(0,1fr) 100px;
   align-items: center;
   width: 100%;
   box-sizing: border-box;
@@ -103,7 +103,7 @@
 
 .ah-layout.has-detail .ah-grid-header,
 .ah-layout.has-detail .ah-grid-row {
-  grid-template-columns: 60px 130px 88px minmax(0,1fr) 105px 84px;
+  grid-template-columns: 60px 130px 84px minmax(0,1fr) 95px 95px;
 }
 
 .ah-grid-header {
@@ -126,7 +126,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-family: 'Consolas', 'Courier New', monospace;
+  font-family: var(--font-mono);
 }
 
 .ah-grid-header > div:nth-child(5),
@@ -197,7 +197,7 @@
   font-size: .6rem; font-weight: 800; letter-spacing: .5px;
   text-transform: uppercase; opacity: .35;
   margin-bottom: 10px;
-  font-family: 'Consolas', 'Courier New', monospace;
+  font-family: var(--font-mono);
 }
 
 .ah-info-row {
@@ -236,5 +236,5 @@
   align-items: center;
   flex-shrink: 0;
   background: var(--admin-layer-1);
-  font-family: 'Consolas', 'Courier New', monospace;
+  font-family: var(--font-mono);
 }

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -24,8 +24,8 @@ public class AIEngineManagedWorker : BackgroundService
     {
         _logger.LogInformation("[AI-MANAGER] Khoi dong AI Engine Managed Worker...");
 
-        string aiDir = Path.Combine(_env.ContentRootPath, "AI");
-        string scriptPath = Path.Combine(aiDir, "enhanced_relay.py");
+        string aiDir = Path.GetFullPath(Path.Combine(_env.ContentRootPath, "..", "..", "ai_engine"));
+        string scriptPath = Path.Combine(aiDir, "main.py");
 
         if (!File.Exists(scriptPath))
         {
@@ -39,10 +39,22 @@ public class AIEngineManagedWorker : BackgroundService
 
             try
             {
+                string pythonCmd;
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    var venvPath = Path.Combine(aiDir, ".venv", "Scripts", "python.exe");
+                    pythonCmd = File.Exists(venvPath) ? venvPath : "python";
+                }
+                else
+                {
+                    var venvPath = Path.Combine(aiDir, ".venv", "bin", "python");
+                    pythonCmd = File.Exists(venvPath) ? venvPath : "python3";
+                }
+
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = "python",
-                    Arguments = $"enhanced_relay.py",
+                    FileName = pythonCmd,
+                    Arguments = $"main.py",
                     WorkingDirectory = aiDir,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,

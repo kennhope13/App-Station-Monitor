@@ -66,10 +66,12 @@ public class DevicesController : ControllerBase
         var raw = await _db.Devices
             .Select(d => new { d.Id, d.Name, d.Type, d.Config, d.Status })
             .ToListAsync();
-        // Che password trong response — chỉ admin xem qua endpoint riêng nếu cần plain
+        var isTrusted = IsTrustedInternal(remoteIp);
         var devices = raw.Select(d => new {
             d.Id, d.Name, d.Type, d.Status,
-            Config = _crypto.RedactPasswordInConfigJson(d.Config),
+            Config = isTrusted
+                ? _crypto.DecryptPasswordInConfigJson(d.Config)
+                : _crypto.RedactPasswordInConfigJson(d.Config),
         });
         return Ok(devices);
     }
@@ -427,8 +429,13 @@ public class DevicesController : ControllerBase
     // ── ROI Points ────────────────────────────────────────────
 
     [HttpGet("devices/{deviceId}/roi-points")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetRoiPoints(Guid deviceId)
     {
+        var remoteIp = Request.HttpContext.Connection.RemoteIpAddress?.ToString();
+        if (!IsTrustedInternal(remoteIp) && !User.Identity!.IsAuthenticated)
+            return Unauthorized();
+
         var points = await _db.RoiPoints
             .Where(r => r.DeviceId == deviceId)
             .OrderBy(r => r.CreatedAt)
@@ -457,6 +464,9 @@ public class DevicesController : ControllerBase
         };
         _db.RoiPoints.Add(point);
         await _db.SaveChangesAsync();
+
+        await SyncThermalPointsToAIEngineAsync(deviceId);
+
         return Ok(point);
     }
 
@@ -480,6 +490,9 @@ public class DevicesController : ControllerBase
         point.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+
+        await SyncThermalPointsToAIEngineAsync(deviceId);
+
         return Ok(point);
     }
 
@@ -491,7 +504,134 @@ public class DevicesController : ControllerBase
 
         _db.RoiPoints.Remove(point);
         await _db.SaveChangesAsync();
+
+        await SyncThermalPointsToAIEngineAsync(deviceId);
+
         return NoContent();
+    }
+
+    private async Task SyncThermalPointsToAIEngineAsync(Guid deviceId)
+    {
+        try
+        {
+            var device = await _db.Devices.FindAsync(deviceId);
+            if (device == null || (!device.Type.Equals("camera_dual", StringComparison.OrdinalIgnoreCase) && !device.Type.Equals("camera_thermal", StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            var points = await _db.RoiPoints
+                .Where(r => r.DeviceId == deviceId)
+                .OrderBy(r => r.CreatedAt)
+                .ToListAsync();
+
+            var cfg = TryParseConfig(device.Config);
+            var ip = GetStringValue(cfg, "ip");
+            var username = GetStringValue(cfg, "username", "admin");
+            var password = "";
+            var rawPassword = GetStringValue(cfg, "password");
+            if (!string.IsNullOrEmpty(rawPassword))
+            {
+                try
+                {
+                    password = _crypto.Decrypt(rawPassword);
+                }
+                catch { password = rawPassword; }
+            }
+            var streamId = GetStringValue(cfg, "go2rtc_thermal");
+            if (string.IsNullOrEmpty(streamId))
+            {
+                streamId = GetStringValue(cfg, "go2rtc_id");
+            }
+
+            if (string.IsNullOrEmpty(streamId))
+                return;
+
+            var payload = new
+            {
+                stream_id = streamId,
+                device_id = deviceId.ToString(),
+                camera_ip = ip,
+                username = username,
+                password = password,
+                points = points.Select((p, idx) => new
+                {
+                    id = !string.IsNullOrEmpty(p.PointId) ? p.PointId : $"P{idx + 1}",
+                    x = p.Tx,
+                    y = p.Ty,
+                    pre_alarm = (double)p.PreAlarmThreshold,
+                    alarm = (double)p.AlarmThreshold,
+                    label = p.Name ?? ""
+                }).ToList()
+            };
+
+            using var client = new System.Net.Http.HttpClient();
+            var json = JsonSerializer.Serialize(payload);
+            var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            await client.PostAsync("http://localhost:8100/api/v1/config/thermal", content);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SyncThermalPointsToAIEngineAsync] Error: {ex.Message}");
+        }
+    }
+
+    private static string GetStringValue(Dictionary<string, object?> dict, string key, string defaultValue = "")
+    {
+        if (!dict.TryGetValue(key, out var val) || val == null)
+            return defaultValue;
+
+        if (val is JsonElement elem)
+        {
+            if (elem.ValueKind == JsonValueKind.String)
+                return elem.GetString() ?? defaultValue;
+            return elem.GetRawText()?.Trim('"') ?? defaultValue;
+        }
+
+        return val.ToString() ?? defaultValue;
+    }
+
+    [HttpGet("devices/{deviceId}/thermal-mapping")]
+    public async Task<IActionResult> GetThermalMapping(Guid deviceId)
+    {
+        var device = await _db.Devices.FindAsync(deviceId);
+        if (device == null) return NotFound();
+
+        var cfg = TryParseConfig(device.Config);
+        var ip = GetStringValue(cfg, "ip");
+        var username = GetStringValue(cfg, "username", "admin");
+        var password = "";
+        var rawPassword = GetStringValue(cfg, "password");
+        if (!string.IsNullOrEmpty(rawPassword))
+        {
+            try { password = _crypto.Decrypt(rawPassword); }
+            catch { password = rawPassword; }
+        }
+
+        Console.WriteLine($"[DEBUG-DECRYPT] IP: {ip}, User: {username}, Decrypted Password: {password}, Raw Password: {rawPassword}");
+
+        var mappingJson = await _isapi.GetThermalMappingAsync(ip, username, password);
+        if (string.IsNullOrEmpty(mappingJson))
+        {
+            // Trả về default mapping nếu camera không hỗ trợ hoặc lỗi
+            return Ok(new { x = 0.2, y = 0.084, width = 0.63, height = 0.841 });
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(mappingJson);
+            if (doc.RootElement.TryGetProperty("JpegPictureWithAppendData", out var appendData) &&
+                appendData.TryGetProperty("VisibleValidRect", out var rect))
+            {
+                return Ok(new {
+                    x = rect.GetProperty("x").GetDouble(),
+                    y = rect.GetProperty("y").GetDouble(),
+                    width = rect.GetProperty("width").GetDouble(),
+                    height = rect.GetProperty("height").GetDouble()
+                });
+            }
+        }
+        catch { }
+
+        return Ok(new { x = 0.2, y = 0.084, width = 0.63, height = 0.841 });
     }
 
     /// <summary>

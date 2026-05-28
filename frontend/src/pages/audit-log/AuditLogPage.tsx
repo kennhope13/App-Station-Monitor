@@ -206,7 +206,7 @@ export default function AuditLogPage() {
         return (
           <React.Fragment key={rowId}>
             <tr>
-              <td className="col-time" style={{ color: 'var(--admin-text-muted)', fontFamily: 'monospace' }}>
+              <td className="col-time" style={{ color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 {fmtDateTime(m.ts)}
               </td>
               <td className="col-type">
@@ -388,47 +388,28 @@ export default function AuditLogPage() {
 
   return (
     <div className="admin-page-container">
-      <div className="page-toolbar-row">
-        <div className="page-title-cell">
-          <h2>NHẬT KÝ HỆ THỐNG</h2>
-        </div>
+      {/* Redesigned Toolbar */}
+      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', padding: '0 8px 12px 8px' }}>
+        
+        <select className="btn-industrial" style={{ height: 34, padding: '0 12px', fontSize: '.75rem' }} value={activeTab} onChange={e => setActiveTab(e.target.value as TabId)}>
+          <option value="all">Loại: Tất cả</option>
+          <option value="audit">Hành động hệ thống</option>
+          <option value="login">Nhật ký đăng nhập</option>
+          <option value="notify">Thông báo Email/SMS</option>
+          <option value="triggers">Quy tắc kích hoạt</option>
+        </select>
+        
+        <select className="btn-industrial" style={{ height: 34, padding: '0 12px', fontSize: '.75rem' }} value={timeRange} onChange={e => setTimeRange(e.target.value)}>
+          <option value="today">Thời gian: Hôm nay</option>
+          <option value="yesterday">Hôm qua</option>
+          <option value="7d">7 ngày qua</option>
+          <option value="30d">30 ngày qua</option>
+          <option value="all">Tất cả</option>
+        </select>
 
-        {/* Right controls — all 34px tall, same row */}
-        <div className="page-toolbar-group">
-          <div className="page-toolbar-cell">
-            <span className="page-cell-label">LOẠI:</span>
-            <select
-              value={activeTab}
-              onChange={e => setActiveTab(e.target.value as TabId)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--admin-text)', fontSize: '.75rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
-            >
-              <option value="all">Tất cả nhật ký</option>
-              <option value="audit">Hành động hệ thống</option>
-              <option value="login">Nhật ký đăng nhập</option>
-              <option value="notify">Thông báo Email/SMS</option>
-              <option value="triggers">Quy tắc kích hoạt</option>
-            </select>
-          </div>
-
-          <div className="page-toolbar-cell">
-            <span className="page-cell-label">THỜI GIAN:</span>
-            <select
-              value={timeRange}
-              onChange={e => setTimeRange(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--admin-text)', fontSize: '.75rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
-            >
-              <option value="today">Hôm nay</option>
-              <option value="yesterday">Hôm qua</option>
-              <option value="7d">7 ngày qua</option>
-              <option value="30d">30 ngày qua</option>
-              <option value="all">Tất cả lịch sử</option>
-            </select>
-          </div>
-
-          <button className="btn-industrial btn-primary" onClick={loadData}>
-            ↻ Làm mới
-          </button>
-        </div>
+        <button className="btn-industrial btn-primary" style={{ height: 34, padding: '0 16px', fontSize: '.75rem' }} onClick={loadData}>
+          ↻ Làm mới
+        </button>
       </div>
 
       <div className="admin-card audit-card" style={{ borderRadius: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>

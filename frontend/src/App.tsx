@@ -19,7 +19,6 @@ const MaintenancePage = React.lazy(() => import('@/pages/maintenance/Maintenance
 const AuditLogPage = React.lazy(() => import('@/pages/audit-log/AuditLogPage'));
 const MultisitePage = React.lazy(() => import('@/pages/multisite/MultisitePage'));
 const DeviceManagementPage = React.lazy(() => import('@/pages/device-management/DeviceManagementPage'));
-const ThermalConfigPage = React.lazy(() => import('@/pages/device-management/ThermalConfigPage'));
 const UserManagementPage = React.lazy(() => import('@/pages/user-management/UserManagementPage'));
 const RuleEnginePage = React.lazy(() => import('@/pages/rule-engine/RuleEnginePage'));
 const SettingsPage = React.lazy(() => import('@/pages/settings/SettingsPage'));
@@ -46,7 +45,7 @@ const ScreenLoader = () => {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      fontFamily: 'monospace',
+      fontFamily: 'var(--admin-font)',
       fontSize: '14px',
       fontWeight: 'bold',
       zIndex: 9999
@@ -81,7 +80,6 @@ export default function App() {
             <Route path="audit-log" element={<AuditLogPage />} />
             <Route path="multisite" element={<MultisitePage />} />
             <Route path="device-management" element={<DeviceManagementPage />} />
-            <Route path="device-management/:deviceId/thermal-config" element={<ThermalConfigPage />} />
             <Route path="user-management" element={<UserManagementPage />} />
             <Route path="rule-engine" element={<RuleEnginePage />} />
             <Route path="settings" element={<SettingsPage />} />

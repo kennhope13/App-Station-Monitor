@@ -162,6 +162,7 @@
     font-weight: 600;
     cursor: pointer;
     transition: all .2s;
+    white-space: nowrap;
 }
 
 .btn-industrial:hover {
@@ -188,6 +189,53 @@
     padding: 4px 10px;
     font-size: .75rem;
 }
+
+/* ── Compact Action Buttons (for tables) ────────────────── */
+.btn-action-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--admin-text-muted);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+
+.btn-action-compact:hover {
+    background: var(--admin-layer-2);
+    color: var(--admin-text);
+    border-color: var(--admin-border);
+}
+
+.btn-action-compact svg {
+    opacity: 0.8;
+    flex-shrink: 0;
+}
+
+.btn-action-compact.btn-accent {
+    color: var(--admin-accent);
+}
+.btn-action-compact.btn-accent:hover {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.2);
+}
+
+.btn-action-compact.btn-danger {
+    color: var(--admin-danger);
+}
+.btn-action-compact.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.2);
+}
+
 
 /* ── Form Elements ──────────────────────────────────────── */
 .form-group {

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // HikvisionIsapiService — Điều khiển camera Hikvision qua ISAPI
 // Endpoints: snapshot, PTZ, event stream, AI events
 // ============================================================
@@ -355,6 +355,67 @@ public class HikvisionIsapiService
   <tilt>{tilt}</tilt>
   <zoom>{zoom}</zoom>
 </PTZData>";
+    }
+
+    /// <summary>
+    /// Lấy thông số VisibleValidRect từ camera Hikvision bi-spectrum.
+    /// Endpoint: /ISAPI/Thermal/channels/2/thermometry/jpegPicWithAppendData?format=json
+    /// Trả về JSON chứa VisibleValidRect hoặc null.
+    /// </summary>
+    public async Task<string?> GetThermalMappingAsync(string ip, string user, string pass)
+    {
+        var url = $"http://{ip}/ISAPI/Thermal/channels/2/thermometry/jpegPicWithAppendData?format=json";
+        try
+        {
+            using var client = CreateDigestClient(user, pass);
+            using var res = await client.GetAsync(url);
+            if (!res.IsSuccessStatusCode) return null;
+
+            var bytes = await res.Content.ReadAsByteArrayAsync();
+            var searchStr = "Content-Type: application/json";
+            var searchBytes = Encoding.ASCII.GetBytes(searchStr);
+            
+            var index = FindBytes(bytes, searchBytes);
+            if (index == -1) return null;
+
+            var headerEndBytes = Encoding.ASCII.GetBytes("\r\n\r\n");
+            var headerEndIndex = FindBytes(bytes, headerEndBytes, index);
+            if (headerEndIndex == -1) return null;
+
+            var jsonStart = headerEndIndex + 4;
+            var boundaryBytes = Encoding.ASCII.GetBytes("\r\n--");
+            var boundaryIndex = FindBytes(bytes, boundaryBytes, jsonStart);
+            if (boundaryIndex == -1) return null;
+
+            var jsonLength = boundaryIndex - jsonStart;
+            var jsonBytes = new byte[jsonLength];
+            Array.Copy(bytes, jsonStart, jsonBytes, 0, jsonLength);
+            
+            return Encoding.UTF8.GetString(jsonBytes).Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Hikvision] GetThermalMapping lỗi — {Ip}", ip);
+            return null;
+        }
+    }
+
+    private static int FindBytes(byte[] src, byte[] search, int startIndex = 0)
+    {
+        for (int i = startIndex; i <= src.Length - search.Length; i++)
+        {
+            bool match = true;
+            for (int j = 0; j < search.Length; j++)
+            {
+                if (src[i + j] != search[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return i;
+        }
+        return -1;
     }
 
     private static HikvisionDeviceInfo? ParseDeviceInfo(string xml)

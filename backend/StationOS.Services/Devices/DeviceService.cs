@@ -14,6 +14,7 @@ using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StationOS.Data.Entities;
+using StationOS.Services.Security;
 
 namespace StationOS.Services.Devices;
 
@@ -22,15 +23,17 @@ public class DeviceService
     private readonly IHttpClientFactory _http;
     private readonly IConfiguration _config;
     private readonly ILogger<DeviceService> _logger;
+    private readonly CredentialEncryptionService _crypto;
 
     // go2rtc REST API mặc định chạy tại port 1984
     private string Go2RtcUrl => _config["Go2Rtc:ApiUrl"] ?? "http://localhost:1984";
 
-    public DeviceService(IHttpClientFactory http, IConfiguration config, ILogger<DeviceService> logger)
+    public DeviceService(IHttpClientFactory http, IConfiguration config, ILogger<DeviceService> logger, CredentialEncryptionService crypto)
     {
         _http = http;
         _config = config;
         _logger = logger;
+        _crypto = crypto;
     }
 
     /// <summary>
@@ -126,7 +129,8 @@ public class DeviceService
 
         var ip       = config.GetValueOrDefault("ip")?.ToString();
         var username = config.GetValueOrDefault("username")?.ToString() ?? "admin";
-        var password = config.GetValueOrDefault("password")?.ToString() ?? "admin";
+        var rawPassword = config.GetValueOrDefault("password")?.ToString() ?? "admin";
+        var password = _crypto.Decrypt(rawPassword);
         var encodedPassword = Uri.EscapeDataString(password);
 
         try
@@ -182,6 +186,23 @@ public class DeviceService
 
                 _logger.LogInformation("[go2rtc] Đăng ký camera_dual: {OptId} ({OptPath}) + {ThId} ({ThPath})",
                     opticalId, opticalPath, thermalId, thermalPath);
+            }
+            else if (device.Type == "camera_thermal")
+            {
+                var thermalPath = config.GetValueOrDefault("rtsp_thermal")?.ToString() ?? "/Streaming/Channels/201";
+                var thermalId   = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_thermal";
+                var rtspThermalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
+
+                existingStreams[thermalId] = rtspThermalUrl;
+
+                var subThermalPath = DeriveHikvisionSubPath(thermalPath);
+                if (subThermalPath != null)
+                {
+                    var subThermalId = thermalId + "_sub";
+                    existingStreams[subThermalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subThermalPath}";
+                }
+
+                _logger.LogInformation("[go2rtc] Đăng ký camera_thermal: {ThId} ({ThPath})", thermalId, thermalPath);
             }
             else
             {
@@ -266,6 +287,14 @@ public class DeviceService
                 await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={opticalId}_sub");
                 await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={thermalId}");
                 _logger.LogInformation("[go2rtc] Đã xóa camera_dual streams: {OptId}, {ThId}", opticalId, thermalId);
+            }
+            else if (device.Type == "camera_thermal")
+            {
+                var thermalId = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_")}_thermal";
+
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={thermalId}");
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={thermalId}_sub");
+                _logger.LogInformation("[go2rtc] Đã xóa camera_thermal stream: {ThId}", thermalId);
             }
             else
             {

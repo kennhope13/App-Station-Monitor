@@ -7,12 +7,40 @@
 // ============================================================
 
 // URL server go2rtc để phát stream camera qua WebRTC
-export const GO2RTC_URL: string =
-  (import.meta.env.VITE_GO2RTC_URL as string | undefined) ?? 'http://localhost:1984';
+const rawGo2rtc = (import.meta.env.VITE_GO2RTC_URL as string | undefined) ?? 'http://localhost:1984';
+export const GO2RTC_URL: string = (() => {
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return rawGo2rtc.replace(/(localhost|127\.0\.0\.1)/g, hostname);
+    }
+  }
+  return rawGo2rtc;
+})();
 
 // URL gốc của backend API — dùng cho REST và WebSocket SignalR
-export const API_BASE_URL: string =
-  (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
+const rawApi = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
+export const API_BASE_URL: string = (() => {
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return rawApi.replace(/(localhost|127\.0\.0\.1)/g, hostname);
+    }
+  }
+  return rawApi;
+})();
+
+// URL gốc của AI Engine (FastAPI) — dùng để xem luồng camera AI đã được vẽ sẵn
+const rawAi = (import.meta.env.VITE_AI_URL as string | undefined) ?? 'http://localhost:8100';
+export const AI_ENGINE_URL: string = (() => {
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return rawAi.replace(/(localhost|127\.0\.0\.1)/g, hostname);
+    }
+  }
+  return rawAi;
+})();
 
 // Chế độ triển khai: 'onprem' | 'cloud'
 export const APP_MODE: string =
@@ -25,5 +53,8 @@ if (import.meta.env.DEV) {
   }
   if (!import.meta.env.VITE_GO2RTC_URL) {
     console.warn('[env] VITE_GO2RTC_URL chưa được cấu hình, dùng fallback:', GO2RTC_URL);
+  }
+  if (!import.meta.env.VITE_AI_URL) {
+    console.warn('[env] VITE_AI_URL (AI Engine) chưa được cấu hình, dùng fallback:', AI_ENGINE_URL);
   }
 }

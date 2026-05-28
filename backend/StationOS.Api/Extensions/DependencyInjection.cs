@@ -83,6 +83,7 @@ public static class DependencyInjection
         services.AddHostedService<Iec104Worker>();
         services.AddHostedService<CloudSyncWorker>();
         services.AddHostedService<DeviceHealthCheckWorker>();
+        services.AddHostedService<StationOS.Api.Services.AIEngineManagedWorker>();
 
         // ── Device Handlers (plugin pattern) ──────────────────────
         // Mỗi loại thiết bị có handler riêng. Registry tự dispatch theo device.Type.

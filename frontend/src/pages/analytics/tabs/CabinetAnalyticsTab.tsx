@@ -109,7 +109,7 @@ function DrillPanel({ cab, range, setRange }: { cab: CabinetSummary; range: Rang
       <div style={{ background: 'var(--admin-card-bg)', border: `1px solid ${color}40`, borderLeft: `3px solid ${color}`, borderRadius: 4, padding: '10px 14px', flexShrink: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <div style={{ fontSize: '.82rem', fontWeight: 800, color: 'var(--admin-text)', fontFamily: 'Consolas,monospace' }}>{cab.name}</div>
+            <div style={{ fontSize: '.82rem', fontWeight: 800, color: 'var(--admin-text)', fontFamily: 'var(--font-mono)' }}>{cab.name}</div>
             <div style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)', marginTop: 3 }}>{cab.urgencyReason}</div>
           </div>
           <span style={{ fontSize: '.62rem', fontWeight: 900, padding: '3px 8px', background: `${color}18`, color, border: `1px solid ${color}40`, borderRadius: 3, flexShrink: 0, marginLeft: 12 }}>
@@ -127,8 +127,8 @@ function DrillPanel({ cab, range, setRange }: { cab: CabinetSummary; range: Rang
           const diffColor = item.diff === 0 ? '#6B7280' : up ? '#EF4444' : '#10B981';
           return (
             <div key={item.label} style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 4, padding: '8px 12px' }}>
-              <div style={{ fontSize: '.58rem', color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'Consolas,monospace', marginBottom: 4 }}>{item.label}</div>
-              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--admin-text)', fontFamily: 'Consolas,monospace' }}>{item.val}</div>
+              <div style={{ fontSize: '.58rem', color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>{item.label}</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--admin-text)', fontFamily: 'var(--font-mono)' }}>{item.val}</div>
               <div style={{ fontSize: '.65rem', color: diffColor, marginTop: 2, fontWeight: 700 }}>
                 {item.diff > 0 ? '▲' : item.diff < 0 ? '▼' : '—'} {Math.abs(item.diff)} {item.unit}
               </div>
@@ -138,7 +138,7 @@ function DrillPanel({ cab, range, setRange }: { cab: CabinetSummary; range: Rang
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-        <span style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'Consolas,monospace' }}>KHOẢNG THỜI GIAN:</span>
+        <span style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'var(--font-mono)' }}>KHOẢNG THỜI GIAN:</span>
         {RANGES.map(r => (
           <button key={r.value} onClick={() => setRange(r.value)}
             style={{ height: 24, padding: '0 10px', fontSize: '.7rem', fontWeight: 700, border: '1px solid var(--admin-border)', borderRadius: 3, background: range === r.value ? 'var(--admin-accent)' : 'transparent', color: range === r.value ? '#fff' : 'var(--admin-text-muted)', cursor: 'pointer' }}>
@@ -148,7 +148,7 @@ function DrillPanel({ cab, range, setRange }: { cab: CabinetSummary; range: Rang
       </div>
 
       <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 4, padding: '10px 14px', flexShrink: 0 }}>
-        <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontFamily: 'Consolas,monospace', marginBottom: 8 }}>
+        <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>
           NHIỆT ĐỘ T1 / T2 / T3
         </div>
         <div style={{ height: 180 }}>
@@ -157,7 +157,7 @@ function DrillPanel({ cab, range, setRange }: { cab: CabinetSummary; range: Rang
       </div>
 
       <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 4, padding: '10px 14px', flexShrink: 0 }}>
-        <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontFamily: 'Consolas,monospace', marginBottom: 8 }}>
+        <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>
           HOẠT ĐỘNG PHÓNG ĐIỆN PD
         </div>
         <div style={{ height: 150 }}>
@@ -189,7 +189,7 @@ export default function CabinetAnalyticsTab() {
         <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px', gap: 0, padding: '6px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)', flexShrink: 0 }}>
             {['TỦ ĐIỆN', 'SỨC KHỎE', 'T1 MAX', 'PD/24H'].map((h, idx) => (
-              <div key={h} style={{ fontSize: '.56rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'Consolas,monospace', textAlign: idx > 0 ? 'center' : 'left' }}>{h}</div>
+              <div key={h} style={{ fontSize: '.56rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: 'var(--font-mono)', textAlign: idx > 0 ? 'center' : 'left' }}>{h}</div>
             ))}
           </div>
 
@@ -217,9 +217,9 @@ export default function CabinetAnalyticsTab() {
                     <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
                     <span style={{ fontSize: '.8rem', fontWeight: 700, color: isActive ? color : 'var(--admin-text)' }}>{cab.name}</span>
                   </div>
-                  <div style={{ fontSize: '.78rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', textAlign: 'center' }}>{cab.healthScore}%</div>
-                  <div style={{ fontSize: '.78rem', fontWeight: 800, color: tempColor, fontFamily: 'Consolas,monospace', textAlign: 'center' }}>{cab.t1}°C</div>
-                  <div style={{ fontSize: '.78rem', fontWeight: 700, color: cab.pdLevel === 'high' ? '#EF4444' : cab.pdLevel === 'medium' ? '#F59E0B' : '#10B981', fontFamily: 'Consolas,monospace', textAlign: 'center' }}>
+                  <div style={{ fontSize: '.78rem', fontWeight: 800, color, fontFamily: 'var(--font-mono)', textAlign: 'center' }}>{cab.healthScore}%</div>
+                  <div style={{ fontSize: '.78rem', fontWeight: 800, color: tempColor, fontFamily: 'var(--font-mono)', textAlign: 'center' }}>{cab.t1}°C</div>
+                  <div style={{ fontSize: '.78rem', fontWeight: 700, color: cab.pdLevel === 'high' ? '#EF4444' : cab.pdLevel === 'medium' ? '#F59E0B' : '#10B981', fontFamily: 'var(--font-mono)', textAlign: 'center' }}>
                     {cab.pdCount}
                   </div>
                 </div>
@@ -228,7 +228,7 @@ export default function CabinetAnalyticsTab() {
           </div>
 
           {!selected && (
-            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--admin-border-light)', fontSize: '.62rem', color: 'var(--admin-text-muted)', fontFamily: 'Consolas,monospace', flexShrink: 0, textAlign: 'center' }}>
+            <div style={{ padding: '8px 12px', borderTop: '1px solid var(--admin-border-light)', fontSize: '.62rem', color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0, textAlign: 'center' }}>
               Nhấn vào một tủ để xem phân tích chi tiết
             </div>
           )}

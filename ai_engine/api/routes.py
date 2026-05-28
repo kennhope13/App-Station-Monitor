@@ -30,7 +30,7 @@ async def health():
 # ── MJPEG Stream ──────────────────────────────────────────────
 
 @router.get("/stream/{stream_id}")
-async def mjpeg_stream(stream_id: str):
+def mjpeg_stream(stream_id: str):
     """
     Trả về MJPEG stream đã được annotate (điểm nhiệt, line, bounding box).
     Frontend có thể nhúng: <img src="http://localhost:8100/stream/camera_152_thermal">
@@ -164,7 +164,21 @@ async def configure_line(body: DetectionConfig):
 async def status():
     return {
         "thermal": [
-            {"stream_id": sid, "alive": a.is_alive if hasattr(a, "is_alive") else True}
+            {
+                "stream_id": sid,
+                "alive": a._reader.is_alive if (a._reader and hasattr(a._reader, "is_alive")) else True,
+                "points": [
+                    {
+                        "id": p.id,
+                        "x": p.x,
+                        "y": p.y,
+                        "pre_alarm": p.pre_alarm,
+                        "alarm": p.alarm,
+                        "label": p.label
+                    }
+                    for p in a.points
+                ]
+            }
             for sid, a in _thermal_analyzers.items()
         ],
         "detection": list(_line_detectors.keys()),

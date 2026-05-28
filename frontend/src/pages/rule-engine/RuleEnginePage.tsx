@@ -5,6 +5,8 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
+import { Edit2, Copy, Trash2 } from 'lucide-react';
+import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 import { stationApi, Rule, Device } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS } from '@/constants/points';
@@ -316,10 +318,9 @@ export default function RuleEnginePage() {
       `}</style>
 
       {/* Toolbar */}
-      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
         <div className="page-title-cell">
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--admin-text)' }}>BỘ QUY TẮC GIÁM SÁT TỰ ĐỘNG (RULE ENGINE)</h2>
-          <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>Thiết lập các ngưỡng cảnh báo màu sắc trên giao diện và tự động hóa kích hoạt các tác vụ bảo trì</div>
         </div>
         <button className="btn-industrial btn-primary" onClick={() => openAddModal()} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
           + Thêm quy tắc mới
@@ -483,32 +484,13 @@ export default function RuleEnginePage() {
                             </div>
                             
                             {/* Cột 6: Buttons */}
-                            <div className="action-btns" style={{ paddingRight: 20 }}>
-                              <button 
-                                className="btn-industrial btn-sm" 
-                                onClick={() => openEditModal(r)}
-                                title="Chỉnh sửa quy tắc"
-                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                              >
-                                Sửa
-                              </button>
-                              <button 
-                                className="btn-industrial btn-sm" 
-                                onClick={() => cloneRule(r)}
-                                title="Sao chép quy tắc sang thiết bị khác"
-                                style={{ padding: '4px 8px', fontSize: '0.72rem', background: 'var(--admin-layer-3)' }}
-                              >
-                                Sao chép
-                              </button>
-                              <button 
-                                className="btn-industrial btn-sm btn-danger" 
-                                onClick={() => deleteRule(r.id)}
-                                title="Xóa quy tắc này"
-                                style={{ padding: '4px 8px', fontSize: '0.72rem' }}
-                              >
-                                Xóa
-                              </button>
-                            </div>
+                            <td style={{ textAlign: 'right', paddingRight: 20 }}>
+                              <ActionDropdown>
+                                <ActionDropdownItem icon={<Edit2 size={14} />} label="Sửa quy tắc" onClick={() => openEditModal(r)} />
+                                <ActionDropdownItem icon={<Copy size={14} />} label="Sao chép" onClick={() => cloneRule(r)} />
+                                <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa quy tắc" danger onClick={() => deleteRule(r.id)} />
+                              </ActionDropdown>
+                            </td>
                           </div>
                         );
                       })}

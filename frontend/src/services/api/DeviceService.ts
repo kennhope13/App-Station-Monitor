@@ -79,15 +79,70 @@ export class DeviceService {
   // ── ROI Points (điểm chấm nhiệt trên camera nhiệt) ────────────
 
   async getRoiPoints(deviceId: string): Promise<RoiPoint[]> {
-    return apiFetch<RoiPoint[]>(`/devices/${deviceId}/roi-points`);
+    const points = await apiFetch<RoiPoint[]>(`/devices/${deviceId}/roi-points`);
+    return points.map(pt => ({
+      ...pt,
+      label: pt.label || pt.name || '',
+      warningThreshold: pt.warningThreshold ?? pt.preAlarmThreshold,
+      x: pt.x ?? (pt.tx ?? 0) * 100,
+      y: pt.y ?? (pt.ty ?? 0) * 100,
+    }));
   }
 
   async createRoiPoint(deviceId: string, data: Omit<RoiPoint, 'id'>): Promise<RoiPoint> {
-    return apiMutate('POST', `/devices/${deviceId}/roi-points`, data);
+    const txVal = data.x !== undefined ? data.x / 100 : (data.tx !== undefined ? data.tx : 0);
+    const tyVal = data.y !== undefined ? data.y / 100 : (data.ty !== undefined ? data.ty : 0);
+    const oxVal = data.x !== undefined ? data.x / 100 : (data.ox !== undefined ? data.ox : txVal);
+    const oyVal = data.y !== undefined ? data.y / 100 : (data.oy !== undefined ? data.oy : tyVal);
+
+    const payload = {
+      name: data.label || data.name,
+      tx: txVal,
+      ty: tyVal,
+      ox: oxVal,
+      oy: oyVal,
+      pointId: data.pointId,
+      preAlarmThreshold: data.warningThreshold ?? data.preAlarmThreshold,
+      alarmThreshold: data.alarmThreshold,
+      sortOrder: data.sortOrder,
+      color: data.color,
+    };
+    const pt = await apiMutate<any>('POST', `/devices/${deviceId}/roi-points`, payload);
+    return {
+      ...pt,
+      label: pt.label || pt.name || '',
+      warningThreshold: pt.warningThreshold ?? pt.preAlarmThreshold,
+      x: pt.x ?? (pt.tx ?? 0) * 100,
+      y: pt.y ?? (pt.ty ?? 0) * 100,
+    };
   }
 
   async updateRoiPoint(deviceId: string, roiId: string, data: Partial<Omit<RoiPoint, 'id'>>): Promise<RoiPoint> {
-    return apiMutate('PUT', `/devices/${deviceId}/roi-points/${roiId}`, data);
+    const txVal = data.x !== undefined ? data.x / 100 : data.tx;
+    const tyVal = data.y !== undefined ? data.y / 100 : data.ty;
+    const oxVal = data.x !== undefined ? data.x / 100 : data.ox;
+    const oyVal = data.y !== undefined ? data.y / 100 : data.oy;
+
+    const payload = {
+      name: data.label || data.name,
+      tx: txVal,
+      ty: tyVal,
+      ox: oxVal !== undefined ? oxVal : txVal,
+      oy: oyVal !== undefined ? oyVal : tyVal,
+      pointId: data.pointId,
+      preAlarmThreshold: data.warningThreshold ?? data.preAlarmThreshold,
+      alarmThreshold: data.alarmThreshold,
+      sortOrder: data.sortOrder,
+      color: data.color,
+    };
+    const pt = await apiMutate<any>('PUT', `/devices/${deviceId}/roi-points/${roiId}`, payload);
+    return {
+      ...pt,
+      label: pt.label || pt.name || '',
+      warningThreshold: pt.warningThreshold ?? pt.preAlarmThreshold,
+      x: pt.x ?? (pt.tx ?? 0) * 100,
+      y: pt.y ?? (pt.ty ?? 0) * 100,
+    };
   }
 
   async deleteRoiPoint(deviceId: string, roiId: string): Promise<void> {
@@ -102,6 +157,11 @@ export class DeviceService {
   // Lấy ảnh snapshot tĩnh từ camera (dùng trong Analytics)
   async getCameraSnapshot(deviceId: string): Promise<{ url: string; capturedAt: string }> {
     return apiFetch<{ url: string; capturedAt: string }>(`/devices/${deviceId}/snapshot`);
+  }
+
+  // Lấy thông số VisibleValidRect từ camera qua backend
+  async getThermalMapping(deviceId: string): Promise<{ x: number; y: number; width: number; height: number }> {
+    return apiFetch<{ x: number; y: number; width: number; height: number }>(`/devices/${deviceId}/thermal-mapping`);
   }
 }
 

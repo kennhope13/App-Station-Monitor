@@ -127,7 +127,7 @@ export default function CameraGrid({ sensors, alertsCount, rules = [] }: CameraG
                   </span>
 
                   {/* Value */}
-                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                     {val !== undefined ? `${val.toFixed(1)}°C` : '--'}
                   </span>
 
