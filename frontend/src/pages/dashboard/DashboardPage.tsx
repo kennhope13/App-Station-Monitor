@@ -215,7 +215,7 @@ export default function DashboardPage() {
       />
 
       {/* Left column: KPI + thermal points stacked */}
-      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
+      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: '20%', minWidth: 220, maxWidth: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
         <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
         <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
       </div>
@@ -230,7 +230,7 @@ export default function DashboardPage() {
         <div
           id="floatRightCol"
           style={{
-            position: 'absolute', top: 10, right: 10, zIndex: 30, width: 255,
+            position: 'absolute', top: 10, right: 10, zIndex: 30, width: '18%', minWidth: 210, maxWidth: 250,
             display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 38px)'
           }}
         >
