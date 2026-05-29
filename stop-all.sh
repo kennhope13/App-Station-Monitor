@@ -1,48 +1,31 @@
 #!/bin/bash
-
 # ============================================================
-# StationMonitor — Dừng toàn bộ hệ thống (Linux/Ubuntu)
-# ============================================================
-# Sử dụng: ./stop-all.sh
+# stop-all.sh — Dừng toàn bộ các dịch vụ StationOS
 # ============================================================
 
-echo ""
-echo "=================================================="
-echo " STATION MONITOR - DUNG TAT CA SERVICE"
-echo "=================================================="
+echo "==============================================="
+echo "  StationOS Dev Stack — Stop All"
+echo "==============================================="
 echo ""
 
-# Lấy thư mục gốc
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
-
-# ═══════════════════════════════════════════════════════
-# Dừng Frontend (npm)
-# ═══════════════════════════════════════════════════════
-echo "Dung Frontend..."
-pkill -f "npm run dev" || true
-sleep 1
-
-# ═══════════════════════════════════════════════════════
-# Dừng Notification System (Python)
-# ═══════════════════════════════════════════════════════
-echo "Dung Camera Notifications..."
-pkill -f "python.*main.py" || true
-sleep 1
-
-# ═══════════════════════════════════════════════════════
-# Dừng Backend (Docker)
-# ═══════════════════════════════════════════════════════
-echo "Dung Backend (Docker)..."
-
-if command -v docker-compose &> /dev/null; then
-    sudo docker-compose down
-elif command -v docker &> /dev/null; then
-    sudo docker compose down
-else
-    echo "⚠️  Docker khong tim thay"
+echo "[1/5] Dừng container go2rtc..."
+if command -v docker &> /dev/null; then
+    sudo docker rm -f stationos-go2rtc >/dev/null 2>&1 || true
 fi
 
+echo "[2/5] Dừng C# Backend..."
+pkill -9 -f "dotnet run --project StationOS.Api" || true
+pkill -9 -f "StationOS.Api" || true
+
+echo "[3/5] Dừng AI Engine (Python)..."
+pkill -9 -f "python3 main.py" || true
+
+echo "[4/5] Dừng Frontend (Vite/Node)..."
+pkill -9 -f "npm run dev" || true
+
+echo "[5/5] Giữ nguyên Database PostgreSQL container để bảo lưu dữ liệu."
+echo "      Để dừng Database:  sudo docker compose -f docker-compose.db.yml down"
 echo ""
-echo "✅ Tat ca service da dung."
-echo ""
+echo "==============================================="
+echo "  Đã dừng hoàn toàn Backend + AI Engine + Frontend + go2rtc."
+echo "==============================================="

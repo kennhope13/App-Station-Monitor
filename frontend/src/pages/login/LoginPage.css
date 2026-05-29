@@ -1,0 +1,96 @@
+.gm-login-wrapper {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: url('/slide2.png') no-repeat center center fixed;
+  background-color: var(--admin-panel);
+  background-size: cover;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.gm-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(15, 23, 42, 0.6); z-index: 1;
+}
+.gm-glass-panel {
+  position: relative; z-index: 2;
+  width: 360px; padding: 30px;
+  background: rgba(10, 15, 25, 0.95); 
+  border: 1px solid var(--admin-border-light); 
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7); 
+  text-align: center; color: #ffffff;
+  animation: fadeIn 0.3s ease-out;
+}
+.gm-logo {
+  width: 80px; height: 80px; margin: 0 auto 16px;
+  filter: drop-shadow(0 0 10px rgba(68, 255, 136, 0.2));
+}
+.gm-glass-panel h2 { 
+  margin: 0 0 4px; font-size: 18px; font-weight: 800; 
+  text-transform: uppercase; letter-spacing: 1.5px;
+  color: #44ff88; text-shadow: 0 0 8px rgba(68, 255, 136, 0.3); 
+}
+.gm-slogan {
+  margin: 0 0 20px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  font-style: normal;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+  border-top: 1px solid var(--admin-border-light);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+.gm-input-group { margin-bottom: 18px; text-align: left; }
+.gm-input-group label { display: block; font-size: 10px; margin-bottom: 6px; color: var(--admin-text-muted); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+.gm-input-group input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.5); border: 1px solid var(--admin-border-light);
+  border-radius: 0px; color: white; font-size: 14px; transition: 0.2s;
+}
+.gm-input-group input:focus {
+  outline: none; border-color: #44ff88; background: rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 8px rgba(68, 255, 136, 0.2);
+}
+.gm-btn-login {
+  width: 100%; padding: 12px;
+  background: #0284c7; 
+  border: 1px solid var(--admin-border-light); border-radius: 0px;
+  color: white; font-size: 14px; font-weight: 800; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 1px; transition: 0.2s; margin-top: 5px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.gm-btn-login:hover {
+  background: #0369a1; border-color: #44ff88;
+}
+.gm-btn-login:disabled {
+  opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;
+}
+.gm-error {
+  color: var(--admin-danger); font-size: 12px; margin-bottom: 15px; background: rgba(239,68,68,0.08); padding: 8px 12px; border-radius: 0px; border: 1px solid rgba(239,68,68,0.25);
+  text-align: left;
+}
+.gm-pw-wrap { position: relative; }
+.gm-pw-wrap input { padding-right: 44px; }
+.gm-eye-btn {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer;
+  color: rgba(255,255,255,0.4); font-size: 18px; padding: 4px;
+  transition: color 0.2s;
+  line-height: 1;
+  display: flex; align-items: center;
+}
+.gm-eye-btn:hover { color: rgba(255,255,255,0.9); }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.shake {
+  animation: shakeKey 0.4s ease;
+}
+
+@keyframes shakeKey {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}

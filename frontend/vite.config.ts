@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import pkg from './package.json';
 
@@ -7,10 +8,8 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
-  build: {
-    assetsDir: 'assets4'
-  },
   plugins: [
+    react(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
@@ -54,21 +53,6 @@ export default defineConfig({
       '/ws': {
         target: 'http://localhost:5056',
         ws: true,
-      },
-      '/rtc': {
-        target: 'http://localhost:1984',
-        ws: true,
-        rewrite: (path) => path.replace(/^\/rtc/, ''),
-      },
-      '/api': {
-        target: 'http://localhost:5056',
-        changeOrigin: true,
-        secure: false,
-      },
-      '/ai-api': {
-        target: 'http://localhost:5056',
-        changeOrigin: true,
-        secure: false,
       }
     }
   }

@@ -1,0 +1,4 @@
+/* AnalyticsLayout.css – Shared styles for Analytics pages, reusing AlertsHistory styles */
+@import "../alerts-history/AlertsHistoryPage.css";
+
+/* If any Analytics-specific overrides needed, add below */

@@ -1,35 +1,52 @@
 # ============================================================
-# Dockerfile — StationMonitor Backend (x86_64)
+# Dockerfile — Đóng gói StationOS Backend (ARM64/x64)
+# Multi-stage build để tối ưu dung lượng image.
 # ============================================================
 
-# STAGE 1: Build
+# STAGE 1: Build & Restore
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY ["StationMonitor.sln", "./"]
-COPY ["StationMonitor.Api/StationMonitor.Api.csproj", "StationMonitor.Api/"]
-COPY ["StationMonitor.Data/StationMonitor.Data.csproj", "StationMonitor.Data/"]
-COPY ["StationMonitor.Services/StationMonitor.Services.csproj", "StationMonitor.Services/"]
-COPY ["StationMonitor.Workers/StationMonitor.Workers.csproj", "StationMonitor.Workers/"]
-COPY ["StationMonitor.Analytics/StationMonitor.Analytics.csproj", "StationMonitor.Analytics/"]
-COPY ["StationMonitor.Tests/StationMonitor.Tests.csproj", "StationMonitor.Tests/"]
-COPY ["StationMonitor.Simulators/StationMonitor.Simulators.csproj", "StationMonitor.Simulators/"]
 
-RUN dotnet restore "StationMonitor.sln"
+# Copy csproj trước để tận dụng cache layer khi restore
+COPY ["StationOS.sln", "./"]
+COPY ["StationOS.Api/StationOS.Api.csproj",                "StationOS.Api/"]
+COPY ["StationOS.Data/StationOS.Data.csproj",              "StationOS.Data/"]
+COPY ["StationOS.Services/StationOS.Services.csproj",      "StationOS.Services/"]
+COPY ["StationOS.Workers/StationOS.Workers.csproj",        "StationOS.Workers/"]
+COPY ["StationOS.Analytics/StationOS.Analytics.csproj",    "StationOS.Analytics/"]
+COPY ["StationOS.Simulators/StationOS.Simulators.csproj",  "StationOS.Simulators/"]
+COPY ["StationOS.Tests/StationOS.Tests.csproj",            "StationOS.Tests/"]
+
+# Restore NuGet — chỉ restore API + dependencies, bỏ Tests/Simulators trong production
+RUN dotnet restore "StationOS.Api/StationOS.Api.csproj"
+
+# Copy mã nguồn còn lại
 COPY . .
-WORKDIR "/src/StationMonitor.Api"
-RUN dotnet publish "StationMonitor.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Build & publish ra /app/publish
+WORKDIR "/src/StationOS.Api"
+RUN dotnet publish "StationOS.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # STAGE 2: Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
-# Cài đặt các thư viện hệ thống cần thiết
+# Native deps:
+#   - ffmpeg:        record + concat clip video event
+#   - iputils-ping:  AutoDiscovery (ping subnet scan)
+#   - libsnap7-dev:  Siemens S7 communication (PLC)
+#   - curl:          health check
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     iputils-ping \
+    libsnap7-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/publish .
-EXPOSE 8080
-ENV ASPNETCORE_URLS=http://+:8080
-ENTRYPOINT ["dotnet", "StationMonitor.Api.dll"]
+COPY --from=publish /app/publish .
+
+# Port mặc định (docker-compose có thể override qua ASPNETCORE_URLS env)
+EXPOSE 5000
+ENV ASPNETCORE_URLS=http://+:5000
+
+ENTRYPOINT ["dotnet", "StationOS.Api.dll"]

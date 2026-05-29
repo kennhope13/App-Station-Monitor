@@ -1,64 +1,65 @@
+// ============================================================
+// theme-manager.ts — Quản lý giao diện sáng/tối toàn app
+// Lưu vào localStorage, đồng bộ với data-theme trên <html>
+// ============================================================
+
 import { invalidateColorCache } from './theme-colors';
 
-export type Theme = 'dark' | 'light';
+export type Theme = 'dark' | 'light' | 'blue';
 
-const STORAGE_KEY = 'worldmonitor-theme';
+const STORAGE_KEY = 'station-theme';
 const DEFAULT_THEME: Theme = 'dark';
+const VALID_THEMES: Theme[] = ['dark', 'light', 'blue'];
 
-/**
- * Read the stored theme preference from localStorage.
- * Returns 'dark' or 'light' if valid, otherwise DEFAULT_THEME.
- */
+// Đọc theme đã lưu từ localStorage.
 export function getStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'dark' || stored === 'light') return stored;
+    if (stored && VALID_THEMES.includes(stored as Theme)) return stored as Theme;
   } catch {
-    // localStorage unavailable (e.g., sandboxed iframe, private browsing)
+    // localStorage không khả dụng (iframe sandbox, trình duyệt riêng tư)
   }
   return DEFAULT_THEME;
 }
 
-/**
- * Read the current theme from the document root's data-theme attribute.
- */
+// Đọc theme hiện tại từ attribute data-theme của <html>
 export function getCurrentTheme(): Theme {
   const value = document.documentElement.dataset.theme;
-  if (value === 'dark' || value === 'light') return value;
+  if (value && VALID_THEMES.includes(value as Theme)) return value as Theme;
   return DEFAULT_THEME;
 }
 
-/**
- * Set the active theme: update DOM attribute, invalidate color cache,
- * persist to localStorage, update meta theme-color, and dispatch event.
- */
+// Áp dụng theme: cập nhật DOM, xóa cache màu, lưu storage, phát sự kiện
+// Các component lắng nghe 'theme-changed' để re-render nếu cần
 export function setTheme(theme: Theme): void {
+  if (!VALID_THEMES.includes(theme)) return;
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.remove('theme-dark', 'theme-light', 'theme-blue');
+  document.documentElement.classList.add('theme-' + theme);
   invalidateColorCache();
   try {
     localStorage.setItem(STORAGE_KEY, theme);
   } catch {
-    // localStorage unavailable
+    // localStorage không khả dụng
   }
+  // Cập nhật màu thanh địa chỉ trên mobile
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (meta) {
-    meta.content = theme === 'dark' ? '#0a0f0a' : '#f8f9fa';
+    meta.content = theme === 'light' ? '#f8f9fa' : '#090e1a';
   }
   window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme } }));
 }
 
-/**
- * Apply the stored theme preference to the document before components mount.
- * Only sets the data-theme attribute and meta theme-color — does NOT dispatch
- * events or invalidate the color cache (components aren't mounted yet).
- */
+// Áp dụng theme ngay khi tải trang, trước khi React mount.
+// Chỉ set attribute + meta — KHÔNG dispatch event hay invalidate cache
+// (component chưa mount nên không cần)
 export function applyStoredTheme(): void {
   const theme = getStoredTheme();
-  if (theme !== DEFAULT_THEME) {
-    document.documentElement.dataset.theme = theme;
-    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (meta) {
-      meta.content = '#f8f9fa';
-    }
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.remove('theme-dark', 'theme-light', 'theme-blue');
+  document.documentElement.classList.add('theme-' + theme);
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (meta) {
+    meta.content = theme === 'light' ? '#f8f9fa' : '#090e1a';
   }
 }

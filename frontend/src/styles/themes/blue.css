@@ -1,0 +1,59 @@
+/* =================================================================
+   blue.css - Industrial Blue (Navy SCADA) Theme
+   ================================================================= */
+
+.theme-blue {
+  --admin-bg: #0a1128;         /* Deep rich navy */
+  --admin-panel: #101f42;      /* Navy-blue panel */
+  --admin-border: #1e3a7a;     /* Muted blue border */
+  --admin-border-light: rgba(59, 130, 246, 0.15); 
+  --admin-text: #edf2fc;       /* Bright icy text — high contrast on navy */
+  --admin-text-muted: #93b4d4; /* Blue-tinted muted, still readable */
+  --admin-accent: #00b4d8;     /* Tech cyan/blue accent */
+  --admin-success: #10b981;
+  --admin-warning: #fbbf24;
+  --admin-danger: #f87171;
+  --admin-hover: rgba(59, 130, 246, 0.08);
+  --admin-overlay: rgba(10, 17, 40, 0.95);
+  --admin-shadow: 0 4px 25px rgba(0, 0, 0, 0.6);
+  --admin-card-bg: #101f42;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #ffffff;
+  --admin-btn-secondary-bg: #162a56;
+  --admin-btn-secondary-border: #1e3a7a;
+  --admin-btn-secondary-text: #00b4d8;
+  --admin-btn-secondary-hover: #1f3b75;
+
+  --admin-info-bg: rgba(0, 180, 216, 0.08);
+  --admin-info-border: rgba(0, 180, 216, 0.2);
+  --admin-info-text: #00b4d8;
+
+  --admin-tag-success-bg: rgba(16, 185, 129, 0.15);
+  --admin-tag-success-text: #34d399;
+  --admin-tag-warning-bg: rgba(251, 191, 36, 0.15);
+  --admin-tag-warning-text: #fbbf24;
+  --admin-tag-danger-bg: rgba(248, 113, 113, 0.15);
+  --admin-tag-danger-text: #f87171;
+
+  /* Typography */
+  --admin-font: 'Inter', 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+  --admin-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+
+  /* Overlay layers */
+  --admin-layer-1: rgba(255,255,255,.02);
+  --admin-layer-2: rgba(255,255,255,.04);
+  --admin-layer-3: rgba(255,255,255,.06);
+  --admin-layer-4: rgba(255,255,255,.10);
+  --admin-surface-btn: rgba(255,255,255,.05);
+  --admin-scrollbar: rgba(255,255,255,.12);
+  --admin-scrollbar-hover: rgba(255,255,255,.22);
+  --admin-login-card-bg: rgba(10,17,40,.95);
+  --admin-login-divider: rgba(255,255,255,.07);
+  --admin-checkbox-bg: rgba(255,255,255,.08);
+}
+
+/* Custom map filter for SCADA-like blue effect */
+.theme-blue .leaflet-tile-container {
+  filter: hue-rotate(200deg) saturate(135%) brightness(85%) contrast(110%);
+}

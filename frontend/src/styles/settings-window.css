@@ -1,17 +1,17 @@
-/* Palantir-style settings window — dark, readable, color-coded */
+/* Settings shell — kế thừa toàn bộ màu từ theme hiện tại */
 .settings-shell {
-  --settings-bg: var(--bg-secondary);
-  --settings-surface: var(--surface-hover);
-  --settings-surface-inset: var(--surface);
-  --settings-border: var(--overlay-medium);
-  --settings-border-strong: var(--overlay-heavy);
-  --settings-text: #e8eaed;
-  --settings-text-secondary: #9aa0a6;
-  --settings-accent: var(--semantic-info);
-  --settings-green: #34d399;
-  --settings-yellow: #fbbf24;
-  --settings-red: var(--semantic-critical);
-  --settings-blue: #60a5fa;
+  --settings-bg: var(--admin-bg);
+  --settings-surface: var(--admin-panel);
+  --settings-surface-inset: var(--admin-card-bg);
+  --settings-border: var(--admin-border);
+  --settings-border-strong: var(--admin-border);
+  --settings-text: var(--admin-text);
+  --settings-text-secondary: var(--admin-text-muted);
+  --settings-accent: var(--admin-accent);
+  --settings-green: var(--admin-success);
+  --settings-yellow: var(--admin-warning);
+  --settings-red: var(--admin-danger);
+  --settings-blue: var(--admin-btn-secondary-text);
 
   height: 100vh;
   background: var(--settings-bg);
@@ -92,7 +92,7 @@
   overflow-y: auto;
   padding: 16px 24px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: var(--admin-border-light) transparent;
 }
 
 .settings-tab-panels::-webkit-scrollbar {
@@ -104,7 +104,7 @@
 }
 
 .settings-tab-panels::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--admin-border-light);
   border-radius: 3px;
 }
 
@@ -286,7 +286,7 @@
 }
 
 .settings-runtime-panel .runtime-secret-row select[data-model-select] option {
-  background: #1e1e2e;
+  background: var(--settings-surface);
   color: var(--settings-text);
 }
 
@@ -413,7 +413,7 @@
 .settings-btn-primary {
   background: var(--settings-accent);
   border: 1px solid var(--settings-accent);
-  color: #fff;
+  color: var(--admin-text-on-accent);
 }
 
 .settings-btn-primary:hover {
@@ -539,7 +539,7 @@
   overflow-y: auto;
   font-size: 12px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  scrollbar-color: var(--admin-border-light) transparent;
 }
 
 .diag-traffic-log::-webkit-scrollbar {
@@ -551,7 +551,7 @@
 }
 
 .diag-traffic-log::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--admin-border-light);
   border-radius: 3px;
 }
 
@@ -786,7 +786,7 @@ tr.diag-err td {
 .wm-submit-btn {
   background: var(--settings-accent);
   border: 1px solid var(--settings-accent);
-  color: #fff;
+  color: var(--admin-text-on-accent);
   font: inherit;
   font-size: 13px;
   font-weight: 600;

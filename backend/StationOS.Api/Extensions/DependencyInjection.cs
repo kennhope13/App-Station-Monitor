@@ -1,0 +1,210 @@
+using System.Text;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using Hangfire;
+using Hangfire.PostgreSql;
+using StationOS.Data;
+using StationOS.Services;
+using StationOS.Services.Auth;
+using StationOS.Services.Camera;
+using StationOS.Services.Devices;
+using StationOS.Services.DeviceHandlers;
+using StationOS.Services.Security;
+using StationOS.Services.Reports;
+using StationOS.Workers.Polling;
+using StationOS.Api.Hubs;
+
+namespace StationOS.Api.Extensions;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddStationOSServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        // ── QuestPDF license ──────────────────────────────────────
+        QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
+        // ── Database ──────────────────────────────────────────────
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseNpgsql(configuration.GetConnectionString("Default")));
+
+        // ── Forwarded Headers (Chống IP Spoofing qua Reverse Proxy) ──
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.KnownNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
+
+        // ── Hangfire ──────────────────────────────────────────────
+        services.AddHangfire(config =>
+            config.UsePostgreSqlStorage(c =>
+                c.UseNpgsqlConnection(configuration.GetConnectionString("Default"))));
+        services.AddHangfireServer();
+
+        // ── Services ──────────────────────────────────────────────
+        services.AddHttpContextAccessor();
+        services.AddMemoryCache(); // Đăng ký In-Memory Cache
+        services.AddScoped<AuthService>();
+        services.AddScoped<EmailNotifyService>();
+        services.AddScoped<PermissionService>();
+        services.AddScoped<DeviceService>();
+        services.AddScoped<ReportGeneratorService>();
+        services.AddScoped<ReportSchedulerWorker>();
+        services.AddHttpClient(); // cho DeviceService gọi go2rtc API
+        services.AddSingleton<IRealtimeNotifier, SignalRNotifier>(); // SignalR push
+        services.AddScoped<OnvifService>();
+        services.AddScoped<HikvisionIsapiService>();
+        services.AddScoped<ThermalEvidenceService>();
+        services.AddScoped<AutoDiscoveryService>();
+        services.AddScoped<ProtocolConnectionTester>();
+        services.AddScoped<SupabaseService>();
+        services.AddSingleton<LicenseService>();          // License key + concurrent sessions
+        services.AddSingleton<CredentialEncryptionService>(); // AES-256-GCM cho device password
+
+        // ── Background Workers ────────────────────────────────────
+        services.AddHostedService<PlcPollingWorker>();
+        services.AddHostedService<RuleEvaluationWorker>();
+        services.AddHostedService<MaintenanceReminderWorker>();
+        
+        // HealthScoreWorker: Đăng ký singleton để AnalyticsController có thể trigger recalculate thủ công
+        services.AddSingleton<HealthScoreWorker>();
+        services.AddHostedService(sp => sp.GetRequiredService<HealthScoreWorker>());
+        
+        services.AddHostedService<StorageMonitorWorker>();
+        services.AddHostedService<ModbusTcpWorker>();
+        services.AddHostedService<ModbusRtuWorker>();
+        services.AddHostedService<MqttSubscriberWorker>();
+        services.AddHostedService<Iec104Worker>();
+        services.AddHostedService<CloudSyncWorker>();
+        services.AddHostedService<DeviceHealthCheckWorker>();
+
+        // ── Device Handlers (plugin pattern) ──────────────────────
+        // Mỗi loại thiết bị có handler riêng. Registry tự dispatch theo device.Type.
+        services.AddScoped<IDeviceHandler, PlcS7Handler>();
+        services.AddScoped<IDeviceHandler, ModbusTcpHandler>();
+        services.AddScoped<IDeviceHandler, ModbusRtuHandler>();
+        services.AddScoped<IDeviceHandler, MqttHandler>();
+        services.AddScoped<IDeviceHandler, Iec104Handler>();
+        // Camera handler tạm skip — chờ camera thật để test
+        services.AddScoped<DeviceHandlerRegistry>();
+
+        // ── SignalR ───────────────────────────────────────────────
+        services.AddSignalR().AddJsonProtocol(options => {
+            options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        });
+
+        // ── JWT Authentication ────────────────────────────────────
+        var jwtKey = configuration["Jwt:Key"]!;
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+            .AddJwtBearer(options =>
+            {
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = configuration["Jwt:Issuer"],
+                    ValidAudience = configuration["Jwt:Audience"],
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+                };
+                
+                // SignalR cần đọc token từ query string
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = ctx =>
+                    {
+                        var token = ctx.Request.Query["access_token"];
+                        if (!string.IsNullOrEmpty(token) &&
+                            ctx.HttpContext.Request.Path.StartsWithSegments("/ws"))
+                            ctx.Token = token;
+                        return Task.CompletedTask;
+                    }
+                };
+            });
+
+        services.AddAuthorization();
+        services.AddControllers();
+
+        // ── Rate Limiting ─────────────────────────────────────────
+        // Chống brute force: login + auth endpoints giới hạn theo IP.
+        // Webhook (camera/sensor push) limit cao hơn vì traffic IoT.
+        services.AddRateLimiter(opt =>
+        {
+            opt.RejectionStatusCode = 429;
+
+            // Login: 5 lần thất bại / 1 phút / IP, sliding window
+            opt.AddPolicy("login", httpContext =>
+                RateLimitPartition.GetSlidingWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new SlidingWindowRateLimiterOptions
+                    {
+                        PermitLimit = 5,
+                        Window = TimeSpan.FromMinutes(1),
+                        SegmentsPerWindow = 4,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
+            // Webhook IoT: 100 req/s/IP (camera push event nhiều)
+            opt.AddPolicy("webhook", httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 100,
+                        Window = TimeSpan.FromSeconds(1),
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 20,
+                    }));
+
+            // Default cho mọi endpoint khác: 60 req/s/IP — phòng DDoS nhẹ
+            opt.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 60,
+                        Window = TimeSpan.FromSeconds(1),
+                        QueueLimit = 10,
+                    }));
+        });
+
+        // ── Swagger / OpenAPI với JWT Support ──────────────────────
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "StationOS API", Version = "v1" });
+            c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+            {
+                Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+                Name = "Authorization",
+                In = ParameterLocation.Header,
+                Type = SecuritySchemeType.ApiKey,
+                Scheme = "Bearer"
+            });
+            c.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
+                {
+                    new OpenApiSecurityScheme
+                    {
+                        Reference = new OpenApiReference
+                        {
+                            Type = ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    Array.Empty<string>()
+                }
+            });
+        });
+
+        return services;
+    }
+}

@@ -11,6 +11,7 @@ export interface ConfirmOptions {
   danger?: boolean;       // true → nút xác nhận màu đỏ
 }
 
+// Singleton overlay — tạo một lần, tái sử dụng cho tất cả lần gọi
 let _overlay: HTMLElement | null = null;
 
 function ensureOverlay(): HTMLElement {
@@ -20,7 +21,7 @@ function ensureOverlay(): HTMLElement {
   _overlay.id = 'custom-confirm-overlay';
   _overlay.innerHTML = `
     <div id="custom-confirm-box" style="
-      background:#1e293b;border:1px solid #334155;border-radius:12px;
+      background:#1e293b;border:1px solid var(--admin-border);border-radius:12px;
       box-shadow:0 20px 60px rgba(0,0,0,.7);padding:0;
       min-width:320px;max-width:420px;width:90%;overflow:hidden;
       transform:scale(0.92);transition:transform 0.15s ease;
@@ -28,14 +29,14 @@ function ensureOverlay(): HTMLElement {
       <div style="background:#0f172a;padding:14px 20px;border-bottom:1px solid #1e293b;
         display:flex;align-items:center;gap:10px;">
         <span id="ccd-icon" style="font-size:1.2rem;"></span>
-        <span id="ccd-title" style="font-size:0.85rem;font-weight:800;color:#e2e8f0;"></span>
+        <span id="ccd-title" style="font-size:0.85rem;font-weight:800;color:var(--admin-text);"></span>
       </div>
       <div style="padding:18px 20px;">
-        <p id="ccd-message" style="margin:0 0 20px;font-size:0.82rem;color:#94a3b8;line-height:1.6;"></p>
+        <p id="ccd-message" style="margin:0 0 20px;font-size:0.82rem;color:var(--admin-text-muted);line-height:1.6;"></p>
         <div style="display:flex;gap:10px;justify-content:flex-end;">
           <button id="ccd-cancel" style="
-            padding:8px 18px;background:transparent;border:1px solid #334155;
-            border-radius:7px;color:#94a3b8;font-size:0.78rem;font-weight:600;
+            padding:8px 18px;background:transparent;border:1px solid var(--admin-border);
+            border-radius:7px;color:var(--admin-text-muted);font-size:0.78rem;font-weight:600;
             cursor:pointer;transition:all 0.15s;">
           </button>
           <button id="ccd-confirm" style="
@@ -69,7 +70,7 @@ export function confirmDialog(opts: ConfirmOptions | string): Promise<boolean> {
   return new Promise(resolve => {
     const overlay = ensureOverlay();
 
-    (overlay.querySelector('#ccd-icon')     as HTMLElement).textContent = danger ? '⚠️' : 'ℹ️';
+    (overlay.querySelector('#ccd-icon')     as HTMLElement).textContent = danger ? '️' : 'ℹ️';
     (overlay.querySelector('#ccd-title')    as HTMLElement).textContent = title;
     (overlay.querySelector('#ccd-message')  as HTMLElement).textContent = message;
     (overlay.querySelector('#ccd-cancel')   as HTMLElement).textContent = cancelText;
@@ -77,8 +78,8 @@ export function confirmDialog(opts: ConfirmOptions | string): Promise<boolean> {
     const confirmBtn = overlay.querySelector('#ccd-confirm') as HTMLElement;
     confirmBtn.textContent = confirmText;
     Object.assign(confirmBtn.style, {
-      background: danger ? '#ef4444' : '#2563eb',
-      color: '#fff',
+      background: danger ? 'var(--admin-danger)' : 'var(--admin-accent)',
+      color: 'var(--admin-text)',
     });
 
     // Animate in
@@ -95,7 +96,7 @@ export function confirmDialog(opts: ConfirmOptions | string): Promise<boolean> {
       resolve(result);
     };
 
-    // Clone buttons to clear old listeners
+    // Clone node để xóa event listener cũ — tránh gọi callback sai khi mở lại
     const newCancel  = (overlay.querySelector('#ccd-cancel')  as HTMLElement).cloneNode(true) as HTMLElement;
     const newConfirm = (overlay.querySelector('#ccd-confirm') as HTMLElement).cloneNode(true) as HTMLElement;
     overlay.querySelector('#ccd-cancel')!.replaceWith(newCancel);

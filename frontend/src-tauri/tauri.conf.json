@@ -2,62 +2,54 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Station Monitor",
   "mainBinaryName": "station-monitor",
-  "version": "2.5.4",
-  "identifier": "vn.stationmonitor.desktop",
+  "identifier": "com.stationmonitor.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "",
-    "frontendDist": "../dist2",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:5173"
   },
   "app": {
-    "withGlobalTauri": true,
     "windows": [
-
       {
-        "title": "Station Monitor",
+        "title": "Hệ Thống Giám Sát — Station Monitor",
         "width": 1440,
         "height": 900,
-        "minWidth": 1200,
-        "minHeight": 720,
+        "minWidth": 1024,
+        "minHeight": 600,
         "resizable": true,
-        "fullscreen": false,
         "backgroundColor": [
-          26,
-          28,
-          30,
+          15,
+          23,
+          42,
           255
-        ]
+        ],
+        "additionalBrowserArgs": "--enable-gpu --enable-accelerated-video-decode --enable-accelerated-video-encode --disable-frame-rate-limit --enable-zero-copy"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http: https: ws: wss: blob: data:; img-src 'self' data: blob: http: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; font-src 'self' data: https:; media-src 'self' data: blob: http: https:; frame-src 'self' http: https:;"
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:5056 http://localhost:1984 ws://localhost:5056 ws://localhost:1984 http: https: ws: wss:; img-src 'self' data: blob: http: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; font-src 'self' data:; media-src 'self' data: blob: http: https:; frame-src 'self' http://localhost:1984 http:;"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "category": "Productivity",
-    "shortDescription": "Station Monitor - Hệ thống giám sát trạm điện thông minh",
-    "longDescription": "Station Monitor - Giám sát trạm điện, nhiệt độ, camera AI real-time.",
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "category": "Utility",
+    "shortDescription": "Hệ thống giám sát trạm điện",
+    "longDescription": "Station Monitor — giám sát liên tục, phát hiện sớm, cảnh báo đúng lúc.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "resources": [
-      "resources/backend/*",
-      "resources/media-server/*",
-      "resources/sdk-relay/*"
+      "icons/icon.ico",
+      "icons/icon.png"
     ],
     "windows": {
       "digestAlgorithm": "sha256",
       "timestampUrl": "https://timestamp.digicert.com"
-    },
-    "macOS": {
-      "hardenedRuntime": true
     }
   }
 }
