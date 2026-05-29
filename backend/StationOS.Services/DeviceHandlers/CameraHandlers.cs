@@ -25,18 +25,18 @@ public class GenericCameraHandler : IDeviceHandler
 
     public async Task OnCreatedAsync(Device device, CancellationToken ct = default)
     {
-        await _deviceService.RegisterGo2RtcStreamAsync(device);
+        await _deviceService.RegisterCameraStreamAsync(device);
     }
 
     public async Task OnUpdatedAsync(Device device, CancellationToken ct = default)
     {
-        await _deviceService.RemoveGo2RtcStreamAsync(device);
-        await _deviceService.RegisterGo2RtcStreamAsync(device);
+        await _deviceService.UnregisterCameraStreamAsync(device);
+        await _deviceService.RegisterCameraStreamAsync(device);
     }
 
     public async Task OnDeletingAsync(Device device, CancellationToken ct = default)
     {
-         await _deviceService.RemoveGo2RtcStreamAsync(device);
+         await _deviceService.UnregisterCameraStreamAsync(device);
     }
 
     public async Task<HealthResult> HealthCheckAsync(Device device, CancellationToken ct = default)
