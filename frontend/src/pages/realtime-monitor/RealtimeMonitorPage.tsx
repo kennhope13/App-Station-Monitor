@@ -5,57 +5,20 @@
 // Panel phải: danh sách sự kiện theo thời gian, lọc theo loại/ngày
 // ============================================================
 
-import { useState, useEffect, useCallback } from 'react';
-import { stationApi, CameraDevice } from '@/services/StationApiService';
-import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
+import { useState, useEffect } from 'react';
+import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
+import { GO2RTC_URL, AI_ENGINE_URL } from '@/utils/env';
 import { createRealtimeHub } from '@/services/realtime.service';
 import './RealtimeMonitorPage.css';
 
 type Layout = 'l1' | 'l4' | 'l9';
 
-interface DetectionEvent {
-  id: string;
-  cameraId: string;
-  cameraName: string | null;
-  detectionType: string;
-  detectedAt: string;
-  maxTemp: number | null;
-  affectedZone: string | null;
-  alertId: string | null;
-  metadata: string | null;
-}
-
-const EVT_CFG: Record<string, { label: string; icon: string; color: string }> = {
-  thermal_hotspot: { label: 'Nhiệt bất thường', icon: '◈', color: 'var(--admin-danger)' },
-  fire: { label: 'Cháy', icon: '◈', color: 'var(--admin-danger)' },
-  smoke: { label: 'Khói', icon: '◈', color: '#f97316' },
-  intrusion: { label: 'Xâm nhập', icon: '◈', color: 'var(--admin-warning)' },
-  partial_discharge: { label: 'Phóng điện', icon: '◈', color: '#a855f7' },
-  tampering: { label: 'Che camera', icon: '◈', color: 'var(--admin-warning)' },
-  video_loss: { label: 'Mất tín hiệu', icon: '◈', color: 'var(--admin-text-muted)' },
-  motion: { label: 'Chuyển động', icon: '◈', color: 'var(--admin-accent)' },
-  storage_error: { label: 'Lỗi lưu trữ', icon: '◈', color: 'var(--admin-warning)' },
-};
-
 export default function RealtimeMonitorPage() {
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
-  const [cameraOrder, setCameraOrder] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('realtime_camera_order');
-      return stored ? JSON.parse(stored) : [];
-    } catch { return []; }
-  });
-  const [draggedCamId, setDraggedCamId] = useState<string | null>(null);
   const [layout, setLayout] = useState<Layout>('l4');
   const [selectedCamFilter, setSelectedCamFilter] = useState('');
   
-  const [detections, setDetections] = useState<DetectionEvent[]>([]);
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
   const [expandedCamId, setExpandedCamId] = useState<string | null>(null);
-  
-  // Filters
-  const [typeFilter, setTypeFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
   
   // Realtime
   const [deviceStatus, setDeviceStatus] = useState<Record<string, string>>({});
@@ -64,8 +27,17 @@ export default function RealtimeMonitorPage() {
   // Lightbox
   const [lightbox, setLightbox] = useState<{ url: string, isVideo: boolean } | null>(null);
 
+  // ROI Configuration & Readings
+  const [roiBoundaries, setRoiBoundaries] = useState<Record<string, Boundary[]>>({});
+  const [roiPoints, setRoiPoints] = useState<Record<string, RoiPoint[]>>({});
+  const [roiReadings, setRoiReadings] = useState<Record<string, Record<string, number>>>({});
+
+  // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
+  const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
+
   // Load cameras
   useEffect(() => {
+    let roiSyncTimer: any = null;
     stationApi.getCamerasFromFirstStation().then(cams => {
       const initialStatus: Record<string, string> = {};
       cams.forEach(c => initialStatus[c.id] = c.status || 'unknown');
@@ -87,38 +59,83 @@ export default function RealtimeMonitorPage() {
             name: `${c.name} (Nhiệt)`,
             config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
           } as any);
-        } else {
-          // camera_thermal lưu stream id ở go2rtc_thermal, nhưng renderCell đọc go2rtc_id
-          // → phải map qua để stream hiển thị đúng
-          const mappedCfg = (c.type === 'camera_thermal' && cfg.go2rtc_thermal && !cfg.go2rtc_id)
-            ? { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
-            : cfg;
+        } else if (c.type === 'camera_thermal') {
           expandedCams.push({
             ...c,
-            config: mappedCfg
+            config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
+          });
+        } else {
+          expandedCams.push({
+            ...c,
+            config: cfg
           });
         }
       });
       setCameras(expandedCams);
-      setCameraOrder(prevOrder => {
-        const currentIds = expandedCams.map(c => c.id);
-        const newOrder = prevOrder.filter(id => currentIds.includes(id));
-        currentIds.forEach(id => {
-          if (!newOrder.includes(id)) newOrder.push(id);
+
+      // Fetch ROI boundaries and points for all unique base camera device IDs
+      const uniqueBaseIds = Array.from(new Set(cams.map(c => c.id)));
+      const fetchRoiConfig = () => {
+        Promise.all(
+          uniqueBaseIds.map(id => 
+            Promise.all([
+              stationApi.getBoundaries(id, 'roi').catch(() => []),
+              stationApi.getBoundaries(id, 'pd').catch(() => []),
+              stationApi.getRoiPoints(id).catch(() => [])
+            ]).then(([roiBounds, pdBounds, points]) => ({ 
+              id, 
+              boundaries: [...roiBounds, ...pdBounds], 
+              points 
+            }))
+          )
+        ).then(results => {
+          const boundMap: Record<string, Boundary[]> = {};
+          const pointMap: Record<string, RoiPoint[]> = {};
+          results.forEach(res => {
+            boundMap[res.id] = res.boundaries;
+            pointMap[res.id] = res.points;
+          });
+          setRoiBoundaries(boundMap);
+          setRoiPoints(pointMap);
+        }).catch(console.error);
+      };
+
+      fetchRoiConfig();
+      roiSyncTimer = setInterval(fetchRoiConfig, 4000);
+
+      // Fetch initial latest points for starting temperatures
+      stationApi.getLatestPoints().then(readings => {
+        setRoiReadings(prev => {
+          const next = { ...prev };
+          readings.forEach(r => {
+            const devId = r.deviceId;
+            const ptId = r.pointId;
+            if (!devId || !ptId) return;
+            if (!next[devId]) {
+              next[devId] = {};
+            }
+            const devMap = next[devId];
+            if (devMap) {
+              devMap[ptId] = r.value;
+            }
+          });
+          return next;
         });
-        localStorage.setItem('realtime_camera_order', JSON.stringify(newOrder));
-        return newOrder;
-      });
+      }).catch(console.error);
     }).catch(console.error);
 
     const timer = setInterval(() => {
       const d = new Date();
       setClock(`${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`);
     }, 1000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      clearInterval(roiSyncTimer);
+    };
   }, []);
 
-  // Load detections
+  // Load detections is currently commented out as the detections panel is not rendered in the main grid
+  /*
   const loadDetections = useCallback(async () => {
     try {
       const params = new URLSearchParams({ limit: '80' });
@@ -141,66 +158,278 @@ export default function RealtimeMonitorPage() {
   useEffect(() => {
     loadDetections();
   }, [loadDetections]);
+  */
 
-  // SignalR
+  // SignalR (Simplified: only local UI state, global alerts handled in AppShell)
   useEffect(() => {
     const hubConnection = createRealtimeHub();
     hubConnection.on('DeviceStatus', (data: { deviceId: string; status: string }) => {
       setDeviceStatus(prev => ({ ...prev, [data.deviceId]: data.status }));
     });
-    hubConnection.on('CameraEvent', (evt: DetectionEvent) => {
-      setDetections(prev => {
-        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '');
-        if (selectedCamFilter && evt.cameraId !== baseFilterId) return prev;
-        if (typeFilter && evt.detectionType !== typeFilter) return prev;
-        return [evt, ...prev];
+    
+    // AlertNew and CameraEvent removed here - handled in AppShell
+    
+    hubConnection.on('SensorUpdate', (data: any[]) => {
+      if (!Array.isArray(data)) return;
+      setRoiReadings(prev => {
+        const next = { ...prev };
+        data.forEach(item => {
+          const devId = item.deviceId;
+          const ptId = item.pointId;
+          if (!devId || !ptId) return;
+          if (!next[devId]) {
+            next[devId] = {};
+          }
+          const devMap = next[devId];
+          if (devMap) {
+            devMap[ptId] = item.value;
+          }
+        });
+        return next;
       });
     });
 
     hubConnection.start().catch(() => {});
     return () => { hubConnection.stop(); };
-  }, [selectedCamFilter, typeFilter]);
+  }, [selectedCamFilter]);
 
   // Helpers
   const cellCount = layout === 'l1' ? 1 : layout === 'l4' ? 4 : 9;
   const onlineCount = cameras.filter(c => deviceStatus[c.id.replace(/_(optical|thermal)$/, '')] === 'online').length;
-  
-  const displayCams = selectedCamFilter 
-    ? cameras.filter(c => c.id === selectedCamFilter) 
-    : [...cameras].sort((a, b) => {
-        const idxA = cameraOrder.indexOf(a.id);
-        const idxB = cameraOrder.indexOf(b.id);
-        if (idxA === -1 && idxB === -1) return 0;
-        if (idxA === -1) return 1;
-        if (idxB === -1) return -1;
-        return idxA - idxB;
+  const displayCams = selectedCamFilter ? cameras.filter(c => c.id === selectedCamFilter) : cameras;
+
+  const renderOverlayBoundaries = (cam: CameraDevice) => {
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const boundaries = roiBoundaries[baseDeviceId] || [];
+    const readings = roiReadings[baseDeviceId] || {};
+    const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
+
+    const cfg = cam.config || {};
+    const vvrRaw = (cfg as any).visible_valid_rect;
+    const vvr = vvrRaw && typeof vvrRaw.x === 'number'
+      ? vvrRaw
+      : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 };
+
+    return boundaries.map((b, index) => {
+      let poly: [number, number][] = [];
+      try { poly = JSON.parse(b.polygon); } catch { return null; }
+      if (poly.length < 3) return null;
+
+      const mappedPoly = poly.map(([txVal, tyVal]) => {
+        let rx = txVal;
+        let ry = tyVal;
+        if (!isThermal) {
+          rx = txVal * vvr.width + vvr.x;
+          ry = tyVal * vvr.height + vvr.y;
+        }
+        return [rx, ry] as [number, number];
       });
 
-  const handleDragStart = (e: React.DragEvent, id: string) => {
-    setDraggedCamId(id);
-    e.dataTransfer.effectAllowed = 'move';
-  };
+      const pointsStr = mappedPoly.map(p => `${p[0] * 100},${p[1] * 100}`).join(' ');
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+      const lookupId = b.id.toLowerCase();
+      const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
 
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    if (!draggedCamId || draggedCamId === targetId) return;
-    
-    setCameraOrder(prev => {
-      const newOrder = [...prev];
-      const fromIdx = newOrder.indexOf(draggedCamId);
-      const toIdx = newOrder.indexOf(targetId);
-      if (fromIdx !== -1 && toIdx !== -1) {
-        newOrder.splice(fromIdx, 1);
-        newOrder.splice(toIdx, 0, draggedCamId);
-        localStorage.setItem('realtime_camera_order', JSON.stringify(newOrder));
+      let color = b.type === 'pd' ? '#a855f7' : '#3b82f6';
+      let warningTemp = 50;
+      let alarmTemp = 70;
+      if (b.thresholds) {
+        try {
+          const t = JSON.parse(b.thresholds);
+          warningTemp = t.warning || 50;
+          alarmTemp = t.alarm || 70;
+        } catch {}
       }
-      return newOrder;
+
+      if (temp !== undefined) {
+        if (temp >= alarmTemp) color = '#ef4444';
+        else if (temp >= warningTemp) color = '#fbbf24';
+      }
+
+      return (
+        <polygon
+          key={b.id}
+          points={pointsStr}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+          opacity={0.9}
+        />
+      );
     });
-    setDraggedCamId(null);
+  };
+
+  const renderOverlayLabels = (cam: CameraDevice) => {
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const points = roiPoints[baseDeviceId] || [];
+    const boundaries = roiBoundaries[baseDeviceId] || [];
+    const readings = roiReadings[baseDeviceId] || {};
+    const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
+    const cfg = cam.config || {};
+    const vvrRaw = (cfg as any).visible_valid_rect;
+    const vvr = vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 };
+
+    const labels: React.ReactNode[] = [];
+
+    // 1. Boundary Labels
+    boundaries.forEach((b, index) => {
+      let poly: [number, number][] = [];
+      try { poly = JSON.parse(b.polygon); } catch { return; }
+      if (poly.length < 1) return;
+
+      const firstPt = poly[0];
+      if (!firstPt) return;
+      let rx = firstPt[0];
+      let ry = firstPt[1];
+      if (!isThermal) {
+        rx = rx * vvr.width + vvr.x;
+        ry = ry * vvr.height + vvr.y;
+      }
+
+      const lookupId = b.id.toLowerCase();
+      const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
+      
+      let color = b.type === 'pd' ? '#a855f7' : '#3b82f6';
+      let warningTemp = 50, alarmTemp = 70;
+      if (b.thresholds) {
+        try {
+          const t = JSON.parse(b.thresholds);
+          warningTemp = t.warning || 50; alarmTemp = t.alarm || 70;
+        } catch {}
+      }
+      if (temp !== undefined) {
+        if (temp >= alarmTemp) color = '#ef4444';
+        else if (temp >= warningTemp) color = '#fbbf24';
+      }
+
+      labels.push(
+        <div
+          key={`label-b-${b.id}`}
+          style={{
+            position: 'absolute',
+            left: `${rx * 100}%`,
+            top: `${ry * 100}%`,
+            transform: 'translate(-50%, -100%)',
+            pointerEvents: 'none',
+            zIndex: 10,
+            marginBottom: 4
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(13, 17, 23, 0.95)',
+              backdropFilter: 'blur(4px)',
+              border: `1.5px solid ${color}`,
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: `0 4px 12px rgba(0,0,0,0.7), 0 0 10px ${color}44`,
+              fontFamily: 'var(--font-mono)',
+              animation: temp !== undefined ? 'pulse-subtle 2s infinite' : 'none'
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{b.name}</span>
+            {b.type !== 'pd' && (
+              <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+                {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    });
+
+    // 2. Point Labels
+    points.forEach((pt, index) => {
+      const txVal = pt.tx !== undefined && pt.tx !== null ? pt.tx : (pt.x !== undefined && pt.x !== null ? pt.x / 100 : 0);
+      const tyVal = pt.ty !== undefined && pt.ty !== null ? pt.ty : (pt.y !== undefined && pt.y !== null ? pt.y / 100 : 0);
+      
+      let rx = txVal;
+      let ry = tyVal;
+
+      if (!isThermal) {
+        const oxVal = pt.ox !== undefined && pt.ox !== null ? pt.ox : txVal;
+        const oyVal = pt.oy !== undefined && pt.oy !== null ? pt.oy : tyVal;
+        if (Math.abs(oxVal - txVal) < 0.0001 && Math.abs(oyVal - tyVal) < 0.0001) {
+          rx = Math.max(0, Math.min(1, txVal * vvr.width + vvr.x));
+          ry = Math.max(0, Math.min(1, tyVal * vvr.height + vvr.y));
+        } else {
+          rx = oxVal;
+          ry = oyVal;
+        }
+      }
+
+      if (rx === 0 && ry === 0) return;
+
+      // Fallback lookup strategy for point readings (support P1, p1, 1, UUID etc.)
+      const ptIdLower = pt.pointId ? pt.pointId.toLowerCase() : '';
+      const nameLower = pt.name ? pt.name.toLowerCase() : '';
+      const temp = 
+        (pt.pointId ? (readings[pt.pointId] ?? readings[ptIdLower]) : undefined) ??
+        (pt.name ? (readings[pt.name] ?? readings[`P${pt.name}`] ?? readings[`p${pt.name}`] ?? readings[`P${nameLower}`] ?? readings[`p${nameLower}`]) : undefined) ??
+        readings[pt.id] ??
+        readings[pt.id.toLowerCase()] ??
+        readings[`P${index + 1}`] ??
+        readings[`p${index + 1}`];
+      
+      let color = pt.color || '#10b981';
+      if (temp !== undefined) {
+        if (pt.alarmThreshold && temp >= pt.alarmThreshold) color = '#ef4444';
+        else if (pt.preAlarmThreshold && temp >= pt.preAlarmThreshold) color = '#fbbf24';
+      }
+
+      labels.push(
+        <div
+          key={`label-p-${pt.id}`}
+          style={{
+            position: 'absolute',
+            left: `${rx * 100}%`,
+            top: `${ry * 100}%`,
+            transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none',
+            zIndex: 11,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5
+          }}
+        >
+          <div style={{ width: 10, height: 10, borderRadius: '50%', border: `1.5px solid ${color}`, background: 'rgba(0, 0, 0, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 8px ${color}44`, flexShrink: 0 }}>
+            <div style={{ width: 2, height: 2, borderRadius: '50%', background: color }} />
+          </div>
+          
+          <div
+            style={{
+              background: 'rgba(13, 17, 23, 0.9)',
+              backdropFilter: 'blur(4px)',
+              border: `1.5px solid ${color}`,
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: `0 4px 12px rgba(0,0,0,0.6), 0 0 10px ${color}33`,
+              fontFamily: 'var(--font-mono)',
+              animation: temp !== undefined ? 'pulse-subtle 2s infinite' : 'none'
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#e2e8f0', marginRight: 6 }}>{pt.name}</span>
+            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+              {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
+            </span>
+          </div>
+        </div>
+      );
+    });
+
+    return labels;
   };
 
   // Render Grid Cells
@@ -235,32 +464,108 @@ export default function RealtimeMonitorPage() {
     const isExpanded = expandedCamId === cam.id;
     const subId = cfg.go2rtc_sub_id || go2rtcId;
     const mainId = cfg.go2rtc_main_id || go2rtcId;
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const cellBoundaries = roiBoundaries[baseDeviceId] || [];
+    const cellPoints = roiPoints[baseDeviceId] || [];
     const activeId = isExpanded ? mainId : subId;
-    const status = deviceStatus[cam.id.replace(/_(optical|thermal)$/, '')] || 'unknown';
+    const status = deviceStatus[baseDeviceId] || 'unknown';
+    
+    const isAI = !!aiStreamCells[cam.id];
+    const isOptical = cam.id.endsWith('_optical'); // Nhận diện camera quang học trong bộ đôi
     
     const rawStreamUrl = `/camera-stream.html?src=${encodeURIComponent(activeId)}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`;
-
+    const aiStreamUrl = `${AI_ENGINE_URL}/stream/${activeId}`;
 
     return (
       <div 
         key={cam.id} 
-        className={`nvr-cell ${isExpanded ? 'expanded' : ''} ${draggedCamId === cam.id ? 'dragging' : ''}`} 
-        style={{ display: (expandedCamId && !isExpanded) ? 'none' : 'block', opacity: draggedCamId === cam.id ? 0.5 : 1, cursor: isExpanded ? 'default' : 'grab' }}
+        className={`nvr-cell ${isExpanded ? 'expanded' : ''}`} 
+        style={{ display: (expandedCamId && !isExpanded) ? 'none' : 'block' }}
         onDoubleClick={() => toggleExpand(cam.id)}
-        draggable={!isExpanded}
-        onDragStart={(e) => handleDragStart(e, cam.id)}
-        onDragOver={handleDragOver}
-        onDrop={(e) => handleDrop(e, cam.id)}
-        onDragEnd={() => setDraggedCamId(null)}
       >
-        {/* Để xem camera trực tiếp mượt mà ngay cả khi không chạy AI Relay, ta mặc định sử dụng raw stream từ go2rtc. Nếu sau này chạy AI, ta có thể dễ dàng chuyển sang dùng aiStreamUrl. */}
-        <iframe src={rawStreamUrl} allow="autoplay; camera; microphone; picture-in-picture" title={cam.name} style={{ width: '100%', height: '100%', border: 'none', display: 'block' }} />
-        <canvas className="nvr-overlay" />
+        <div className={`nvr-stream-wrapper ${isOptical ? 'nvr-sync-zoom' : ''}`}>
+          {isAI ? (
+            <img src={aiStreamUrl} alt={cam.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          ) : (
+            <iframe 
+              src={rawStreamUrl} 
+              allow="autoplay; camera; microphone" 
+              title={cam.name} 
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                border: 'none',
+                pointerEvents: 'none',
+                zIndex: 1
+              }}
+            />
+          )}
+          {!isAI && (
+            <div 
+              className="nvr-overlay"
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                zIndex: 2
+              }}
+            >
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  overflow: 'visible',
+                  zIndex: 1
+                }}
+              >
+                {renderOverlayBoundaries(cam)}
+              </svg>
+              {renderOverlayLabels(cam)}
+            </div>
+          )}
+        </div>
         
         <div className="nvr-hud-t">
           <div className="nvr-cam-info">
             <span className={`nvr-dot ${status}`} />
             <span className="nvr-cname">CH{ch} · {cam.name}</span>
+            {cellBoundaries.length > 0 && (
+              <span style={{ 
+                background: 'rgba(59, 130, 246, 0.2)', 
+                color: '#3b82f6', 
+                fontSize: '0.65rem', 
+                padding: '1px 5.5px', 
+                borderRadius: 3, 
+                marginLeft: 8,
+                fontWeight: 600,
+                border: '1px solid rgba(59, 130, 246, 0.4)' 
+              }}>
+                Vùng nhiệt: {cellBoundaries.length}
+              </span>
+            )}
+            {cellPoints.length > 0 && (
+              <span style={{ 
+                background: 'rgba(16, 185, 129, 0.2)', 
+                color: '#10b981', 
+                fontSize: '0.65rem', 
+                padding: '1px 5.5px', 
+                borderRadius: 3, 
+                marginLeft: 8,
+                fontWeight: 600,
+                border: '1px solid rgba(16, 185, 129, 0.4)' 
+              }}>
+                Điểm nhiệt: {cellPoints.length}
+              </span>
+            )}
           </div>
           <div className="nvr-rec"><span className="nvr-recdot" />REC</div>
         </div>
@@ -269,15 +574,27 @@ export default function RealtimeMonitorPage() {
           <span className="nvr-ts">{clock}</span>
           <div className="nvr-acts">
             <button 
+              className={`nvr-abtn ${isAI ? 'active' : ''}`} 
+              title={isAI ? "Tắt luồng AI (Hiện luồng thô)" : "Bật luồng AI (Hiện bounding box/line/nhiệt độ từ OpenCV)"} 
+              onClick={(e) => { e.stopPropagation(); setAiStreamCells(prev => ({ ...prev, [cam.id]: !prev[cam.id] })); }}
+              style={{ color: isAI ? '#3b82f6' : 'inherit', fontSize: '9px', fontWeight: 'bold' }}
+            >
+              AI
+            </button>
+            <button 
               className="nvr-abtn" 
               title="Chụp ảnh" 
               onClick={(e) => { e.stopPropagation(); takeSnapshot(activeId); }}
-            ></button>
+            >
+              📸
+            </button>
             <button 
               className="nvr-abtn" 
               title="Xem toàn màn hình" 
               onClick={(e) => { e.stopPropagation(); toggleExpand(cam.id); }}
-            ></button>
+            >
+              ⛶
+            </button>
           </div>
         </div>
       </div>
@@ -302,60 +619,49 @@ export default function RealtimeMonitorPage() {
   return (
     <div className="rtm-page">
       {/* ── Toolbar ── */}
-      <div className="rtm-bar">
-        <span className="rtm-title">Camera trực tiếp</span>
-        <div className="rtm-sep" />
+      <div className="page-toolbar-row dash-header" style={{ padding: '4px 12px 12px 12px' }}>
+        <div className="page-title-cell">
+          <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>
+        </div>
 
-        <button className={`nvr-lb ${layout === 'l1' ? 'active' : ''}`} onClick={() => setLayout('l1')} title="1×1">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="1.5"/></svg>
-        </button>
-        <button className={`nvr-lb ${layout === 'l4' ? 'active' : ''}`} onClick={() => setLayout('l4')} title="2×2">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
-            <rect x="0" y="0" width="5.5" height="5.5" rx=".8"/><rect x="7.5" y="0" width="5.5" height="5.5" rx=".8"/>
-            <rect x="0" y="7.5" width="5.5" height="5.5" rx=".8"/><rect x="7.5" y="7.5" width="5.5" height="5.5" rx=".8"/>
-          </svg>
-        </button>
-        <button className={`nvr-lb ${layout === 'l9' ? 'active' : ''}`} onClick={() => setLayout('l9')} title="3×3">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
-            <rect x="0" y="0" width="3.2" height="3.2" rx=".5"/><rect x="4.9" y="0" width="3.2" height="3.2" rx=".5"/><rect x="9.8" y="0" width="3.2" height="3.2" rx=".5"/>
-            <rect x="0" y="4.9" width="3.2" height="3.2" rx=".5"/><rect x="4.9" y="4.9" width="3.2" height="3.2" rx=".5"/><rect x="9.8" y="4.9" width="3.2" height="3.2" rx=".5"/>
-            <rect x="0" y="9.8" width="3.2" height="3.2" rx=".5"/><rect x="4.9" y="9.8" width="3.2" height="3.2" rx=".5"/><rect x="9.8" y="9.8" width="3.2" height="3.2" rx=".5"/>
-          </svg>
-        </button>
+        <div className="page-toolbar-group">
+          <button className={`nvr-lb ${layout === 'l1' ? 'active' : ''}`} onClick={() => setLayout('l1')} title="1×1">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="1.5"/></svg>
+          </button>
+          <button className={`nvr-lb ${layout === 'l4' ? 'active' : ''}`} onClick={() => setLayout('l4')} title="2×2">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+              <rect x="0" y="0" width="5.5" height="5.5" rx=".8"/><rect x="7.5" y="0" width="5.5" height="5.5" rx=".8"/>
+              <rect x="0" y="7.5" width="5.5" height="5.5" rx=".8"/><rect x="7.5" y="7.5" width="5.5" height="5.5" rx=".8"/>
+            </svg>
+          </button>
+          <button className={`nvr-lb ${layout === 'l9' ? 'active' : ''}`} onClick={() => setLayout('l9')} title="3×3">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+              <rect x="0" y="0" width="3.2" height="3.2" rx=".5"/><rect x="4.9" y="0" width="3.2" height="3.2" rx=".5"/><rect x="9.8" y="0" width="3.2" height="3.2" rx=".5"/>
+              <rect x="0" y="4.9" width="3.2" height="3.2" rx=".5"/><rect x="4.9" y="4.9" width="3.2" height="3.2" rx=".5"/><rect x="9.8" y="4.9" width="3.2" height="3.2" rx=".5"/>
+              <rect x="0" y="9.8" width="3.2" height="3.2" rx=".5"/><rect x="4.9" y="9.8" width="3.2" height="3.2" rx=".5"/><rect x="9.8" y="9.8" width="3.2" height="3.2" rx=".5"/>
+            </svg>
+          </button>
 
-        <div className="rtm-sep" />
-        <select 
-          className="nvr-sel" 
-          value={selectedCamFilter} 
-          onChange={e => {
-            setSelectedCamFilter(e.target.value);
-            if (e.target.value) setLayout('l1');
-            else setLayout('l4');
-          }}
-        >
-          <option value="">Tất cả camera</option>
-          {(() => {
-            const groups: Record<string, CameraDevice[]> = { 'Khác': [] };
-            cameras.forEach(c => {
-              const zone = (c as any).config?.zone?.trim() || 'Khác';
-              if (!groups[zone]) groups[zone] = [];
-              groups[zone].push(c);
-            });
-            return Object.entries(groups).map(([zone, cams]) => (
-              cams.length > 0 ? (
-                <optgroup key={zone} label={zone}>
-                  {cams.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </optgroup>
-              ) : null
-            ));
-          })()}
-        </select>
+          <div className="rtm-sep" />
+          <select 
+            className="nvr-sel" 
+            value={selectedCamFilter} 
+            onChange={e => {
+              setSelectedCamFilter(e.target.value);
+              if (e.target.value) setLayout('l1');
+              else setLayout('l4');
+            }}
+          >
+            <option value="">Tất cả camera</option>
+            {cameras.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
 
-        {expandedCamId && (
-          <div className="nvr-back-btn visible" onClick={() => toggleExpand(expandedCamId)}>
-            ← Quay về lưới
-          </div>
-        )}
+          {expandedCamId && (
+            <div className="nvr-back-btn visible" onClick={() => toggleExpand(expandedCamId)}>
+              ← Quay về lưới
+            </div>
+          )}
+        </div>
 
         <div className="nvr-stats">
           <div className="nvr-stat">
@@ -372,67 +678,6 @@ export default function RealtimeMonitorPage() {
         <div className="nvr-wrap">
           <div className={`nvr-grid ${layout}`}>
             {Array.from({ length: cellCount }).map((_, i) => renderCell(displayCams[i], i))}
-          </div>
-        </div>
-
-        {/* Events Panel */}
-        <div className={`nvr-ep ${isPanelCollapsed ? 'collapsed' : ''}`}>
-          <button className="nvr-ep-tab" onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}>
-            <span className="nvr-ep-tab-arrow">◀</span>
-            <span className="nvr-ep-tab-label">NHẬT KÝ</span>
-          </button>
-          
-          <div className="nvr-ep-body">
-            <div className="nvr-ep-hdr">
-              <div className="nvr-ep-hdr-row">
-                <span className="nvr-ep-title">{selectedCamFilter ? cameras.find(c => c.id === selectedCamFilter)?.name || 'SỰ KIỆN CAM' : 'SỰ KIỆN CAM'}</span>
-                <span className="nvr-ep-cnt">{detections.length}</span>
-              </div>
-              <div className="nvr-ep-filters">
-                <select className="nvr-ep-fsel" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-                  <option value="">Tất cả loại</option>
-                  {Object.entries(EVT_CFG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-                </select>
-                <input type="date" className="nvr-ep-fdate" value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-                <button className="nvr-ep-rbtn" onClick={() => { setTypeFilter(''); setDateFilter(''); loadDetections(); }}>↻</button>
-              </div>
-            </div>
-
-            <div className="nvr-ep-list">
-              {detections.length === 0 ? (
-                <div className="nvr-ep-empty">Chưa có sự kiện nào</div>
-              ) : (
-                detections.map(evt => {
-                  const cfg = EVT_CFG[evt.detectionType] || { label: evt.detectionType, icon: '', color: 'var(--admin-text-muted)' };
-                  const meta = evt.metadata ? JSON.parse(evt.metadata) : {};
-                  const snap = meta.snapshotUrl ? `${API_BASE_URL}${meta.snapshotUrl}` : '';
-                  const vidUrl = meta.videoUrl ? `${API_BASE_URL}${meta.videoUrl}` : '';
-                  const time = new Date(evt.detectedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' });
-
-                  return (
-                    <div 
-                      key={evt.id} 
-                      className="nvr-evt" 
-                      onClick={() => {
-                        if (vidUrl) setLightbox({ url: vidUrl, isVideo: true });
-                        else if (snap) setLightbox({ url: snap, isVideo: false });
-                      }}
-                    >
-                      <div className="nvr-evt-thumb">
-                        {snap ? <img src={snap} alt="" loading="lazy" /> : cfg.icon}
-                        {vidUrl && <div style={{ position: 'absolute', bottom: 2, right: 2, background: 'rgba(0,0,0,0.6)', borderRadius: 2, padding: '1px 3px', fontSize: 8 }}></div>}
-                      </div>
-                      <div className="nvr-evt-body">
-                        <span className="nvr-evt-badge" style={{ color: cfg.color }}>{cfg.icon} {cfg.label}</span>
-                        <span className="nvr-evt-cam">{evt.cameraName || 'Camera'}</span>
-                        {evt.maxTemp != null && <span className="nvr-evt-temp">{evt.maxTemp.toFixed(1)}°C</span>}
-                        <span className="nvr-evt-time">{time}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
           </div>
         </div>
       </div>

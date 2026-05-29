@@ -624,7 +624,6 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
       setActivePolygon([]);
       await loadData();
       await syncWithAi();
-      onBack();
     } catch (err) {
       alert('Lỗi lưu vùng');
     }
@@ -712,7 +711,6 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
       setIsEditing(false);
       await loadData();
       await syncWithAi();
-      onBack();
     } catch (err) {
       alert('Lỗi lưu điểm');
     }
