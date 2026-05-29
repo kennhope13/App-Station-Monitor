@@ -302,7 +302,7 @@ export default function CabinetAnalyticsTab() {
   return (
     <div className={`ah-layout ${selectedId ? 'has-detail' : ''}`} style={{ height: '100%' }}>
       {/* CỘT DANH SÁCH TỦ */}
-      <div className="ah-list-col" style={{ width: selected ? 420 : '100%', flex: selected ? 'none' : 1, transition: 'width 0.22s ease' }}>
+      <div className="ah-list-col" style={{ width: selected ? '35%' : '100%', minWidth: selected ? 280 : 'auto', maxWidth: selected ? 420 : 'none', flex: selected ? 'none' : 1, transition: 'width 0.22s ease' }}>
         <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 80px', gap: 0, padding: '6px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)', flexShrink: 0 }}>
             {['TỦ ĐIỆN', 'SỨC KHỎE', 'T1 MAX', 'PD/24H'].map((h, idx) => (
