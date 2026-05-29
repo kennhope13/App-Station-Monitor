@@ -2,6 +2,11 @@
 main.py — Entry point của AI Engine
 Khởi động FastAPI + scheduler định kỳ xử lý frame từ tất cả analyzer
 """
+import os
+# Tắt hoàn toàn log rác, cảnh báo kết nối sai của OpenCV và FFMPEG để giữ log file cực kỳ sạch đẹp
+os.environ["OPENCV_LOG_LEVEL"] = "OFF"
+os.environ["OPENCV_FFMPEG_LOGLEVEL"] = "-8"
+
 import asyncio
 import logging
 import signal
@@ -34,6 +39,9 @@ async def _process_loop() -> None:
 
             for detector in list(routes._line_detectors.values()):
                 await detector.process()
+
+            for acoustic in list(routes._acoustic_analyzers.values()):
+                await acoustic.process()
 
         except Exception as ex:
             logger.error("[Scheduler] Error: %s", ex)
@@ -100,6 +108,20 @@ async def _load_config_from_backend() -> None:
                 continue
 
             dev_type = d.get("type", "")
+            
+            password = cfg_raw.get("password", "")
+            username = cfg_raw.get("username", "admin")
+            if password == "***" or not password:
+                try:
+                    async with httpx.AsyncClient(timeout=5.0) as client:
+                        r_cred = await client.get(f"{cfg.backend_url}/api/v1/devices/{d['id']}/credentials")
+                        if r_cred.status_code == 200:
+                            cred = r_cred.json()
+                            password = cred.get("password", "")
+                            username = cred.get("username", username)
+                except Exception as ex:
+                    logger.warning("[Startup] Cannot fetch credentials for %s: %s", d["id"], ex)
+
             stream_id = cfg_raw.get("go2rtc_id")
             if not stream_id:
                 if dev_type in ("camera_dual", "camera_thermal"):
@@ -161,8 +183,8 @@ async def _load_config_from_backend() -> None:
                 analyzer = ThermalAnalyzer(
                     device_id=d["id"],
                     camera_ip=ip,
-                    username=cfg_raw.get("username", "admin"),
-                    password=cfg_raw.get("password", ""),
+                    username=username,
+                    password=password,
                     stream_id=stream_id,
                     points=points,
                     zones=zones
@@ -184,6 +206,24 @@ async def _load_config_from_backend() -> None:
                 routes._line_detectors[stream_id] = detector
                 logger.info("[Startup] Line detector started: %s (no lines configured)", stream_id)
 
+            elif dev_type == "camera_pd":
+                # Camera phóng điện (Acoustic Imager) — Tối ưu hóa cực kỳ gọn gàng và chuẩn hóa
+                from services.acoustic.acoustic_analyzer import AcousticAnalyzer
+                
+                if password and password != "***":
+                    analyzer = AcousticAnalyzer(
+                        device_id=d["id"],
+                        camera_ip=ip,
+                        username=username,
+                        password=password,
+                        stream_id=stream_id
+                    )
+                    analyzer.start()
+                    routes._acoustic_analyzers[stream_id] = analyzer
+                    logger.info("[Startup] Acoustic analyzer started: %s", stream_id)
+                else:
+                    logger.warning("[Startup] Không thể khởi động AcousticAnalyzer cho %s vì thiếu mật khẩu thực", d["id"])
+
     except Exception as ex:
         logger.warning("[Startup] Auto-config failed: %s — sẽ dùng config thủ công", ex)
 
@@ -196,4 +236,4 @@ app.include_router(routes.router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8100, reload=False, log_level="info")
+    uvicorn.run("main:app", host="0.0.0.0", port=8105, reload=False, log_level="info")

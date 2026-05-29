@@ -45,9 +45,11 @@ public static class DbInitializer
         await authService.SeedAdminIfNotExistsAsync();   // Chỉ giữ admin user — không seed thêm data nào
 
         await SeedDefaultStationAsync(db);
-        await SeedNetaRulesAsync(db);
-        await SeedTemperatureRulesAsync(db);
-        await SeedThermalPointsRulesAsync(db);
+        // Tắt tính năng tự động tạo Rule mặc định
+        // await SeedNetaRulesAsync(db);
+        // await SeedTemperatureRulesAsync(db);
+        // await SeedThermalPointsRulesAsync(db);
+        
 
         // Sync tất cả camera trong DB lên go2rtc (phòng khi go2rtc restart)
         try
@@ -134,6 +136,8 @@ public static class DbInitializer
         var station = await db.Stations.FirstOrDefaultAsync();
         if (station == null) return;
 
+        // Tắt tính năng tự động thêm lại camera 152 và 153 nếu đã bị người dùng xóa
+        /*
         if (!await db.Devices.AnyAsync(d => d.Type == "camera_dual"))
         {
             db.Devices.Add(new StationOS.Data.Entities.Device
@@ -161,6 +165,7 @@ public static class DbInitializer
             });
             await db.SaveChangesAsync();
         }
+        */
     }
 
     // ── Seed rules nhiệt độ 3 pha ────────────────────────────────
@@ -259,7 +264,7 @@ public static class DbInitializer
         Console.WriteLine($"[Startup] Normalized RuleSet cho {toFix.Count} rule → \"Tủ 471\"");
     }
 
-    // ── Seed 10 rules nhiệt độ cho Camera 152 (P1 -> P10) ─────
+    // ── Seed 20 rules nhiệt độ cho Camera 152 (P1 -> P20) ─────
     private static async Task SeedThermalPointsRulesAsync(AppDbContext db)
     {
         if (await db.Rules.AnyAsync(r => r.RuleSet == "Các điểm đo của cam nhiệt")) return;
@@ -269,7 +274,7 @@ public static class DbInitializer
 
         var thermalCam = await db.Devices.FirstOrDefaultAsync(d => d.Type == "camera_dual");
 
-        for (int i = 1; i <= 10; i++)
+        for (int i = 1; i <= 20; i++)
         {
             db.Rules.Add(new StationOS.Data.Entities.Rule
             {
@@ -289,6 +294,6 @@ public static class DbInitializer
             });
         }
         await db.SaveChangesAsync();
-        Console.WriteLine("[Startup] Đã seed 10 rules nhiệt độ camera (P1-P10)");
+        Console.WriteLine("[Startup] Đã seed 20 rules nhiệt độ camera (P1-P20)");
     }
 }

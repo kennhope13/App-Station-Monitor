@@ -7,26 +7,18 @@
 // Tab 4: Liên kết Camera  (LinkageTab)     — auto camera action khi có alert
 // ============================================================
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
 import GeneralTab from './tabs/GeneralTab';
 import NotificationTab from './tabs/NotificationTab';
+import ThemeTab from './tabs/ThemeTab';
 import CloudSyncTab from './tabs/CloudSyncTab';
 import LinkageTab from './tabs/LinkageTab';
 import './SettingsPage.css';
 
-const TABS = ['Cài đặt chung', 'Thông báo', 'Cloud Sync', 'Liên kết Camera'];
+const TABS = ['Cài đặt chung', 'Thông báo', 'Giao diện', 'Cloud Sync', 'Liên kết Camera'];
 
 export default function SettingsPage() {
-  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(0);
-
-  useEffect(() => {
-    const tabIdx = parseInt(searchParams.get('tab') || '0');
-    if (!isNaN(tabIdx) && tabIdx >= 0 && tabIdx < TABS.length) {
-      setActiveTab(tabIdx);
-    }
-  }, [searchParams]);
 
   return (
     <div className="admin-page-container">
@@ -51,8 +43,9 @@ export default function SettingsPage() {
       <div className="admin-card" style={{ flex: 1, overflow: 'auto', padding: '20px 24px', borderRadius: 4 }}>
         {activeTab === 0 && <GeneralTab />}
         {activeTab === 1 && <NotificationTab />}
-        {activeTab === 2 && <CloudSyncTab />}
-        {activeTab === 3 && <LinkageTab />}
+        {activeTab === 2 && <ThemeTab />}
+        {activeTab === 3 && <CloudSyncTab />}
+        {activeTab === 4 && <LinkageTab />}
       </div>
     </div>
   );

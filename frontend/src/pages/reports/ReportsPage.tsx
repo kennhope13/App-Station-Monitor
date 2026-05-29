@@ -25,7 +25,7 @@ export default function ReportsPage() {
   return (
     <div className="alerts-history-page" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 8, background: 'var(--admin-bg)', boxSizing: 'border-box', gap: 8 }}>
       {/* TOOLBAR & TAB BAR */}
-      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="page-toolbar-row">
         <div className="page-title-cell">
           <h2>BÁO CÁO HỆ THỐNG</h2>
         </div>

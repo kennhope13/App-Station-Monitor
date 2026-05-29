@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // SldController — Sơ đồ một sợi (Single Line Diagram)
 // GET    /api/v1/sld/{stationId}          → SldFile active + SldPoints + devices chưa đặt
 // POST   /api/v1/sld/{stationId}/upload   → Upload SVG (lưu vào wwwroot/sld/)
@@ -147,11 +147,19 @@ public class SldController : ControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         Guid? uid  = Guid.TryParse(userId, out var parsed) ? parsed : null;
 
-        // Đánh dấu file cũ là inactive
+        // Đánh dấu file cũ là inactive và lấy danh sách điểm cũ
         var oldFiles = await _db.SldFiles
             .Where(f => f.StationId == stationId && f.IsActive)
             .ToListAsync();
-        foreach (var f in oldFiles) f.IsActive = false;
+            
+        var oldPoints = new List<SldPoint>();
+        if (oldFiles.Any())
+        {
+            var oldActiveFile = oldFiles.OrderByDescending(f => f.Version).First();
+            oldPoints = await _db.SldPoints.Where(p => p.SldFileId == oldActiveFile.Id).ToListAsync();
+            
+            foreach (var f in oldFiles) f.IsActive = false;
+        }
 
         // Tạo SldFile mới
         var maxVersion = oldFiles.Any() ? oldFiles.Max(f => f.Version) : 0;
@@ -164,6 +172,22 @@ public class SldController : ControllerBase
             IsActive   = true,
         };
         _db.SldFiles.Add(newFile);
+        
+        // Copy các node cũ sang bản vẽ mới
+        foreach(var oldPoint in oldPoints)
+        {
+            _db.SldPoints.Add(new SldPoint
+            {
+                SldFileId = newFile.Id,
+                DeviceId  = oldPoint.DeviceId,
+                PointId   = oldPoint.PointId,
+                Label     = oldPoint.Label,
+                X         = oldPoint.X,
+                Y         = oldPoint.Y,
+                R         = oldPoint.R
+            });
+        }
+        
         await _db.SaveChangesAsync();
 
         return Ok(new { sldFileId = newFile.Id, svgUrl = $"{svgUrl}?v={newFile.Version}", version = newFile.Version });

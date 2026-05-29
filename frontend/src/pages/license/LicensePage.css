@@ -103,7 +103,7 @@
   background: var(--admin-border-light);
   padding: 2px 5px;
   border-radius: 0px;
-  font-family: var(--font-mono);
+  font-family: monospace;
   font-size: 11px;
   color: #44ff88;
 }
@@ -119,7 +119,7 @@
   border: 1px solid var(--admin-border-light);
   border-radius: 0px;
   color: #fff;
-  font-family: var(--font-mono);
+  font-family: monospace;
   font-size: 13.5px;
   letter-spacing: 0.5px;
   transition: border-color 0.2s;

@@ -170,13 +170,15 @@ export default function MultisitePage() {
     <div className="multisite-page" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: 'var(--admin-bg)' }}>
       <div ref={mapRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }} />
 
-      <div className="page-title-cell dash-header" style={{
-        position: 'absolute', top: 20, left: 20, zIndex: 1000,
-        minWidth: 320, padding: '10px 20px',
-        background: 'rgba(13, 17, 23, 0.9)',
-        backdropFilter: 'blur(10px)',
+      <div style={{
+        position: 'absolute', top: 15, left: 15, zIndex: 1000,
+        background: 'var(--admin-overlay)',
+        padding: '8px 16px', borderRadius: 0, border: '1px solid var(--admin-border-light)',
+        display: 'flex', alignItems: 'center', gap: 12
       }}>
-        <h2>TỔNG QUAN ĐA TRẠM ({views.length})</h2>
+        <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--admin-text)', letterSpacing: 1 }}>
+          TỔNG QUAN ĐA TRẠM ({views.length})
+        </span>
       </div>
 
       {views.length === 0 && (
@@ -239,7 +241,7 @@ export default function MultisitePage() {
                   </div>
                   <div style={{ background: 'var(--admin-hover)', borderRadius: 0, padding: '6px 8px', border: '1px solid var(--admin-hover)', gridColumn: 'span 2' }}>
                     <div style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', marginBottom: 2 }}>Mã trạm</div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--admin-text)', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--admin-text)', fontFamily: 'monospace' }}>
                       {v.station.code || v.station.id.slice(0, 8)}
                     </div>
                   </div>

@@ -52,6 +52,8 @@ Desktop.ini
 # Logs and PIDs
 *.log
 .pids
+backend/api_log.txt
+backend/backend_utf8.log
 
 # Backups
 backup/
@@ -64,3 +66,7 @@ thermal_realtime_stream.py
 # Generated media / reports
 backend/StationOS.Api/wwwroot/media/detections/
 backend/StationOS.Api/wwwroot/reports/
+
+# Temporary Database Files
+data/hangfire.db*
+data/station_monitor.db*

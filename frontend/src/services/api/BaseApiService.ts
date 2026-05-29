@@ -144,12 +144,5 @@ export async function apiMutate<T = any>(method: string, path: string, body?: ob
     throw new Error(err || `${method} ${path} → ${res.status}`);
   }
   if (res.status === 204) return null as T;
-  
-  const text = await res.text();
-  if (!text) return null as any;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text as any;
-  }
+  return res.json();
 }

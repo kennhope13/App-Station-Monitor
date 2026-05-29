@@ -6,31 +6,18 @@ import type { SldCanvasRef } from './SldCanvas';
 interface Props {
   stationId: string;
   sldRef: React.RefObject<SldCanvasRef | null>;
-  addingNode: boolean;
-  pendingPos: { x: number; y: number } | null;
-  onStartAddNode: () => void;
-  onCancelAddNode: () => void;
-  onNodeAdded: () => void;
+  refreshTick?: number;
 }
 
 const labelStyle: React.CSSProperties = {
   fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)',
   textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6,
-  fontFamily: 'var(--font-mono)',
+  fontFamily: 'Consolas,monospace',
 };
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '5px 8px', fontSize: '.7rem',
-  border: '1px solid var(--admin-border)', borderRadius: 3,
-  background: 'var(--admin-layer-1)', color: 'var(--admin-text)', outline: 'none',
-  boxSizing: 'border-box',
-};
-
-export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos, onStartAddNode, onCancelAddNode, onNodeAdded }: Props) {
+export default function SldEditPanel({ stationId, sldRef, refreshTick }: Props) {
   const [unpinned, setUnpinned] = useState<SldUnpinnedDevice[]>([]);
   const [points, setPoints] = useState<SldPoint[]>([]);
-  const [form, setForm] = useState({ label: '', pointId: '', deviceId: '' });
-  const [saving, setSaving] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [svgStatus, setSvgStatus] = useState('');
@@ -44,8 +31,7 @@ export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos
     } catch {}
   };
 
-  useEffect(() => { if (stationId) loadSldData(); }, [stationId]);
-  useEffect(() => { if (pendingPos) setForm({ label: '', pointId: '', deviceId: '' }); }, [pendingPos]);
+  useEffect(() => { if (stationId) loadSldData(); }, [stationId, refreshTick]);
 
   const handleUpload = async () => {
     if (!uploadFile) return;
@@ -55,25 +41,8 @@ export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos
       sldRef.current?.reloadData();
       setSvgStatus(uploadFile.name + ' ✓');
       setUploadFile(null);
-    } catch { alert('Upload thất bại'); }
+    } catch (err: any) { alert(`Upload thất bại: ${err.message || err}`); }
     finally { setUploading(false); }
-  };
-
-  const handleConfirmNode = async () => {
-    if (!pendingPos) return;
-    setSaving(true);
-    try {
-      await stationApi.addSldPoint(stationId, {
-        x: pendingPos.x, y: pendingPos.y, r: 8,
-        label: form.label || 'Node mới',
-        pointId: form.pointId || undefined,
-        deviceId: form.deviceId || undefined,
-      });
-      sldRef.current?.reloadData();
-      onNodeAdded();
-      await loadSldData();
-    } catch { alert('Thêm node thất bại'); }
-    finally { setSaving(false); }
   };
 
   const handleDelete = async (id: string, label: string) => {
@@ -118,54 +87,31 @@ export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos
           </div>
         </div>
 
-        <div style={{ height: 1, background: 'var(--admin-border-light)' }} />
 
-        {/* Add node */}
-        <div>
-          <div style={labelStyle}>Thêm node</div>
 
-          {!pendingPos && !addingNode && (
-            <button onClick={onStartAddNode}
-              style={{ width: '100%', padding: '7px', fontSize: '.7rem', fontWeight: 700, borderRadius: 3, border: '1px dashed var(--admin-border)', background: 'transparent', color: 'var(--admin-text)', cursor: 'pointer' }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--admin-accent)')}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--admin-border)')}>
-              + Chọn vị trí trên sơ đồ
-            </button>
-          )}
-
-          {addingNode && !pendingPos && (
-            <div style={{ padding: '8px 10px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: 3, textAlign: 'center' }}>
-              <div style={{ fontSize: '.7rem', color: 'var(--admin-accent)', fontWeight: 700, marginBottom: 6 }}>↖ Click lên sơ đồ để đặt node</div>
-              <button onClick={onCancelAddNode} style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>Hủy</button>
+        {/* Unpinned devices list for drag-and-drop */}
+        {unpinned.length > 0 && (
+          <div>
+            <div style={labelStyle}>Thiết bị chưa gắn (Kéo thả vào sơ đồ)</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 150, overflowY: 'auto' }}>
+              {unpinned.map(d => (
+                <div
+                  key={d.id}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('device_id', d.id);
+                    e.dataTransfer.setData('device_name', d.name);
+                    if (d.sensorTag) e.dataTransfer.setData('sensor_tag', d.sensorTag);
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
+                  style={{ padding: '6px 8px', fontSize: '.68rem', backgroundColor: 'var(--admin-layer-1)', border: '1px dashed var(--admin-border)', borderRadius: 3, cursor: 'grab' }}
+                >
+                  <span style={{fontWeight: 700}}>{d.name}</span> <span style={{color:'var(--admin-text-muted)'}}>({d.type})</span>
+                </div>
+              ))}
             </div>
-          )}
-
-          {pendingPos && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '8px 10px', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 3 }}>
-              <div style={{ fontSize: '.65rem', color: '#10B981', fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
-                Vị trí đã chọn: ({pendingPos.x}, {pendingPos.y})
-              </div>
-              <input placeholder="Nhãn (vd: Pha A, Thanh cái...)" value={form.label}
-                onChange={e => setForm(p => ({ ...p, label: e.target.value }))} style={inputStyle} />
-              <input placeholder="Point ID cảm biến (tùy chọn)" value={form.pointId}
-                onChange={e => setForm(p => ({ ...p, pointId: e.target.value }))} style={inputStyle} />
-              {unpinned.length > 0 && (
-                <select value={form.deviceId} onChange={e => setForm(p => ({ ...p, deviceId: e.target.value }))}
-                  style={{ ...inputStyle }}>
-                  <option value="">-- Gắn thiết bị (tùy chọn) --</option>
-                  {unpinned.map(d => <option key={d.id} value={d.id}>{d.name} ({d.type})</option>)}
-                </select>
-              )}
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={onCancelAddNode} style={{ flex: 1, padding: '5px', fontSize: '.68rem', borderRadius: 3, border: '1px solid var(--admin-border)', background: 'transparent', color: 'var(--admin-text-muted)', cursor: 'pointer' }}>Hủy</button>
-                <button onClick={handleConfirmNode} disabled={saving}
-                  style={{ flex: 1, padding: '5px', fontSize: '.68rem', fontWeight: 800, borderRadius: 3, border: '1px solid var(--admin-accent)', background: 'var(--admin-accent)', color: '#fff', cursor: 'pointer' }}>
-                  {saving ? '...' : 'Lưu node'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div style={{ height: 1, background: 'var(--admin-border-light)' }} />
 
@@ -182,7 +128,7 @@ export default function SldEditPanel({ stationId, sldRef, addingNode, pendingPos
                 <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {p.label || p.pointId || 'node'}
                 </div>
-                <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontFamily: 'Consolas,monospace' }}>
                   x:{Math.round(p.x)} y:{Math.round(p.y)} r:{p.r}
                 </div>
               </div>

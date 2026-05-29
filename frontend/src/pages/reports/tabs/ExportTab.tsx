@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { stationApi, AlertItem } from '@/services/StationApiService';
 import { fmtDateTime } from '@/utils/format';
-import { CABINET_CONFIGS, ALL_CABINET_POINT_IDS } from '../types';
 
 const CHART_COLORS = [
   'var(--admin-accent)', '#10B981', '#F59E0B', '#a855f7',
@@ -10,14 +9,6 @@ const CHART_COLORS = [
   '#8b5cf6', '#06b6d4', '#84cc16', '#ec4899',
   '#6366f1', '#0ea5e9', '#22c55e', '#f43f5e',
 ];
-
-// Flat list of all sensor defs for chart/pivot
-const ALL_SENSORS = CABINET_CONFIGS.flatMap((cab, ci) => [
-  { id: cab.sensors.t1.pointId, label: `${cab.cabinetName} · ${cab.sensors.t1.label}`, unit: '°C', cabinetId: cab.cabinetId, color: CHART_COLORS[ci * 4 + 0], yAxis: 'yTemp' },
-  { id: cab.sensors.t2.pointId, label: `${cab.cabinetName} · ${cab.sensors.t2.label}`, unit: '°C', cabinetId: cab.cabinetId, color: CHART_COLORS[ci * 4 + 1], yAxis: 'yTemp' },
-  { id: cab.sensors.t3.pointId, label: `${cab.cabinetName} · ${cab.sensors.t3.label}`, unit: '°C', cabinetId: cab.cabinetId, color: CHART_COLORS[ci * 4 + 2], yAxis: 'yTemp' },
-  { id: cab.sensors.pd.pointId,  label: `${cab.cabinetName} · ${cab.sensors.pd.label}`,  unit: 'dB', cabinetId: cab.cabinetId, color: CHART_COLORS[ci * 4 + 3], yAxis: 'yPd' },
-]);
 
 const labelStyle: React.CSSProperties = {
   fontSize: '0.65rem', color: 'var(--admin-text-muted)', fontWeight: 700,
@@ -28,7 +19,10 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
   const [from, setFrom] = useState(() => new Date(Date.now() - 86400000).toISOString().slice(0, 16));
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 16));
   const [interval, setIntervalVal] = useState('5');
-  const [selectedPoints, setSelectedPoints] = useState<string[]>(ALL_CABINET_POINT_IDS);
+  
+  const [devices, setDevices] = useState<any[]>([]);
+  const [loadingDevices, setLoadingDevices] = useState(true);
+  const [selectedPoints, setSelectedPoints] = useState<string[]>([]);
   const [inclAlerts, setInclAlerts] = useState(true);
 
   const [loading, setLoading] = useState(false);
@@ -41,27 +35,86 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
   const [previewData, setPreviewData] = useState<Array<Record<string, any>>>([]);
   const [totalRows, setTotalRows] = useState(0);
 
+  // Load cabinets dynamically
+  useEffect(() => {
+    if (!stationId) return;
+    setLoadingDevices(true);
+    stationApi.getDevices(stationId).then(devs => {
+      const cabinetDevs = devs.filter((d: any) => d.type === 'plc_s7' || d.type === 'cabinet');
+      setDevices(cabinetDevs);
+    }).catch(err => {
+      console.error('[ExportTab] Lỗi nạp thiết bị:', err);
+    }).finally(() => {
+      setLoadingDevices(false);
+    });
+  }, [stationId]);
+
+  // Construct cabinet configs and sensor list dynamically
+  const cabinetConfigs = devices.map(d => ({
+    cabinetId: d.id,
+    cabinetName: d.name || 'Tủ điện',
+    sensors: {
+      t1: { pointId: 'nhiet_do_pha_1', label: 'Nhiệt T1 — Pha A' },
+      t2: { pointId: 'nhiet_do_pha_2', label: 'Nhiệt T2 — Pha B' },
+      t3: { pointId: 'nhiet_do_pha_3', label: 'Nhiệt T3 — Pha C' },
+      pd: { pointId: 'phong_dien',     label: 'Phóng điện PD' },
+    }
+  }));
+
+  const allSensors = cabinetConfigs.flatMap((cab, ci) => [
+    { id: `${cab.cabinetId}_nhiet_do_pha_1`, label: `${cab.cabinetName} · Nhiệt T1`, unit: '°C', cabinetId: cab.cabinetId, color: CHART_COLORS[(ci * 4 + 0) % CHART_COLORS.length], yAxis: 'yTemp', rawPointId: 'nhiet_do_pha_1' },
+    { id: `${cab.cabinetId}_nhiet_do_pha_2`, label: `${cab.cabinetName} · Nhiệt T2`, unit: '°C', cabinetId: cab.cabinetId, color: CHART_COLORS[(ci * 4 + 1) % CHART_COLORS.length], yAxis: 'yTemp', rawPointId: 'nhiet_do_pha_2' },
+    { id: `${cab.cabinetId}_nhiet_do_pha_3`, label: `${cab.cabinetName} · Nhiệt T3`, unit: '°C', cabinetId: cab.cabinetId, color: CHART_COLORS[(ci * 4 + 2) % CHART_COLORS.length], yAxis: 'yTemp', rawPointId: 'nhiet_do_pha_3' },
+    { id: `${cab.cabinetId}_phong_dien`,     label: `${cab.cabinetName} · Phóng điện PD`, unit: 'dB', cabinetId: cab.cabinetId, color: CHART_COLORS[(ci * 4 + 3) % CHART_COLORS.length], yAxis: 'yPd', rawPointId: 'phong_dien' },
+  ]);
+
+  const allCabinetPointIds = allSensors.map(s => s.id);
+
+  // Default to selecting all sensors when devices load
+  useEffect(() => {
+    if (allCabinetPointIds.length > 0) {
+      setSelectedPoints(allCabinetPointIds);
+    }
+  }, [devices]);
+
   const togglePoint = (id: string) =>
     setSelectedPoints(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const toggleCabinet = (cabinetId: string) => {
-    const ids = CABINET_CONFIGS.find(c => c.cabinetId === cabinetId);
-    if (!ids) return;
-    const pts = [ids.sensors.t1.pointId, ids.sensors.t2.pointId, ids.sensors.t3.pointId, ids.sensors.pd.pointId];
+    const cab = cabinetConfigs.find(c => c.cabinetId === cabinetId);
+    if (!cab) return;
+    const pts = [
+      `${cab.cabinetId}_nhiet_do_pha_1`,
+      `${cab.cabinetId}_nhiet_do_pha_2`,
+      `${cab.cabinetId}_nhiet_do_pha_3`,
+      `${cab.cabinetId}_phong_dien`,
+    ];
     const allOn = pts.every(p => selectedPoints.includes(p));
     setSelectedPoints(prev => allOn ? prev.filter(p => !pts.includes(p)) : [...new Set([...prev, ...pts])]);
   };
 
-  const pivot = (raw: Array<{ pointId: string; time: string; value: number }>) => {
+  const pivot = (raw: Array<{ pointId: string; time: string; value: number; deviceId?: string }>) => {
     const map = new Map<string, Record<string, any>>();
     raw.forEach(r => {
       const key = r.time;
       if (!map.has(key)) {
         const row: Record<string, any> = { time: r.time };
-        ALL_CABINET_POINT_IDS.forEach(id => { row[id] = null; });
+        allCabinetPointIds.forEach(id => { row[id] = null; });
         map.set(key, row);
       }
-      map.get(key)![r.pointId] = r.value;
+      
+      const row = map.get(key)!;
+      const rawPid = r.pointId.toLowerCase();
+      let mappedPid = rawPid;
+      if (rawPid === 'temp_1') mappedPid = 'nhiet_do_pha_1';
+      else if (rawPid === 'temp_2') mappedPid = 'nhiet_do_pha_2';
+      else if (rawPid === 'temp_3') mappedPid = 'nhiet_do_pha_3';
+      else if (rawPid === 'pd') mappedPid = 'phong_dien';
+
+      if (r.deviceId) {
+        const uniqueId = `${r.deviceId.toLowerCase()}_${mappedPid}`;
+        row[uniqueId] = r.value;
+      }
     });
     return Array.from(map.values()).sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
   };
@@ -73,7 +126,8 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
     setLoading(true);
     setInfo({ msg: 'Đang tải dữ liệu...', type: 'info' });
     try {
-      const raw = await stationApi.getHistoryBulk(stationId, from, to, Number(interval), selectedPoints);
+      const queryPointIds = ['nhiet_do_pha_1', 'nhiet_do_pha_2', 'nhiet_do_pha_3', 'phong_dien', 'temp_1', 'temp_2', 'temp_3', 'pd'];
+      const raw = await stationApi.getHistoryBulk(stationId, from, to, Number(interval), queryPointIds);
       const pivoted = pivot(raw);
       setPreviewData(pivoted.slice(0, 30));
       setTotalRows(pivoted.length);
@@ -91,10 +145,11 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
     if (!from || !to) { setInfo({ msg: 'Chọn đầy đủ ngày', type: 'error' }); return; }
     setExporting(true);
     try {
-      const raw = await stationApi.getHistoryBulk(stationId, from, to, Number(interval), selectedPoints);
+      const queryPointIds = ['nhiet_do_pha_1', 'nhiet_do_pha_2', 'nhiet_do_pha_3', 'phong_dien', 'temp_1', 'temp_2', 'temp_3', 'pd'];
+      const raw = await stationApi.getHistoryBulk(stationId, from, to, Number(interval), queryPointIds);
       const pivoted = pivot(raw);
       const wb = XLSX.utils.book_new();
-      const activeSensors = ALL_SENSORS.filter(s => selectedPoints.includes(s.id));
+      const activeSensors = allSensors.filter(s => selectedPoints.includes(s.id));
 
       // Sheet 1: Dữ liệu cảm biến (time series)
       const headers = ['Thời gian', ...activeSensors.map(s => `${s.label} (${s.unit})`)];
@@ -111,7 +166,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
         headers,
         ...dataRows,
       ]);
-      ws1['!cols'] = [{ wch: 22 }, ...activeSensors.map(() => ({ wch: 22 }))];
+      ws1['!cols'] = [{ wch: 22 }, ...activeSensors.map(() => ({ wch: 25 }))];
       XLSX.utils.book_append_sheet(wb, ws1, 'Dữ liệu cảm biến');
 
       // Sheet 2: Tóm tắt tủ điện (per-cabinet summary)
@@ -121,15 +176,24 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
         [],
         ['Tủ điện', 'Cảm biến', 'Đơn vị', 'Nhỏ nhất', 'Lớn nhất', 'Trung bình', 'Số mẫu'],
       ];
-      CABINET_CONFIGS.forEach(cab => {
+      cabinetConfigs.forEach(cab => {
         const cabSensors = [
-          { key: 't1', ...cab.sensors.t1, unit: '°C' },
-          { key: 't2', ...cab.sensors.t2, unit: '°C' },
-          { key: 't3', ...cab.sensors.t3, unit: '°C' },
-          { key: 'pd', ...cab.sensors.pd, unit: 'dB' },
+          { key: 't1', pointId: 'nhiet_do_pha_1', label: 'Nhiệt T1 — Pha A', unit: '°C' },
+          { key: 't2', pointId: 'nhiet_do_pha_2', label: 'Nhiệt T2 — Pha B', unit: '°C' },
+          { key: 't3', pointId: 'nhiet_do_pha_3', label: 'Nhiệt T3 — Pha C', unit: '°C' },
+          { key: 'pd', pointId: 'phong_dien',     label: 'Phóng điện PD',  unit: 'dB' },
         ];
         cabSensors.forEach((s, si) => {
-          const vals = raw.filter((r: { pointId: string }) => r.pointId === s.pointId).map((r: { value: number }) => r.value);
+          const vals = raw.filter((r: any) => {
+            const rawPid = r.pointId.toLowerCase();
+            let mappedPid = rawPid;
+            if (rawPid === 'temp_1') mappedPid = 'nhiet_do_pha_1';
+            else if (rawPid === 'temp_2') mappedPid = 'nhiet_do_pha_2';
+            else if (rawPid === 'temp_3') mappedPid = 'nhiet_do_pha_3';
+            else if (rawPid === 'pd') mappedPid = 'phong_dien';
+            
+            return mappedPid === s.pointId && r.deviceId?.toLowerCase() === cab.cabinetId.toLowerCase();
+          }).map((r: { value: number }) => r.value);
           if (!vals.length) return;
           cabSummaryRows.push([
             si === 0 ? cab.cabinetName : '',
@@ -144,7 +208,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
         cabSummaryRows.push([]);
       });
       const ws2 = XLSX.utils.aoa_to_sheet(cabSummaryRows);
-      ws2['!cols'] = [{ wch: 14 }, { wch: 28 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
+      ws2['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
       XLSX.utils.book_append_sheet(wb, ws2, 'Tóm tắt tủ điện');
 
       // Sheet 3: Cảnh báo
@@ -171,7 +235,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
     }
   };
 
-  const activeSensorCols = ALL_SENSORS.filter(s => selectedPoints.includes(s.id));
+  const activeSensorCols = allSensors.filter(s => selectedPoints.includes(s.id));
 
   return (
     <div style={{ flex: 1, display: 'flex', gap: 8, overflow: 'hidden', height: '100%' }}>
@@ -208,35 +272,46 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <label style={labelStyle}>Cảm biến</label>
-            <button onClick={() => setSelectedPoints(selectedPoints.length === ALL_CABINET_POINT_IDS.length ? [] : [...ALL_CABINET_POINT_IDS])}
+            <button onClick={() => setSelectedPoints(selectedPoints.length === allCabinetPointIds.length ? [] : [...allCabinetPointIds])}
               style={{ fontSize: '0.62rem', padding: '2px 7px', borderRadius: 2, border: '1px solid var(--admin-border)', background: 'transparent', color: 'var(--admin-text-muted)', cursor: 'pointer' }}>
-              {selectedPoints.length === ALL_CABINET_POINT_IDS.length ? 'Bỏ tất cả' : 'Chọn tất cả'}
+              {selectedPoints.length === allCabinetPointIds.length ? 'Bỏ tất cả' : 'Chọn tất cả'}
             </button>
           </div>
 
-          {CABINET_CONFIGS.map((cab, ci) => {
-            const pts = [cab.sensors.t1.pointId, cab.sensors.t2.pointId, cab.sensors.t3.pointId, cab.sensors.pd.pointId];
+          {loadingDevices ? (
+            <div style={{ padding: 10, textAlign: 'center', fontSize: '0.7rem', color: 'var(--admin-text-muted)' }}>Đang nạp tủ điện...</div>
+          ) : cabinetConfigs.length === 0 ? (
+            <div style={{ padding: 10, textAlign: 'center', fontSize: '0.7rem', color: 'var(--admin-text-muted)' }}>Không tìm thấy tủ điện nào</div>
+          ) : cabinetConfigs.map((cab, ci) => {
+            const pts = [
+              `${cab.cabinetId}_nhiet_do_pha_1`,
+              `${cab.cabinetId}_nhiet_do_pha_2`,
+              `${cab.cabinetId}_nhiet_do_pha_3`,
+              `${cab.cabinetId}_phong_dien`,
+            ];
             const allChecked = pts.every(p => selectedPoints.includes(p));
             const someChecked = pts.some(p => selectedPoints.includes(p));
+            const cabSensors = [
+              { id: `${cab.cabinetId}_nhiet_do_pha_1`, color: CHART_COLORS[(ci * 4 + 0) % CHART_COLORS.length], unit: '°C', label: 'Nhiệt T1 — Pha A' },
+              { id: `${cab.cabinetId}_nhiet_do_pha_2`, color: CHART_COLORS[(ci * 4 + 1) % CHART_COLORS.length], unit: '°C', label: 'Nhiệt T2 — Pha B' },
+              { id: `${cab.cabinetId}_nhiet_do_pha_3`, color: CHART_COLORS[(ci * 4 + 2) % CHART_COLORS.length], unit: '°C', label: 'Nhiệt T3 — Pha C' },
+              { id: `${cab.cabinetId}_phong_dien`,     color: CHART_COLORS[(ci * 4 + 3) % CHART_COLORS.length], unit: 'dB', label: 'Phóng điện PD' },
+            ];
+
             return (
               <div key={cab.cabinetId} style={{ border: '1px solid var(--admin-border-light)', borderRadius: 2, overflow: 'hidden' }}>
                 {/* Cabinet header */}
                 <label style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 8px', background: 'var(--admin-hover)', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 700, color: 'var(--admin-text)' }}>
                   <input type="checkbox" checked={allChecked} ref={el => { if (el) el.indeterminate = !allChecked && someChecked; }}
-                    onChange={() => toggleCabinet(cab.cabinetId)} style={{ width: 13, height: 13, accentColor: CHART_COLORS[ci * 4] }} />
+                    onChange={() => toggleCabinet(cab.cabinetId)} style={{ width: 13, height: 13, accentColor: CHART_COLORS[(ci * 4) % CHART_COLORS.length] }} />
                   {cab.cabinetName}
                 </label>
                 {/* Individual sensors */}
-                {([
-                  { s: cab.sensors.t1, color: CHART_COLORS[ci * 4 + 0], unit: '°C' },
-                  { s: cab.sensors.t2, color: CHART_COLORS[ci * 4 + 1], unit: '°C' },
-                  { s: cab.sensors.t3, color: CHART_COLORS[ci * 4 + 2], unit: '°C' },
-                  { s: cab.sensors.pd, color: CHART_COLORS[ci * 4 + 3], unit: 'dB' },
-                ]).map(({ s, color, unit }) => (
-                  <label key={s.pointId} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 8px 4px 22px', cursor: 'pointer', fontSize: '0.72rem', color: 'var(--admin-text-muted)', borderTop: '1px solid var(--admin-border-light)' }}>
-                    <input type="checkbox" checked={selectedPoints.includes(s.pointId)} onChange={() => togglePoint(s.pointId)}
+                {cabSensors.map(({ id, color, unit, label }) => (
+                  <label key={id} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '4px 8px 4px 22px', cursor: 'pointer', fontSize: '0.72rem', color: 'var(--admin-text-muted)', borderTop: '1px solid var(--admin-border-light)' }}>
+                    <input type="checkbox" checked={selectedPoints.includes(id)} onChange={() => togglePoint(id)}
                       style={{ width: 12, height: 12, accentColor: color }} />
-                    <span style={{ color, fontWeight: 600, flex: 1 }}>{s.label}</span>
+                    <span style={{ color, fontWeight: 600, flex: 1 }}>{label}</span>
                     <span style={{ fontSize: '0.65rem' }}>{unit}</span>
                   </label>
                 ))}
@@ -252,11 +327,11 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button onClick={loadPreview} disabled={loading || exporting}
+          <button onClick={loadPreview} disabled={loading || exporting || loadingDevices}
             style={{ padding: 9, background: 'var(--admin-btn-secondary-bg)', border: '1px solid var(--admin-accent)', borderRadius: 0, color: 'var(--admin-btn-secondary-text)', fontSize: '0.78rem', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
             {loading ? 'Đang tải...' : 'Xem trước (30 dòng)'}
           </button>
-          <button onClick={exportXlsx} disabled={loading || exporting}
+          <button onClick={exportXlsx} disabled={loading || exporting || loadingDevices}
             style={{ padding: 9, background: 'var(--admin-accent)', border: 'none', borderRadius: 0, color: 'var(--admin-text)', fontSize: '0.78rem', fontWeight: 700, cursor: exporting ? 'not-allowed' : 'pointer' }}>
             {exporting ? 'Đang xuất...' : `Xuất XLSX (${selectedPoints.length} cảm biến)`}
           </button>

@@ -81,7 +81,7 @@ export default function CloudSyncTab() {
           )}
         </div>
         <div style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', lineHeight: 1.6 }}>
-          <div>Supabase URL: <code style={{ color: 'var(--admin-info-text)', fontFamily: 'var(--font-mono)' }}>{syncStatus?.supabaseUrl ?? '—'}</code></div>
+          <div>Supabase URL: <code style={{ color: 'var(--admin-info-text)', fontFamily: 'monospace' }}>{syncStatus?.supabaseUrl ?? '—'}</code></div>
           <div style={{ marginTop: 6 }}>
             Lần sync cuối: <span>{syncStatus?.lastSyncAt ? new Date(syncStatus.lastSyncAt).toLocaleString('vi-VN') : 'Chưa có'}</span>
           </div>
@@ -103,7 +103,7 @@ export default function CloudSyncTab() {
 
       <div style={{ marginTop: 20, padding: '12px 16px', background: 'var(--admin-info-bg)', border: '1px solid var(--admin-info-border)', borderRadius: 8, fontSize: '0.72rem', color: 'var(--admin-info-text)' }}>
         <b>Dùng cho mobile app:</b> Anon key để mobile đọc data từ Supabase không cần VPN vào trạm.<br />
-        Anon key: <code style={{ color: 'var(--admin-text-muted)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>sb_publishable_****</code>
+        Anon key: <code style={{ color: 'var(--admin-text-muted)', fontSize: '0.68rem', fontFamily: 'monospace' }}>sb_publishable_****</code>
       </div>
     </div>
   );

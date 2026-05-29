@@ -5,7 +5,6 @@ import { stationApi, AlertItem, ReportItem } from '@/services/StationApiService'
 import { fmtDateTime } from '@/utils/format';
 import { confirmDialog } from '@/utils/confirm';
 import { POINTS, ReportType } from '../types';
-import { CABINETS } from '@/pages/analytics/mockData';
 
 const resolveCssVar = (name: string, fallback: string) => {
   try {
@@ -35,6 +34,59 @@ export default function ReportTab({ stationId }: { stationId: string }) {
 
   const [history, setHistory] = useState<ReportItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [cabinetList, setCabinetList] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchCabs = async () => {
+      try {
+        const [devs, latestPoints, scores] = await Promise.all([
+          stationApi.getDevices(stationId),
+          stationApi.getLatestPoints(stationId),
+          stationApi.getHealthScores(stationId)
+        ]);
+        const cabinetDevs = devs.filter(d => d.type === 'plc_s7' || d.type === 'cabinet');
+        const list = cabinetDevs.map(cab => {
+          const hInfo = scores.find(s => s.deviceId.toLowerCase() === cab.id.toLowerCase()) || { score: 100, risk: 'good' };
+          const t1Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_1' || s.pointId === 'temp_1'))?.value;
+          const t2Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_2' || s.pointId === 'temp_2'))?.value;
+          const t3Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_3' || s.pointId === 'temp_3'))?.value;
+          const pdVal = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'phong_dien' || s.pointId === 'pd'))?.value ?? 0;
+
+          const t1 = t1Raw !== undefined && t1Raw !== null ? Math.round(t1Raw * 10) / 10 : null;
+          const t2 = t2Raw !== undefined && t2Raw !== null ? Math.round(t2Raw * 10) / 10 : null;
+          const t3 = t3Raw !== undefined && t3Raw !== null ? Math.round(t3Raw * 10) / 10 : null;
+
+          const tempMax = t1 !== null && t2 !== null && t3 !== null ? Math.max(t1, t2, t3) : null;
+          const healthStatus = hInfo.risk || (hInfo.score >= 80 ? 'good' : hInfo.score >= 50 ? 'warning' : 'danger');
+          const pdLevel = pdVal > 50 ? 'high' : pdVal > 20 ? 'medium' : 'low';
+          return {
+            id: cab.id,
+            name: cab.name || 'Tủ điện',
+            t1,
+            t2,
+            t3,
+            tempMax,
+            pdCount: Math.round(pdVal),
+            pdLevel,
+            healthScore: hInfo.score,
+            healthStatus,
+            urgencyReason: tempMax !== null && tempMax > 60 ? `Nhiệt độ các pha tăng cao đạt mức ${tempMax}°C` : 'Trạng thái hoạt động bình thường.',
+            trendDirection: 'stable',
+            trendRate: 0.0,
+            forecastDays: null,
+            t1AvgThisWeek: t1 !== null ? Math.round(t1) : 0,
+            t1AvgLastWeek: t1 !== null ? Math.round(t1) : 0,
+            recommendationLevel: tempMax !== null && tempMax > 80 ? 'urgent' : tempMax !== null && tempMax > 60 ? 'monitor' : 'ok',
+            recommendation: tempMax !== null && tempMax > 80 ? 'Kiểm tra siết lại bu lông các tiếp điểm ngay lập tức!' : 'Tiếp tục theo dõi vận hành.'
+          };
+        });
+        setCabinetList(list);
+      } catch (err) {
+        console.warn('[Report] Lỗi tải tủ điện:', err);
+      }
+    };
+    fetchCabs();
+  }, [stationId]);
 
   useEffect(() => {
     if (type === 'daily') {
@@ -147,20 +199,20 @@ export default function ReportTab({ stationId }: { stationId: string }) {
     const warnCount   = rangeAlerts.filter(a => a.level === 'warning').length;
     const closedCount = rangeAlerts.filter(a => a.status === 'closed').length;
 
-    const dangerCabs  = CABINETS.filter(c => c.healthStatus === 'danger');
-    const warningCabs = CABINETS.filter(c => c.healthStatus === 'warning');
-    const goodCabs    = CABINETS.filter(c => c.healthStatus === 'good');
+    const dangerCabs  = cabinetList.filter(c => c.healthStatus === 'danger');
+    const warningCabs = cabinetList.filter(c => c.healthStatus === 'warning');
+    const goodCabs    = cabinetList.filter(c => c.healthStatus === 'good');
 
     const statusColor  = (s: string) => s === 'danger' ? '#e02424' : s === 'warning' ? '#d97706' : '#059669';
     const statusLabel  = (s: string) => s === 'danger' ? 'NGUY HIỂM' : s === 'warning' ? 'CẢNH BÁO' : 'BÌNH THƯỜNG';
     const trendArrow   = (d: string) => d === 'rising' ? '↑' : d === 'falling' ? '↓' : '→';
-    const tempColor    = (t: number) => t > 80 ? '#e02424' : t > 60 ? '#d97706' : '#059669';
+    const tempColor    = (t: number | null) => t !== null && t > 80 ? '#e02424' : t !== null && t > 60 ? '#d97706' : '#059669';
     const pdColor      = (l: string) => l === 'high' ? '#e02424' : l === 'medium' ? '#d97706' : '#059669';
 
-    const sortedCabs = [...CABINETS].sort((a, b) => a.urgencyOrder - b.urgencyOrder);
+    const sortedCabs = [...cabinetList].sort((a, b) => b.healthScore - a.healthScore);
 
     return `
-      <div id="rp-html-preview" style="background:#fff;color:#111;padding:28px;font-family:var(--font-body);font-size:13px;max-width:900px;margin:0 auto;box-shadow:0 0 0 1px rgba(0,0,0,0.1);">
+      <div id="rp-html-preview" style="background:#fff;color:#111;padding:28px;font-family:'Segoe UI',Arial,sans-serif;font-size:13px;max-width:900px;margin:0 auto;box-shadow:0 0 0 1px rgba(0,0,0,0.1);">
 
         <!-- HEADER -->
         <div style="border-bottom:3px solid #1a56db;padding-bottom:14px;margin-bottom:20px;">
@@ -176,11 +228,11 @@ export default function ReportTab({ stationId }: { stationId: string }) {
         <!-- TỔNG QUAN TRẠM -->
         <div style="margin-bottom:20px;">
           <div style="font-weight:700;font-size:11px;text-transform:uppercase;color:#374151;margin-bottom:10px;border-bottom:1px solid #e5e7eb;padding-bottom:6px;">
-            TỔNG QUAN TRẠM — ${CABINETS.length} TỦ ĐIỆN
+            TỔNG QUAN TRẠM — ${cabinetList.length} TỦ ĐIỆN
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px;">
             ${[
-              { label: 'Tổng tủ điện',   value: CABINETS.length,   color: '#1a56db' },
+              { label: 'Tổng tủ điện',   value: cabinetList.length,   color: '#1a56db' },
               { label: 'Nguy hiểm',      value: dangerCabs.length,  color: '#e02424' },
               { label: 'Cảnh báo',       value: warningCabs.length, color: '#d97706' },
               { label: 'Bình thường',    value: goodCabs.length,    color: '#059669' },
@@ -231,15 +283,15 @@ export default function ReportTab({ stationId }: { stationId: string }) {
               <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;">
                 <div style="background:#f9fafb;padding:8px;border:1px solid #e5e7eb;">
                   <div style="font-size:9px;color:#6b7280;font-weight:700;text-transform:uppercase;">T1 (Pha A)</div>
-                  <div style="font-size:18px;font-weight:800;color:${tempColor(cab.t1)};">${cab.t1}°C</div>
+                  <div style="font-size:18px;font-weight:800;color:${tempColor(cab.t1)};">${cab.t1 !== null ? `${cab.t1}°C` : '--'}</div>
                 </div>
                 <div style="background:#f9fafb;padding:8px;border:1px solid #e5e7eb;">
                   <div style="font-size:9px;color:#6b7280;font-weight:700;text-transform:uppercase;">T2 (Pha B)</div>
-                  <div style="font-size:18px;font-weight:800;color:${tempColor(cab.t2)};">${cab.t2}°C</div>
+                  <div style="font-size:18px;font-weight:800;color:${tempColor(cab.t2)};">${cab.t2 !== null ? `${cab.t2}°C` : '--'}</div>
                 </div>
                 <div style="background:#f9fafb;padding:8px;border:1px solid #e5e7eb;">
                   <div style="font-size:9px;color:#6b7280;font-weight:700;text-transform:uppercase;">T3 (Pha C)</div>
-                  <div style="font-size:18px;font-weight:800;color:${tempColor(cab.t3)};">${cab.t3}°C</div>
+                  <div style="font-size:18px;font-weight:800;color:${tempColor(cab.t3)};">${cab.t3 !== null ? `${cab.t3}°C` : '--'}</div>
                 </div>
                 <div style="background:#f9fafb;padding:8px;border:1px solid #e5e7eb;">
                   <div style="font-size:9px;color:#6b7280;font-weight:700;text-transform:uppercase;">Phóng điện PD</div>
@@ -350,7 +402,7 @@ export default function ReportTab({ stationId }: { stationId: string }) {
       html = html.replace('<canvas id="rp-inline-chart"></canvas>', `<img src="${img}" style="width:100%;height:100%;object-fit:contain;" />`);
     }
 
-    win.document.write(`<!DOCTYPE html><html><head><title>Báo cáo Station Monitor</title><style>body { margin: 0; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; } @media print { body { margin: 0; } }</style></head><body>${html}</body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><title>Báo cáo Station Monitor</title><style>body { margin: 0; font-family: 'Segoe UI', Arial, sans-serif; } @media print { body { margin: 0; } }</style></head><body>${html}</body></html>`);
     win.document.close();
     setTimeout(() => win.print(), 400);
   };

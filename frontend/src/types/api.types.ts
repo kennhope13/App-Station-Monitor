@@ -50,36 +50,14 @@ export interface Device {
 // Điểm chấm nhiệt trên camera nhiệt — vị trí đo nhiệt độ tùy chỉnh
 export interface RoiPoint {
   id: string;
-  deviceId?: string;
-  name?: string;             // VD: "Đầu cáp Pha A", "Sứ cách điện"
-  label?: string;            // VD: "Đầu cáp Pha A" (Legacy compatibility)
-  x?: number;                // % tọa độ X trên frame (Legacy compatibility, 0-100)
-  y?: number;                // % tọa độ Y trên frame (Legacy compatibility, 0-100)
-  tx?: number;               // tọa độ X trên frame thermal (0.0-1.0)
-  ty?: number;               // tọa độ Y trên frame thermal (0.0-1.0)
-  ox?: number;               // tọa độ X trên frame optical (0.0-1.0)
-  oy?: number;               // tọa độ Y trên frame optical (0.0-1.0)
-  pointId?: string;          // ID sensor để map với dữ liệu từ API (tùy chọn)
-  alarmThreshold?: number;   // °C — ngưỡng báo động đỏ
-  preAlarmThreshold?: number; // °C — ngưỡng cảnh báo vàng (pre-alarm)
-  warningThreshold?: number;  // °C — ngưỡng cảnh báo vàng (Legacy compatibility)
-  color?: string;            // màu hiển thị tùy chỉnh (override mặc định)
-  sortOrder?: number;        // thứ tự hiển thị trong danh sách
-}
-
-export interface Boundary {
-  id: string;
-  deviceId: string;
-  name: string;
-  type: 'pd' | 'intrusion' | 'roi' | string;
-  /** JSON string: [[x,y], [x,y], ...] tọa độ chuẩn hóa 0-1 */
-  polygon: string;
-  /** JSON string: { "warning": 50, "alarm": 70 } */
-  thresholds?: string;
-  severityLevel: 'info' | 'warning' | 'alarm';
-  enabled: boolean;
-  createdAt?: string;
-  updatedAt?: string;
+  label: string;              // VD: "Đầu cáp Pha A", "Sứ cách điện"
+  x: number;                  // % tọa độ X trên frame (0–100)
+  y: number;                  // % tọa độ Y trên frame (0–100)
+  pointId?: string;           // ID sensor để map với dữ liệu từ API (tùy chọn)
+  alarmThreshold?: number;    // °C — ngưỡng báo động đỏ
+  warningThreshold?: number;  // °C — ngưỡng cảnh báo vàng
+  color?: string;             // màu hiển thị tùy chỉnh (override mặc định)
+  sortOrder?: number;         // thứ tự hiển thị trong danh sách
 }
 
 export type CameraType =

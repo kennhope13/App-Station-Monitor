@@ -6,8 +6,7 @@
 // ============================================================
 
 import { apiFetch, apiMutate } from './BaseApiService';
-import type { Device, CameraDevice, RoiPoint, Boundary } from '@/types/api.types';
-import { AI_ENGINE_URL } from '@/utils/env';
+import type { Device, CameraDevice, RoiPoint } from '@/types/api.types';
 
 export class DeviceService {
   /** Lấy danh sách thiết bị của trạm. config JSON được parse tự động. */
@@ -43,6 +42,11 @@ export class DeviceService {
     return apiMutate('POST', `/devices/${id}/test`);
   }
 
+  /** Lấy credentials đã giải mã (username + password) — chỉ dùng trong UI admin. */
+  async getCredentials(id: string): Promise<{ username: string; password: string }> {
+    return apiFetch(`/devices/${id}/credentials`);
+  }
+
   /** Lấy danh sách camera (lọc devices theo type=camera). */
   async getCameras(stationId: string): Promise<CameraDevice[]> {
     const devices = await this.getDevices(stationId, 'camera');
@@ -61,7 +65,10 @@ export class DeviceService {
 
   /** Kiểm tra kết nối giao thức (ONVIF, Modbus, ...) trước khi tạo thiết bị. */
   async testProtocolConnection(ip: string, port: number, protocol: string): Promise<{ success: boolean; message: string; latencyMs?: number }> {
-    return apiMutate('POST', '/protocols/test-connection', { ip, port, protocol });
+    return apiMutate('POST', '/protocols/test-connection', {
+      protocol,
+      config: JSON.stringify({ ip, port })
+    });
   }
 
   /** Phát hiện và lấy thông tin camera Hikvision theo IP. */
@@ -80,70 +87,15 @@ export class DeviceService {
   // ── ROI Points (điểm chấm nhiệt trên camera nhiệt) ────────────
 
   async getRoiPoints(deviceId: string): Promise<RoiPoint[]> {
-    const points = await apiFetch<RoiPoint[]>(`/devices/${deviceId}/roi-points`);
-    return points.map(pt => ({
-      ...pt,
-      label: pt.label || pt.name || '',
-      warningThreshold: pt.warningThreshold ?? pt.preAlarmThreshold,
-      x: pt.x ?? (pt.tx ?? 0) * 100,
-      y: pt.y ?? (pt.ty ?? 0) * 100,
-    }));
+    return apiFetch<RoiPoint[]>(`/devices/${deviceId}/roi-points`);
   }
 
   async createRoiPoint(deviceId: string, data: Omit<RoiPoint, 'id'>): Promise<RoiPoint> {
-    const txVal = data.x !== undefined ? data.x / 100 : (data.tx !== undefined ? data.tx : 0);
-    const tyVal = data.y !== undefined ? data.y / 100 : (data.ty !== undefined ? data.ty : 0);
-    const oxVal = data.x !== undefined ? data.x / 100 : (data.ox !== undefined ? data.ox : txVal);
-    const oyVal = data.y !== undefined ? data.y / 100 : (data.oy !== undefined ? data.oy : tyVal);
-
-    const payload = {
-      name: data.label || data.name,
-      tx: txVal,
-      ty: tyVal,
-      ox: oxVal,
-      oy: oyVal,
-      pointId: data.pointId,
-      preAlarmThreshold: data.warningThreshold ?? data.preAlarmThreshold,
-      alarmThreshold: data.alarmThreshold,
-      sortOrder: data.sortOrder,
-      color: data.color,
-    };
-    const pt = await apiMutate<any>('POST', `/devices/${deviceId}/roi-points`, payload);
-    return {
-      ...pt,
-      label: pt.label || pt.name || '',
-      warningThreshold: pt.warningThreshold ?? pt.preAlarmThreshold,
-      x: pt.x ?? (pt.tx ?? 0) * 100,
-      y: pt.y ?? (pt.ty ?? 0) * 100,
-    };
+    return apiMutate('POST', `/devices/${deviceId}/roi-points`, data);
   }
 
   async updateRoiPoint(deviceId: string, roiId: string, data: Partial<Omit<RoiPoint, 'id'>>): Promise<RoiPoint> {
-    const txVal = data.x !== undefined ? data.x / 100 : data.tx;
-    const tyVal = data.y !== undefined ? data.y / 100 : data.ty;
-    const oxVal = data.x !== undefined ? data.x / 100 : data.ox;
-    const oyVal = data.y !== undefined ? data.y / 100 : data.oy;
-
-    const payload = {
-      name: data.label || data.name,
-      tx: txVal,
-      ty: tyVal,
-      ox: oxVal !== undefined ? oxVal : txVal,
-      oy: oyVal !== undefined ? oyVal : tyVal,
-      pointId: data.pointId,
-      preAlarmThreshold: data.warningThreshold ?? data.preAlarmThreshold,
-      alarmThreshold: data.alarmThreshold,
-      sortOrder: data.sortOrder,
-      color: data.color,
-    };
-    const pt = await apiMutate<any>('PUT', `/devices/${deviceId}/roi-points/${roiId}`, payload);
-    return {
-      ...pt,
-      label: pt.label || pt.name || '',
-      warningThreshold: pt.warningThreshold ?? pt.preAlarmThreshold,
-      x: pt.x ?? (pt.tx ?? 0) * 100,
-      y: pt.y ?? (pt.ty ?? 0) * 100,
-    };
+    return apiMutate('PUT', `/devices/${deviceId}/roi-points/${roiId}`, data);
   }
 
   async deleteRoiPoint(deviceId: string, roiId: string): Promise<void> {
@@ -158,58 +110,6 @@ export class DeviceService {
   // Lấy ảnh snapshot tĩnh từ camera (dùng trong Analytics)
   async getCameraSnapshot(deviceId: string): Promise<{ url: string; capturedAt: string }> {
     return apiFetch<{ url: string; capturedAt: string }>(`/devices/${deviceId}/snapshot`);
-  }
-
-  // Lấy thông số VisibleValidRect từ camera qua backend
-  async getThermalMapping(deviceId: string): Promise<{ x: number; y: number; width: number; height: number }> {
-    return apiFetch<{ x: number; y: number; width: number; height: number }>(`/devices/${deviceId}/thermal-mapping`);
-  }
-
-  /** Đồng bộ cấu hình điểm & vùng đo nhiệt sang AI Engine. */
-  async syncThermalConfig(deviceId: string, points: RoiPoint[], boundaries: Boundary[]): Promise<void> {
-    const devices = await apiFetch<any[]>(`/devices`); // Lấy list device để lấy config (ip, auth)
-    const d = devices.find(x => x.id === deviceId);
-    if (!d) return;
-
-    const cfg = typeof d.config === 'string' ? JSON.parse(d.config) : (d.config ?? {});
-    const streamId = cfg.go2rtc_thermal || cfg.go2rtc_id;
-    if (!streamId) return;
-
-    const payload = {
-      stream_id: streamId,
-      device_id: deviceId,
-      camera_ip: cfg.ip,
-      username: cfg.username || 'admin',
-      password: cfg.password || '',
-      points: points.map(pt => ({
-        id: pt.pointId || pt.id,
-        x: pt.tx ?? (pt.x ? pt.x / 100 : 0.5),
-        y: pt.ty ?? (pt.y ? pt.y / 100 : 0.5),
-        pre_alarm: pt.warningThreshold ?? pt.preAlarmThreshold ?? 50,
-        alarm: pt.alarmThreshold ?? 70,
-        label: pt.label || pt.name || ''
-      })),
-      zones: boundaries.map(b => {
-        const thresholds = typeof b.thresholds === 'string' ? JSON.parse(b.thresholds) : (b.thresholds ?? {});
-        return {
-          id: b.id,
-          polygon: typeof b.polygon === 'string' ? JSON.parse(b.polygon) : (b.polygon ?? []),
-          pre_alarm: thresholds.warning || thresholds.preAlarm || 50,
-          alarm: thresholds.alarm || 70,
-          label: b.name
-        };
-      })
-    };
-
-    try {
-      await fetch(`${AI_ENGINE_URL}/api/v1/config/thermal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } catch (err) {
-      console.warn('[AI Engine] Sync failed:', err);
-    }
   }
 }
 

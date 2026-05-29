@@ -12,8 +12,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StationOS.Data;
 using StationOS.Data.Entities;
-using StationOS.Services.Camera;
-using StationOS.Services;
 
 namespace StationOS.Workers.Polling;
 
@@ -21,18 +19,15 @@ public class MaintenanceReminderWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MaintenanceReminderWorker> _logger;
-    private readonly IRealtimeNotifier _notifier;
 
     private const int CheckIntervalMs = 60 * 60 * 1000; // 1 giờ
 
     public MaintenanceReminderWorker(
         IServiceScopeFactory scopeFactory,
-        ILogger<MaintenanceReminderWorker> logger,
-        IRealtimeNotifier notifier)
+        ILogger<MaintenanceReminderWorker> logger)
     {
         _scopeFactory = scopeFactory;
         _logger       = logger;
-        _notifier     = notifier;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -83,14 +78,13 @@ public class MaintenanceReminderWorker : BackgroundService
         foreach (var task in activeTasks)
         {
             var daysUntil = (task.ScheduledDate.Date - today).Days;
-            await CreateReminderIfNeededAsync(scope.ServiceProvider, db, task, daysUntil, today, ct);
+            await CreateReminderIfNeededAsync(db, task, daysUntil, today, ct);
         }
 
         await db.SaveChangesAsync(ct);
     }
 
     private async Task CreateReminderIfNeededAsync(
-        IServiceProvider services,
         AppDbContext db,
         MaintenanceTask task,
         int daysUntil,
@@ -152,29 +146,6 @@ public class MaintenanceReminderWorker : BackgroundService
 
         if (exists) return;
 
-        // Cố gắng chụp ảnh bằng chứng nếu có camera tại trạm
-        string? imageUrl = null;
-        string? thumbUrl = null;
-        string? videoUrl = null;
-        try
-        {
-            var evidenceSvc = services.GetService<ThermalEvidenceService>();
-            if (evidenceSvc != null)
-            {
-                var evidence = await evidenceSvc.CaptureForAlertAsync(db, task.StationId, ct);
-                if (evidence != null)
-                {
-                    imageUrl = evidence.ImageUrl;
-                    thumbUrl = evidence.ThumbnailUrl;
-                    videoUrl = evidence.VideoUrl;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "[MaintenanceReminder] Khong the chup anh cho task {TaskId}", task.Id);
-        }
-
         // Tạo alert mới
         var alert = new Alert
         {
@@ -185,26 +156,9 @@ public class MaintenanceReminderWorker : BackgroundService
             Status      = "open",
             Message     = message,
             TriggeredAt = DateTime.UtcNow,
-            ImageUrl    = imageUrl,
-            ThumbnailUrl = thumbUrl,
-            VideoUrl    = videoUrl
         };
 
         db.Alerts.Add(alert);
-        await db.SaveChangesAsync(ct);
         _logger.LogInformation("[MaintenanceReminder] Tạo alert {Level}: {Message}", level, message);
-
-        await _notifier.SendAlertAsync(new {
-            id = alert.Id,
-            level = alert.Level,
-            status = alert.Status,
-            message = alert.Message,
-            source = alert.Source,
-            triggeredAt = alert.TriggeredAt,
-            deviceId = alert.DeviceId,
-            thumbnailUrl = alert.ThumbnailUrl,
-            imageUrl = alert.ImageUrl,
-            videoUrl = alert.VideoUrl
-        });
     }
 }

@@ -6,15 +6,12 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { SensorPoint } from '@/services/StationApiService';
+import { SensorPoint, stationApi } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore, useSensorStore } from '@/store';
 import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
 import { useRealtime } from '@/hooks/useRealtime';
 import { PT_CAM_IDS } from '@/constants/points';
 import { DEV_PLC_S7, DEV_CAM_TYPES } from '@/constants/devices';
-import { showToast } from '@/utils/toast';
-import { playAlertSound } from '@/utils/sound-utils';
-import type { AlertItem } from '@/types/api.types';
 
 import SldCanvas, { SldCanvasRef } from '@/components/dashboard/sld/SldCanvas';
 import SldEditPanel from '@/components/dashboard/sld/SldEditPanel';
@@ -24,27 +21,30 @@ import DashboardToolbar from '@/components/dashboard/toolbar/DashboardToolbar';
 import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
 import CameraLiveViewer from '@/components/dashboard/camera/CameraLiveViewer';
 
-import './DashboardPage.css';
-
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
+  // Ưu tiên stationId từ URL (?stationId=...), nếu không có thì tự fetch trạm đầu tiên
   const [stationId, setStationId] = useState(searchParams.get('stationId') ?? '');
   const [stationName, setStationName] = useState(searchParams.get('stationName') ?? '');
   const [isEditMode, setIsEditMode] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const [filters, setFilters] = useState({ thermal: true, pd: true, camera: true });
-  const [addingNode, setAddingNode] = useState(false);
-  const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
-  const [activeCamId, setActiveCamId] = useState<string | null>(null);
+
+  
+  const [dashboardCam, setDashboardCam] = useState<string>(() => {
+    return localStorage.getItem('dashboard_selected_cam') || '';
+  });
   
   const sldRef = useRef<SldCanvasRef>(null);
-  const [sldColorMatrix, setSldColorMatrix] = useState<string>("");
+  const [sldColorMatrix, setSldColorMatrix] = useState<string | undefined>(undefined);
+  const [sldRefreshTick, setSldRefreshTick] = useState(0);
 
   // ── Global stores ─────────────────────────────────────────────
   const stations = useStationStore(s => s.stations);
   const fetchStations = useStationStore(s => s.fetch);
   const getFirstStationId = useStationStore(s => s.getFirstStationId);
 
+  // Lấy map gốc rồi useMemo derive ra array — tránh infinite re-render do `?? []` tạo ref mới
   const devicesByStation = useDeviceStore(s => s.devicesByStation);
   const fetchDevices = useDeviceStore(s => s.fetch);
   const devices = useMemo(() => stationId ? (devicesByStation[stationId] ?? []) : [], [stationId, devicesByStation]);
@@ -83,22 +83,24 @@ export default function DashboardPage() {
   );
 
   const liveCameraSrc = useMemo(() => {
-    // Ưu tiên camera đang có cảnh báo (activeCamId)
-    let cam = activeCamId ? devices.find(d => d.id === activeCamId) : null;
-    // Nếu không có cam active hoặc cam đó không tồn tại, lấy cam đầu tiên
-    if (!cam) cam = devices.find(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)));
-    
+    const cam = devices.find(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)));
     if (!cam) return undefined;
     const cfg = (cam as any).config || {};
     return (cfg.go2rtc_optical || cfg.go2rtc_id || cfg.go2rtc_thermal) as string | undefined;
-  }, [devices, activeCamId]);
+  }, [devices]);
 
-  // ── Effects ──────────────────────────────────────────────────
+  // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
     if (stationId) return;
     getFirstStationId().then(id => { if (id) setStationId(id); }).catch(() => {});
   }, [stationId, getFirstStationId]);
 
+  const handleCamChange = (srcId: string) => {
+    setDashboardCam(srcId);
+    localStorage.setItem('dashboard_selected_cam', srcId);
+  };
+
+  // ── Resolve stationName ────────────────────────────────────────
   useEffect(() => {
     if (!stationId || stationName) return;
     fetchStations().then(() => {
@@ -107,12 +109,35 @@ export default function DashboardPage() {
     }).catch(() => {});
   }, [stationId, stationName, fetchStations, stations]);
 
+  // ── Fetch data khi stationId thay đổi ─────────────────────────
   useEffect(() => {
     if (!stationId) return;
     fetchSensors(stationId);
     fetchDevices(stationId);
     fetchAlerts(ALERT_STATUS.OPEN);
   }, [stationId, fetchSensors, fetchDevices, fetchAlerts]);
+
+  // ── Realtime cập nhật ─────────────────────────────────────────
+  useRealtime({
+    onSensorUpdate: (data: SensorPoint[]) => {
+      // Cập nhật cache sensor (merge từng point)
+      useSensorStore.setState(s => {
+        if (!stationId) return s;
+        const current = s.pointsByStation[stationId] ?? [];
+        const updated = [...current];
+        data.forEach(d => {
+          const idx = updated.findIndex(p => p.pointId === d.pointId && p.deviceId === d.deviceId);
+          if (idx >= 0) updated[idx] = d; else updated.push(d);
+        });
+        return {
+          ...s,
+          pointsByStation: { ...s.pointsByStation, [stationId]: updated },
+        };
+      });
+    },
+    onAlertNew:     () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
+    onAlertUpdated: () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
+  }, [stationId]);
 
   const handleFit = () => sldRef.current?.fitView();
   const handleRotate = () => sldRef.current?.rotateView();
@@ -126,80 +151,128 @@ export default function DashboardPage() {
     setSldColorMatrix(m);
   };
 
-  return (
-    <div className="dashboard-page-v2">
-      {/* ── Toolbar / Header ── */}
-      <div className="page-toolbar-row dash-header" style={{ position: 'absolute', top: 12, left: 12, zIndex: 31, width: 'auto', border: 'none', padding: 0 }}>
-        <div className="page-title-cell" style={{ background: 'rgba(13, 17, 23, 0.85)', backdropFilter: 'blur(10px)', minWidth: 260 }}>
-          <h2>TỔNG QUAN HỆ THỐNG</h2>
-        </div>
-      </div>
+  const camOptionsGroups = useMemo(() => {
+    const groups: Record<string, { id: string, label: string }[]> = { 'Khác': [] };
+    devices.filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t))).forEach(cam => {
+      const cfg = (cam as any).config || {};
+      const zone = cfg.zone?.trim() || 'Khác';
+      if (!groups[zone]) groups[zone] = [];
+      
+      if (cam.type === 'camera_dual') {
+        if (cfg.go2rtc_optical) groups[zone].push({ id: cfg.go2rtc_optical, label: `${cam.name} (Quang)` });
+        if (cfg.go2rtc_thermal) groups[zone].push({ id: cfg.go2rtc_thermal, label: `${cam.name} (Nhiệt)` });
+      } else {
+        const streamId = cfg.go2rtc_id || cfg.go2rtc_thermal || cfg.go2rtc_optical;
+        if (streamId) groups[zone].push({ id: streamId, label: cam.name });
+      }
+    });
+    return groups;
+  }, [devices]);
 
-      {/* Lớp nền: Canvas sơ đồ */}
+  const activeCameraSrc = useMemo(() => {
+    const validCameraIds = Object.values(camOptionsGroups).flat().map(opt => opt.id);
+    const desired = dashboardCam || liveCameraSrc || '';
+    if (validCameraIds.includes(desired)) return desired;
+    return validCameraIds[0] || '';
+  }, [camOptionsGroups, dashboardCam, liveCameraSrc]);
+
+  return (
+    <div className="dashboard-page new-dash-theme" style={{ position: 'relative', overflow: 'hidden', height: '100%', background: 'var(--admin-bg)' }}>
+      
       <SldCanvas
         ref={sldRef}
         stationId={stationId}
         editMode={isEditMode}
-        addingNode={addingNode}
         colorMatrix={sldColorMatrix}
-        onCanvasClick={(x, y) => { setPendingPos({ x, y }); setAddingNode(false); }}
+        onNodeDropped={async (x, y, deviceId, deviceName, pointId) => {
+          try {
+            await stationApi.addSldPoint(stationId, {
+              x, y, r: 8,
+              label: deviceName,
+              deviceId: deviceId,
+              pointId: pointId
+            });
+            sldRef.current?.reloadData();
+            setSldRefreshTick(t => t + 1); // Trigger SldEditPanel refresh
+          } catch (e: any) {
+            console.error('Lỗi khi thả node:', e);
+            alert(`Lỗi khi thêm node: ${e.message || e}`);
+          }
+        }}
       />
 
-      {/* Lớp giao diện phủ lên trên */}
-      <div className="dash-layout-wrapper">
-        
-        <div className="dash-toolbar-container">
-          <DashboardToolbar 
-            stationName={stationName || 'StationOS'}
-            isEditMode={isEditMode} 
-            onToggleEditMode={() => setIsEditMode(!isEditMode)} 
-            showLabels={showLabels}
-            onToggleLabels={() => setShowLabels(!showLabels)}
-            onFit={handleFit}
-            onRotate={handleRotate}
-            onColorChange={handleColorChange}
-            filters={filters}
-            onFilterChange={setFilters}
+      <DashboardToolbar 
+        stationName={stationName || 'StationOS'}
+        isEditMode={isEditMode} 
+        onToggleEditMode={() => setIsEditMode(!isEditMode)} 
+        showLabels={showLabels}
+        onToggleLabels={() => setShowLabels(!showLabels)}
+        onFit={handleFit}
+        onRotate={handleRotate}
+        onColorChange={handleColorChange}
+        filters={filters}
+        onFilterChange={setFilters}
+      />
+
+      {/* Left column: KPI + thermal points stacked */}
+      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
+        <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
+        <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
+      </div>
+
+      {isEditMode ? (
+        <SldEditPanel
+          stationId={stationId}
+          sldRef={sldRef}
+          refreshTick={sldRefreshTick}
+        />
+      ) : (
+        <div
+          id="floatRightCol"
+          style={{
+            position: 'absolute', top: 10, right: 10, zIndex: 30, width: 255,
+            display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 38px)'
+          }}
+        >
+          <AlertPanel alerts={alerts} />
+          
+          <CameraLiveViewer 
+            cameraSrc={activeCameraSrc} 
+            headerAddon={
+              <select 
+                style={{ fontSize: '0.55rem', padding: '1px 4px', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', borderRadius: 3, maxWidth: 100, cursor: 'pointer', outline: 'none' }}
+                value={activeCameraSrc}
+                onChange={e => handleCamChange(e.target.value)}
+              >
+                {Object.entries(camOptionsGroups).map(([zone, opts]) => (
+                  opts.length > 0 ? (
+                    <optgroup key={zone} label={zone}>
+                      {opts.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                    </optgroup>
+                  ) : null
+                ))}
+              </select>
+            }
           />
         </div>
+      )}
 
-        <div className="dash-main-content">
-          {/* Cột trái: KPI & Camera Grid */}
-          <div className="side-panel side-panel-left">
-            <div className="glass-panel"><KpiCards plcOnline={plcOnline} /></div>
-            <div className="glass-panel"><CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} /></div>
-          </div>
-
-          {/* Cột phải: Alerts & Live Stream (hoặc Edit Panel) */}
-          <div className="side-panel side-panel-right">
-            {isEditMode ? (
-              <SldEditPanel
-                stationId={stationId}
-                sldRef={sldRef}
-                addingNode={addingNode}
-                pendingPos={pendingPos}
-                onStartAddNode={() => { setAddingNode(true); setPendingPos(null); }}
-                onCancelAddNode={() => { setAddingNode(false); setPendingPos(null); }}
-                onNodeAdded={() => { setAddingNode(false); setPendingPos(null); }}
-              />
-            ) : null}
-          </div>
-        </div>
-
-        {/* Thanh trạng thái dưới cùng */}
-        <div className="bottom-status-bar">
-          <div className="status-item">
-            <span className={`status-dot ${plcOnline ? 'dot-online' : 'dot-offline'}`}></span>
-            PLC: {plcOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
-          </div>
-          <div className="status-item">
-            <span className="status-dot dot-online"></span>
-            SignalR: Đã kết nối
-          </div>
-          <div style={{ flex: 1 }}></div>
-          <div className="status-item">Station ID: {stationId.slice(0, 8)}...</div>
-        </div>
-
+      <div
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 30,
+          display: 'flex', gap: 24, padding: '4px 10px', fontSize: 10, color: 'var(--admin-text-muted)',
+          background: 'var(--admin-overlay)', borderTop: '1px solid var(--admin-border-light)',
+          backdropFilter: 'blur(6px)'
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+          <span style={{ width: 6, height: 6, background: plcOnline ? 'var(--admin-success)' : 'var(--admin-danger)', borderRadius: '50%', display: 'inline-block' }}></span> 
+          PLC: {plcOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+          <span style={{ width: 6, height: 6, background: 'var(--admin-success)', borderRadius: '50%', display: 'inline-block' }}></span> 
+          SignalR: Đã kết nối
+        </span>
       </div>
     </div>
   );

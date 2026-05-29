@@ -30,10 +30,9 @@ export default function ThemeTab() {
     setTheme(localStorage.getItem('station-theme') || 'dark');
   }, []);
 
-  const handleSelectTheme = (newTheme: string) => {
-    setTheme(newTheme);
-    setGlobalTheme(newTheme as any);
-    showToast(`Đã áp dụng giao diện ${newTheme === 'dark' ? 'Tối' : 'Sáng'}`, 'success');
+  const handleSaveTheme = () => {
+    setGlobalTheme(theme as any);
+    showToast('Đã áp dụng giao diện mới', 'success');
   };
 
   return (
@@ -43,7 +42,7 @@ export default function ThemeTab() {
         <label>THEME (GIAO DIỆN MÀU)</label>
         <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 10 }}>
           {THEME_OPTIONS.map(opt => (
-            <div key={opt.key} className={`theme-option ${theme === opt.key ? 'active' : ''}`} onClick={() => handleSelectTheme(opt.key)}>
+            <div key={opt.key} className={`theme-option ${theme === opt.key ? 'active' : ''}`} onClick={() => setTheme(opt.key)}>
               <div
                 className="theme-preview"
                 style={{
@@ -85,6 +84,9 @@ export default function ThemeTab() {
           ))}
         </div>
       </div>
+      <button className="btn-industrial btn-primary" style={{ marginTop: 16 }} onClick={handleSaveTheme}>
+        Áp dụng giao diện
+      </button>
     </div>
   );
 }

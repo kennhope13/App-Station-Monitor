@@ -5,8 +5,6 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { Edit2, Copy, Trash2 } from 'lucide-react';
-import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 import { stationApi, Rule, Device } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS } from '@/constants/points';
@@ -25,7 +23,7 @@ export default function RuleEnginePage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [pointOptions, setPointOptions] = useState(FALLBACK_POINTS);
-  const [expandedSets, setExpandedSets] = useState<Set<string>>(new Set());
+
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null); // null = tạo mới
@@ -131,12 +129,7 @@ export default function RuleEnginePage() {
     }
   };
 
-  const toggleGroup = (groupName: string) => {
-    const newSets = new Set(expandedSets);
-    if (newSets.has(groupName)) newSets.delete(groupName);
-    else newSets.add(groupName);
-    setExpandedSets(newSets);
-  };
+
 
   const toggleRule = async (id: string, currentEnabled: boolean) => {
     try {
@@ -279,228 +272,137 @@ export default function RuleEnginePage() {
     else if (actions.level === 'warning' || actions.level === 'hybrid') totalWarning++;
   });
 
-  // Gom nhóm quy tắc theo thiết bị + nhóm quy tắc
-  const grouped = new Map<string, Rule[]>();
-  for (const r of rules) {
-    let key = r.ruleSet || 'Chưa phân nhóm';
-    if (key === 'camera_thermal_zones') key = 'Các điểm đo của cam nhiệt';
-    
-    // Nếu có gắn thiết bị, hiển thị kèm tên thiết bị
-    if (r.deviceName) {
-      key = `${r.deviceName} — ${key}`;
-    }
-    
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(r);
-  }
-  const sortedGroups = [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  // No longer need grouping, we render flat rules.
 
   return (
-    <div className="alerts-history-page" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'auto', padding: 12, background: 'var(--admin-bg)', boxSizing: 'border-box', gap: 12 }}>
-      <style>{`
-        .re-grid-header, .re-grid-row { display: grid; grid-template-columns: 1.5fr 1fr 100px 100px 80px 160px; align-items: center; }
-        .re-grid-header { border-bottom: 1px solid var(--admin-border); background: var(--admin-layer-1); }
-        .re-grid-header > div { padding: 10px 14px; font-size: .68rem; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--admin-text); opacity: 0.7; font-family: 'Consolas', monospace; }
-        .re-grid-row { border-bottom: 1px solid var(--admin-border-light); background: var(--admin-card-bg); transition: background .15s; }
-        .re-grid-row:hover { background: var(--admin-layer-2); }
-        .re-grid-row > div { padding: 12px 16px; font-size: 0.8rem; color: var(--admin-text); }
-        .row-warning { border-left: 4px solid var(--admin-warning); }
-        .row-alarm { border-left: 4px solid var(--admin-danger); }
-        .toggle-switch { position:relative; display:inline-block; width:40px; height:22px; flex-shrink:0; }
-        .toggle-switch input { opacity:0; width:0; height:0; }
-        .toggle-slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:var(--admin-layer-3); border-radius:22px; transition:.2s; }
-        .toggle-slider:before { position:absolute; content:""; height:16px; width:16px; left:3px; bottom:3px; background:white; border-radius:50%; transition:.2s; }
-        .toggle-switch input:checked + .toggle-slider { background:var(--admin-accent); }
-        .toggle-switch input:checked + .toggle-slider:before { transform:translateX(18px); }
-        .action-btns { display: flex; gap: 6px; justify-content: flex-end; }
-        .hint-text { font-size: 0.72rem; color: var(--admin-text-muted); margin-top: 4px; line-height: 1.3; }
-        .badge-type { font-size: 0.62rem; font-weight: 800; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
-      `}</style>
-
+    <div className="admin-page-container">
       {/* Toolbar */}
-      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--admin-text)' }}>BỘ QUY TẮC GIÁM SÁT TỰ ĐỘNG (RULE ENGINE)</h2>
+          <h2>BỘ QUY TẮC GIÁM SÁT TỰ ĐỘNG (RULE ENGINE)</h2>
+          <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: 4 }}>Thiết lập các ngưỡng cảnh báo màu sắc trên giao diện và tự động hóa kích hoạt các tác vụ bảo trì</div>
         </div>
-        <button className="btn-industrial btn-primary" onClick={() => openAddModal()} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
-          + Thêm quy tắc mới
-        </button>
+        <div className="page-toolbar-group">
+          <button className="btn-industrial btn-primary" onClick={() => openAddModal()}>
+            + Thêm quy tắc mới
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="page-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
-          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Tổng quy tắc</div>
-          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4 }}>{loading ? '—' : total}</div>
+      <div className="page-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, flexShrink: 0, padding: 0, marginBottom: 8 }}>
+        <div className="kpi-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: '8px 12px', borderRadius: 4, display: 'flex', flexDirection: 'column', borderLeft: '4px solid var(--admin-accent)', minHeight: 65 }}>
+          <div className="page-stat-label" style={{ fontSize: '10px', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Tổng quy tắc</div>
+          <div className="page-stat-value" style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.1, marginTop: 'auto' }}>{loading ? '—' : total}</div>
         </div>
-        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
-          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Đang kích hoạt</div>
-          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4, color: 'var(--admin-success)' }}>{loading ? '—' : enabled}</div>
+        <div className="kpi-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: '8px 12px', borderRadius: 4, display: 'flex', flexDirection: 'column', borderLeft: '4px solid var(--admin-success)', minHeight: 65 }}>
+          <div className="page-stat-label" style={{ fontSize: '10px', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Đang kích hoạt</div>
+          <div className="page-stat-value" style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.1, marginTop: 'auto', color: 'var(--admin-success)' }}>{loading ? '—' : enabled}</div>
         </div>
-        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
-          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Ngưỡng Cảnh báo (Vàng)</div>
-          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4, color: 'var(--admin-warning)' }}>{loading ? '—' : totalWarning}</div>
+        <div className="kpi-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: '8px 12px', borderRadius: 4, display: 'flex', flexDirection: 'column', borderLeft: '4px solid var(--admin-warning)', minHeight: 65 }}>
+          <div className="page-stat-label" style={{ fontSize: '10px', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Ngưỡng Cảnh báo (Vàng)</div>
+          <div className="page-stat-value" style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.1, marginTop: 'auto', color: 'var(--admin-warning)' }}>{loading ? '—' : totalWarning}</div>
         </div>
-        <div className="page-stat-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6 }}>
-          <div className="page-stat-label" style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Ngưỡng Nguy hiểm (Đỏ)</div>
-          <div className="page-stat-value" style={{ fontSize: '1.5rem', fontWeight: 900, marginTop: 4, color: 'var(--admin-danger)' }}>{loading ? '—' : totalAlarm}</div>
+        <div className="kpi-card" style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', padding: '8px 12px', borderRadius: 4, display: 'flex', flexDirection: 'column', borderLeft: '4px solid var(--admin-danger)', minHeight: 65 }}>
+          <div className="page-stat-label" style={{ fontSize: '10px', color: 'var(--admin-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2px' }}>Ngưỡng Nguy hiểm (Đỏ)</div>
+          <div className="page-stat-value" style={{ fontSize: '20px', fontWeight: 700, lineHeight: 1.1, marginTop: 'auto', color: 'var(--admin-danger)' }}>{loading ? '—' : totalAlarm}</div>
         </div>
       </div>
 
       {/* Main List */}
-      <div>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 50, color: 'var(--admin-text-muted)' }}>Đang tải dữ liệu quy tắc...</div>
-        ) : total === 0 ? (
-          <div style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 50, fontSize: '0.85rem', border: '1px dashed var(--admin-border)', borderRadius: 6 }}>
-            Hệ thống chưa có quy tắc nào. Nhấp vào <b>+ Thêm quy tắc mới</b> để bắt đầu thiết lập giám sát.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {sortedGroups.map(([groupName, groupRules]) => {
-              const enabledCount = groupRules.filter(r => r.enabled).length;
-              let groupWarning = 0, groupAlarm = 0;
-              for (const r of groupRules) {
+      <div className="admin-card" style={{ padding: 0, overflow: 'auto', flex: 1, margin: 0 }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Tên quy tắc / Điểm đo</th>
+              <th>Thiết bị / Nhóm</th>
+              <th style={{ textAlign: 'center' }}>Mức độ</th>
+              <th style={{ textAlign: 'center' }}>Ngưỡng kích hoạt</th>
+              <th style={{ textAlign: 'center' }}>Trạng thái</th>
+              <th style={{ textAlign: 'right' }}>Hành động</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>⏳ Đang tải dữ liệu quy tắc...</td></tr>
+            ) : total === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Hệ thống chưa có quy tắc nào. Nhấp vào <b>+ Thêm quy tắc mới</b> để bắt đầu thiết lập giám sát.</td></tr>
+            ) : (
+              rules.map(r => {
                 const cond = parseCondition(r.condition);
                 const actions = parseActions(r.actions);
-                if (cond.alarm !== null && cond.alarm !== undefined && cond.alarm !== '') groupAlarm++;
-                else if (actions.level === 'alarm') groupAlarm++;
-                if (cond.pre_alarm !== null && cond.pre_alarm !== undefined && cond.pre_alarm !== '') groupWarning++;
-                else if (actions.level === 'warning' || actions.level === 'hybrid') groupWarning++;
-              }
-              const isExpanded = expandedSets.has(groupName);
+                const pointLabel = (pointOptions.find(p => p.value === cond.point)?.label ?? cond.point).split(' — ')[0];
+                
+                const hasAlarm = cond.alarm !== null && cond.alarm !== undefined && cond.alarm !== '';
+                const hasWarning = (cond.pre_alarm !== null && cond.pre_alarm !== undefined && cond.pre_alarm !== '') || (cond.value !== undefined && actions.level === 'warning');
+                const valAlarm = cond.alarm ?? (actions.level === 'alarm' ? cond.value : null);
+                const valWarning = cond.pre_alarm ?? (actions.level === 'warning' ? cond.value : null);
 
-              return (
-                <div key={groupName} className="admin-card" style={{ borderRadius: 6, overflow: 'hidden', padding: 0, background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)' }}>
-                  {/* Group Header */}
-                  <div 
-                    style={{ padding: '12px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--admin-layer-1)', borderLeft: '4px solid var(--admin-accent)' }} 
-                    onClick={() => toggleGroup(groupName)}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--admin-text)' }}>{groupName}</div>
-                      <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 2, fontWeight: 600 }}>
-                        {groupRules.length} Quy tắc &nbsp;·&nbsp;
-                        <span style={{ color: 'var(--admin-success)' }}>{enabledCount} Hoạt động</span> &nbsp;·&nbsp;
-                        <span style={{ color: 'var(--admin-warning)' }}>{groupWarning} Cảnh báo (Vàng)</span> &nbsp;·&nbsp;
-                        <span style={{ color: 'var(--admin-danger)' }}>{groupAlarm} Nguy hiểm (Đỏ)</span>
+                let badgeHtml, valueHtml;
+                if (hasAlarm && hasWarning) {
+                  badgeHtml = (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', background: 'rgba(239,68,68,.15)', color: 'var(--admin-danger)' }}>Nguy hiểm</span>
+                      <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', background: 'rgba(245,158,11,.15)', color: 'var(--admin-warning)' }}>Cảnh báo</span>
+                    </div>
+                  );
+                  valueHtml = <><span style={{ color: 'var(--admin-danger)', fontWeight: 800 }}>{valAlarm}</span> <span style={{ opacity: 0.3, margin: '0 2px' }}>/</span> <span style={{ color: 'var(--admin-warning)', fontWeight: 800 }}>{valWarning}</span></>;
+                } else if (hasAlarm) {
+                  badgeHtml = <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', background: 'rgba(239,68,68,.15)', color: 'var(--admin-danger)' }}>Nguy hiểm</span>;
+                  valueHtml = <span style={{ color: 'var(--admin-danger)', fontWeight: 800 }}>{valAlarm}</span>;
+                } else {
+                  badgeHtml = <span style={{ fontSize: '0.62rem', fontWeight: 800, padding: '2px 6px', borderRadius: 4, textTransform: 'uppercase', background: 'rgba(245,158,11,.15)', color: 'var(--admin-warning)' }}>Cảnh báo</span>;
+                  valueHtml = <span style={{ color: 'var(--admin-warning)', fontWeight: 800 }}>{valWarning}</span>;
+                }
+
+                const isCameraPoint = cond.point.startsWith('P') && cond.point.length <= 3;
+                const typeLabel = isCameraPoint ? 'Camera' : 'Cảm biến';
+
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{r.name}</span>
+                        {actions.doHealth && <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(14,165,233,0.15)', color: 'var(--admin-accent)', borderRadius: 3, fontWeight: 'normal' }}>Sức khỏe (-{actions.penalty}đ)</span>}
+                        {actions.doMaintenance && <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(34,197,94,0.15)', color: 'var(--admin-success)', borderRadius: 3, fontWeight: 'normal' }}>Bảo trì</span>}
                       </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <button 
-                        className="btn-industrial btn-primary" 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          // Trích xuất ruleSet nguyên bản từ tên nhóm (bỏ phần tên thiết bị)
-                          const rawSet = groupName.includes(' — ') ? groupName.split(' — ')[1] : groupName;
-                          openAddModal(rawSet); 
-                        }} 
-                        style={{ fontSize: '0.65rem', padding: '4px 12px', height: 26, fontWeight: 800 }}
-                      >
-                        + Thêm quy tắc vào nhóm
-                      </button>
-                      <span style={{ opacity: .7, fontSize: '0.75rem', transform: `rotate(${isExpanded ? 0 : -90}deg)`, transition: '0.2s' }}>▼</span>
-                    </div>
-                  </div>
-                  
-                  {isExpanded && (
-                    <div style={{ borderTop: '1px solid var(--admin-border)' }}>
-                      <div className="re-grid-header">
-                        <div>Tên quy tắc / Điểm đo</div>
-                        <div>Thiết bị / Phân nhóm</div>
-                        <div style={{ textAlign: 'center' }}>Mức độ</div>
-                        <div style={{ textAlign: 'center' }}>Ngưỡng cài đặt</div>
-                        <div style={{ textAlign: 'center' }}>Trạng thái</div>
-                        <div style={{ textAlign: 'right', paddingRight: 20 }}>Thao tác</div>
+                      <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span>{typeLabel}: {pointLabel}</span>
+                        <code style={{ background: 'var(--admin-layer-2)', padding: '1px 4px', borderRadius: 3, fontSize: '0.65rem' }}>{cond.op || '≥'}</code>
                       </div>
-                      
-                      {groupRules.map(r => {
-                        const cond = parseCondition(r.condition);
-                        const actions = parseActions(r.actions);
-                        const pointLabel = (pointOptions.find(p => p.value === cond.point)?.label ?? cond.point).split(' — ')[0];
-                        
-                        const hasAlarm = cond.alarm !== null && cond.alarm !== undefined && cond.alarm !== '';
-                        const hasWarning = (cond.pre_alarm !== null && cond.pre_alarm !== undefined && cond.pre_alarm !== '') || (cond.value !== undefined && actions.level === 'warning');
-                        const valAlarm = cond.alarm ?? (actions.level === 'alarm' ? cond.value : null);
-                        const valWarning = cond.pre_alarm ?? (actions.level === 'warning' ? cond.value : null);
-
-                        let badgeHtml, valueHtml, rowClass;
-                        if (hasAlarm && hasWarning) {
-                          badgeHtml = (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-                              <span className="badge-type" style={{ background: 'rgba(239,68,68,.15)', color: 'var(--admin-danger)' }}>Nguy hiểm</span>
-                              <span className="badge-type" style={{ background: 'rgba(245,158,11,.15)', color: 'var(--admin-warning)' }}>Cảnh báo</span>
-                            </div>
-                          );
-                          valueHtml = <><span style={{ color: 'var(--admin-danger)', fontWeight: 800 }}>{valAlarm}</span> <span style={{ opacity: 0.3, margin: '0 2px' }}>/</span> <span style={{ color: 'var(--admin-warning)', fontWeight: 800 }}>{valWarning}</span></>;
-                          rowClass = 'row-alarm';
-                        } else if (hasAlarm) {
-                          badgeHtml = <span className="badge-type" style={{ background: 'rgba(239,68,68,.15)', color: 'var(--admin-danger)' }}>Nguy hiểm</span>;
-                          valueHtml = <span style={{ color: 'var(--admin-danger)', fontWeight: 800 }}>{valAlarm}</span>;
-                          rowClass = 'row-alarm';
-                        } else {
-                          badgeHtml = <span className="badge-type" style={{ background: 'rgba(245,158,11,.15)', color: 'var(--admin-warning)' }}>Cảnh báo</span>;
-                          valueHtml = <span style={{ color: 'var(--admin-warning)', fontWeight: 800 }}>{valWarning}</span>;
-                          rowClass = 'row-warning';
-                        }
-
-                        // Phân biệt nhãn loại cảm biến
-                        const isCameraPoint = cond.point.startsWith('P') && cond.point.length <= 3;
-                        const typeLabel = isCameraPoint ? 'Camera' : 'Cảm biến';
-
-                        return (
-                          <div key={r.id} className={`re-grid-row ${rowClass}`}>
-                            {/* Cột 1: Tên */}
-                            <div style={{ paddingLeft: 14 }}>
-                              <div style={{ fontSize: '0.85rem', color: 'var(--admin-text)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span>{r.name}</span>
-                                {actions.doHealth && <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(14,165,233,0.15)', color: 'var(--admin-accent)', borderRadius: 3, fontWeight: 'normal' }}>Sức khỏe (-{actions.penalty}đ)</span>}
-                                {actions.doMaintenance && <span style={{ fontSize: '0.65rem', padding: '1px 5px', background: 'rgba(34,197,94,0.15)', color: 'var(--admin-success)', borderRadius: 3, fontWeight: 'normal' }}>Bảo trì tự động</span>}
-                              </div>
-                              <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span>{typeLabel}: {pointLabel}</span>
-                                <code style={{ background: 'var(--admin-layer-2)', padding: '1px 4px', borderRadius: 3, fontSize: '0.65rem' }}>{cond.op || '≥'}</code>
-                              </div>
-                            </div>
-                            
-                            {/* Cột 2: Thiết bị */}
-                            <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)' }}>
-                              <div style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{r.deviceName || 'Áp dụng chung (Tất cả thiết bị)'}</div>
-                              <div style={{ fontSize: '0.68rem', marginTop: 2 }}>Nhóm: {r.ruleSet || 'Mặc định'}</div>
-                            </div>
-                            
-                            {/* Cột 3: Loại cảnh báo */}
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{badgeHtml}</div>
-                            
-                            {/* Cột 4: Ngưỡng */}
-                            <div style={{ fontSize: '0.85rem', textAlign: 'center', fontFamily: 'Consolas, monospace' }}>{valueHtml}</div>
-                            
-                            {/* Cột 5: Toggle */}
-                            <div style={{ display: 'flex', justifyContent: 'center' }}>
-                              <label className="toggle-switch">
-                                <input type="checkbox" checked={r.enabled} onChange={() => toggleRule(r.id, r.enabled)} />
-                                <span className="toggle-slider"></span>
-                              </label>
-                            </div>
-                            
-                            {/* Cột 6: Buttons */}
-                            <td style={{ textAlign: 'right', paddingRight: 20 }}>
-                              <ActionDropdown>
-                                <ActionDropdownItem icon={<Edit2 size={14} />} label="Sửa quy tắc" onClick={() => openEditModal(r)} />
-                                <ActionDropdownItem icon={<Copy size={14} />} label="Sao chép" onClick={() => cloneRule(r)} />
-                                <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa quy tắc" danger onClick={() => deleteRule(r.id)} />
-                              </ActionDropdown>
-                            </td>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    </td>
+                    
+                    <td>
+                      <div style={{ fontWeight: 600, color: 'var(--admin-text)' }}>{r.deviceName || 'Tất cả thiết bị'}</div>
+                      <div style={{ fontSize: '0.68rem', marginTop: 2, color: 'var(--admin-text-muted)' }}>Nhóm: {r.ruleSet || 'Mặc định'}</div>
+                    </td>
+                    
+                    <td style={{ textAlign: 'center' }}>{badgeHtml}</td>
+                    
+                    <td style={{ fontSize: '0.85rem', textAlign: 'center', fontFamily: 'Consolas, monospace' }}>{valueHtml}</td>
+                    
+                    <td style={{ textAlign: 'center' }}>
+                      <label style={{ position: 'relative', display: 'inline-block', width: 40, height: 22 }}>
+                        <input type="checkbox" checked={r.enabled} onChange={() => toggleRule(r.id, r.enabled)} style={{ opacity: 0, width: 0, height: 0 }} />
+                        <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, background: r.enabled ? 'var(--admin-accent)' : 'var(--admin-layer-3)', borderRadius: 22, transition: '.2s' }}>
+                          <span style={{ position: 'absolute', content: '""', height: 16, width: 16, left: r.enabled ? 21 : 3, bottom: 3, background: 'white', borderRadius: '50%', transition: '.2s' }}></span>
+                        </span>
+                      </label>
+                    </td>
+                    
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="btn-industrial btn-sm" onClick={() => openEditModal(r)} title="Sửa">Sửa</button>
+                        <button className="btn-industrial btn-sm" onClick={() => cloneRule(r)} title="Sao chép">Sao chép</button>
+                        <button className="btn-industrial btn-sm btn-danger" onClick={() => deleteRule(r.id)} title="Xóa">Xóa</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Modal Thêm/Sửa */}

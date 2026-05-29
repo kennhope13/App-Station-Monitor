@@ -1,14 +1,14 @@
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 import { stationApi } from '@/services/StationApiService';
 import { SldPoint } from '@/types/api.types';
+import { API_BASE_URL } from '@/utils/env';
 
 interface SldCanvasProps {
   stationId: string;
   editMode?: boolean;
-  addingNode?: boolean;
   colorMatrix?: string;
-  onCanvasClick?: (x: number, y: number) => void;
   onPointsChanged?: () => void;
+  onNodeDropped?: (x: number, y: number, deviceId: string, deviceName: string, pointId?: string) => void;
 }
 
 export interface SldCanvasRef {
@@ -22,7 +22,7 @@ const SLD_W = 792;
 const SLD_H = 612;
 
 const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
-  ({ stationId, editMode = false, addingNode = false, colorMatrix, onCanvasClick, onPointsChanged }, ref) => {
+  ({ stationId, editMode = false, colorMatrix, onPointsChanged, onNodeDropped }, ref) => {
     const viewportRef = useRef<HTMLDivElement>(null);
 
     const [transform, setTransform] = useState({ vs: 1, vx: 0, vy: 0, vr: 0 });
@@ -131,20 +131,9 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
           const id = pointEl.getAttribute('data-point-id');
           if (id) { draggingPointId.current = id; return; }
         }
-        if (addingNode) return; // don't pan in add-node mode
       }
       isPanning.current = true;
       startPan.current = { x: e.clientX, y: e.clientY, vx: transform.vx, vy: transform.vy };
-    };
-
-    const handleClick = (e: React.MouseEvent) => {
-      if (!addingNode || !viewportRef.current) return;
-      if ((e.target as Element).closest('g.sld-point-g')) return;
-      const r = viewportRef.current.getBoundingClientRect();
-      const t = transformRef.current;
-      const sldX = Math.round((e.clientX - r.left - t.vx) / t.vs);
-      const sldY = Math.round((e.clientY - r.top - t.vy) / t.vs);
-      onCanvasClick?.(sldX, sldY);
     };
 
     const handleWheel = (e: React.WheelEvent) => {
@@ -153,13 +142,39 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
       const r = viewportRef.current.getBoundingClientRect();
       const cx = e.clientX - r.left;
       const cy = e.clientY - r.top;
-      const f = e.deltaY > 0 ? 0.9 : 1.1;
-      const ns = Math.max(0.1, Math.min(10, transform.vs * f));
+      const dy = e.deltaY;
+      const zoomFactor = 1.1;
+      let ns = transform.vs;
+      if (dy < 0) ns *= zoomFactor; else ns /= zoomFactor;
+      if (ns < 0.2) ns = 0.2;
+      if (ns > 10) ns = 10;
       setTransform(prev => ({
         ...prev, vs: ns,
         vx: cx - (cx - prev.vx) * (ns / prev.vs),
         vy: cy - (cy - prev.vy) * (ns / prev.vs),
       }));
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+      if (!editMode) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+      if (!editMode || !viewportRef.current) return;
+      e.preventDefault();
+      const deviceId = e.dataTransfer.getData('device_id');
+      const deviceName = e.dataTransfer.getData('device_name');
+      const sensorTag = e.dataTransfer.getData('sensor_tag') || undefined;
+      if (!deviceId) return;
+
+      const r = viewportRef.current.getBoundingClientRect();
+      const t = transformRef.current;
+      const sldX = Math.round((e.clientX - r.left - t.vx) / t.vs);
+      const sldY = Math.round((e.clientY - r.top - t.vy) / t.vs);
+
+      onNodeDropped?.(sldX, sldY, deviceId, deviceName, sensorTag);
     };
 
     const getDotColor = (type?: string, status?: string) => {
@@ -169,28 +184,18 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
       return 'var(--admin-success)';
     };
 
-    const cursor = addingNode ? 'crosshair' : editMode ? 'grab' : 'grab';
+    const cursor = editMode ? 'grab' : 'grab';
 
     return (
       <div
         id="sldViewport"
         ref={viewportRef}
         onMouseDown={handleMouseDown}
-        onClick={handleClick}
         onWheel={handleWheel}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
         style={{ position: 'absolute', inset: 0, overflow: 'hidden', cursor, backgroundColor: 'var(--admin-bg)' }}
       >
-        {addingNode && (
-          <div style={{
-            position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-            pointerEvents: 'none', zIndex: 50,
-            padding: '8px 16px', background: 'rgba(99,102,241,0.85)', borderRadius: 4,
-            fontSize: '.75rem', fontWeight: 800, color: '#fff', letterSpacing: '.5px',
-          }}>
-            ↖ CLICK ĐỂ ĐẶT NODE
-          </div>
-        )}
-
         <svg
           id="sld-canvas"
           style={{ width: '100%', height: '100%', display: 'block', backgroundColor: 'var(--admin-bg)' }}
@@ -210,7 +215,7 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
             <g id="sld-bg">
               <rect width={SLD_W} height={SLD_H} fill="none" />
               {svgUrl ? (
-                <image href={svgUrl} x="0" y="0" width={SLD_W} height={SLD_H}
+                <image href={svgUrl.startsWith('/sld/') ? `${API_BASE_URL}${svgUrl}` : svgUrl} x="0" y="0" width={SLD_W} height={SLD_H}
                   preserveAspectRatio="xMidYMid meet" filter="url(#sld-color-filter)" />
               ) : (
                 <text x={SLD_W / 2} y={SLD_H / 2} textAnchor="middle"

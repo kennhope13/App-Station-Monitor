@@ -83,7 +83,6 @@ public static class DependencyInjection
         services.AddHostedService<Iec104Worker>();
         services.AddHostedService<CloudSyncWorker>();
         services.AddHostedService<DeviceHealthCheckWorker>();
-        services.AddHostedService<StationOS.Api.Services.AIEngineManagedWorker>();
 
         // ── Device Handlers (plugin pattern) ──────────────────────
         // Mỗi loại thiết bị có handler riêng. Registry tự dispatch theo device.Type.
@@ -92,8 +91,7 @@ public static class DependencyInjection
         services.AddScoped<IDeviceHandler, ModbusRtuHandler>();
         services.AddScoped<IDeviceHandler, MqttHandler>();
         services.AddScoped<IDeviceHandler, Iec104Handler>();
-        services.AddScoped<IDeviceHandler, GenericCameraHandler>();
-        
+        // Camera handler tạm skip — chờ camera thật để test
         services.AddScoped<DeviceHandlerRegistry>();
 
         // ── SignalR ───────────────────────────────────────────────

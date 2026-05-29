@@ -169,26 +169,14 @@ class LineDetector:
             f'<eventDescription>Vượt qua {line.label} (hướng {direction})</eventDescription>'
             f'</EventNotificationAlert>'
         )
-
-        # Đính kèm ảnh snapshot nếu có
-        files = {"event": (None, xml, "application/xml")}
-        frame = self._annotated_frame
-        if frame is None and self._reader:
-            frame = self._reader.latest_frame
-
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                if frame is not None:
-                    _, buffer = cv2.imencode(".jpg", frame)
-                    files["snapshot"] = ("snapshot.jpg", buffer.tobytes(), "image/jpeg")
-                    await client.post(f"{cfg.backend_url}/api/v1/camera-webhook", files=files)
-                else:
-                    await client.post(
-                        f"{cfg.backend_url}/api/v1/camera-webhook",
-                        content=xml,
-                        headers={"Content-Type": "application/xml"},
-                    )
-            logger.info("[LineDetector] Alert: %s crossed %s dir=%s (with snapshot)", self.stream_id, line.label, direction)
+                await client.post(
+                    f"{cfg.backend_url}/api/v1/camera-webhook",
+                    content=xml,
+                    headers={"Content-Type": "application/xml"},
+                )
+            logger.info("[LineDetector] Alert: %s crossed %s dir=%s", self.stream_id, line.label, direction)
         except Exception as ex:
             logger.warning("[LineDetector] Webhook failed: %s", ex)
 

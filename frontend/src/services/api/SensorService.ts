@@ -38,8 +38,9 @@ export class SensorService {
     from: string,
     to: string,
     intervalMinutes = 5,
-    pointIds?: string[]
-  ): Promise<Array<{ pointId: string; time: string; value: number }>> {
+    pointIds?: string[],
+    deviceId?: string
+  ): Promise<Array<{ pointId: string; time: string; value: number; deviceId?: string }>> {
     const params = new URLSearchParams({
       stationId, from, to,
       intervalMinutes: String(intervalMinutes)
@@ -47,11 +48,15 @@ export class SensorService {
     if (pointIds && pointIds.length) {
       params.set('pointIds', pointIds.join(','));
     }
+    if (deviceId) {
+      params.set('deviceId', deviceId);
+    }
     const data = await apiFetch<any[]>(`/history/bulk?${params}`);
     return data.map(item => ({
       pointId: item.pointId || item.PointId,
       time:    item.time    || item.Time,
-      value:   item.value !== undefined ? item.value : item.Value
+      value:   item.value !== undefined ? item.value : item.Value,
+      deviceId: item.deviceId || item.DeviceId
     }));
   }
 }

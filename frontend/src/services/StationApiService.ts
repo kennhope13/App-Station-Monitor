@@ -13,13 +13,12 @@ import { analyticsService } from './api/AnalyticsService';
 import { systemService } from './api/SystemService';
 import { ruleService } from './api/RuleService';
 import { logService } from './api/LogService';
-import { boundaryService } from './api/BoundaryService';
 
 import type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
   AlertHistoryEntry, AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry, UserItem,
   SldPoint, SldUnpinnedDevice, SldData, ReportItem, MaintenanceTask, MaintenanceSuggestion,
-  SmtpConfig, HealthScore, TrendItem, SyncStatus, Boundary
+  SmtpConfig, HealthScore, TrendItem, SyncStatus
 } from '@/types/api.types';
 
 // Re-export tất cả types để component không cần import từ 2 nơi
@@ -27,7 +26,7 @@ export type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
   AlertHistoryEntry, AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry, UserItem,
   SldPoint, SldUnpinnedDevice, SldData, ReportItem, MaintenanceTask, MaintenanceSuggestion,
-  SmtpConfig, HealthScore, TrendItem, SyncStatus, Boundary
+  SmtpConfig, HealthScore, TrendItem, SyncStatus
 };
 
 class StationApiService {
@@ -41,6 +40,7 @@ class StationApiService {
   updateDevice = deviceService.updateDevice.bind(deviceService);
   deleteDevice = deviceService.deleteDevice.bind(deviceService);
   testConnection = deviceService.testConnection.bind(deviceService);
+  getCredentials = deviceService.getCredentials.bind(deviceService);
   getCameras = deviceService.getCameras.bind(deviceService);
   scanLan = deviceService.scanLan.bind(deviceService);
   discoverOnvif = deviceService.discoverOnvif.bind(deviceService);
@@ -55,15 +55,6 @@ class StationApiService {
   deleteRoiPoint = deviceService.deleteRoiPoint.bind(deviceService);
   getThermalReadings = deviceService.getThermalReadings.bind(deviceService);
   getCameraSnapshot = deviceService.getCameraSnapshot.bind(deviceService);
-  getThermalMapping = deviceService.getThermalMapping.bind(deviceService);
-  syncThermalConfig = deviceService.syncThermalConfig.bind(deviceService);
-
-  // ── Boundaries ───────────────────────────────────────────
-  getBoundaries = boundaryService.getBoundaries.bind(boundaryService);
-  getBoundary = boundaryService.getBoundary.bind(boundaryService);
-  createBoundary = boundaryService.createBoundary.bind(boundaryService);
-  updateBoundary = boundaryService.updateBoundary.bind(boundaryService);
-  deleteBoundary = boundaryService.deleteBoundary.bind(boundaryService);
 
   /** Lấy danh sách camera từ trạm đầu tiên (fallback cho UI khi chưa chọn trạm). */
   async getCamerasFromFirstStation(): Promise<CameraDevice[]> {

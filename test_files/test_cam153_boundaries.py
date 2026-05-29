@@ -73,131 +73,117 @@ def point_in_polygon(point, polygon):
     return inside
 
 # ── OpenCV detection of acoustic palette blob ───────────────────────────
-def detect_acoustic_blob(jpeg_bytes):
-    """Returns (x_norm, y_norm, area_px) of hottest acoustic palette blob.
-    Bỏ qua thanh legend bên phải và các góc chứa text OSD."""
-    arr = np.frombuffer(jpeg_bytes, np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-    if img is None: return None
+def detect_from_frame(img):
+    """Nhận numpy BGR, resize nhỏ lại để xử lý cực nhanh."""
     h, w = img.shape[:2]
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    # Jet palette hot colors: red + orange/yellow (blob âm thực tế trong jet)
+    scale = 640.0 / float(w)
+    small_w, small_h = int(w * scale), int(h * scale)
+    small = cv2.resize(img, (small_w, small_h))
+    
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
     m_red1 = cv2.inRange(hsv, (0, 120, 150), (15, 255, 255))
     m_red2 = cv2.inRange(hsv, (165, 120, 150), (180, 255, 255))
     m_oy   = cv2.inRange(hsv, (15, 120, 150), (35, 255, 255))
     mask = m_red1 | m_red2 | m_oy
-    # ── Loại bỏ vùng nhiễu ─────────────────────────────────────────────
-    # 1. Thanh palette legend bên phải (x > 0.92): cột màu cầu vồng tham chiếu
-    mask[:, int(w * 0.92):] = 0
-    # 2. Vùng top OSD timestamp (y < 0.05): có thể có chữ vàng
-    mask[:int(h * 0.05), :] = 0
-    # 3. Bottom OSD ("Max. Decibel..."): chữ nhưng thường không đỏ/cam đậm, vẫn mask phòng hờ
-    mask[int(h * 0.92):, :] = 0
-    # Morphology để gộp pixel rời rạc của blob jet thật
-    kernel = np.ones((5, 5), np.uint8)
+    
+    mask[:, int(small_w * 0.92):] = 0
+    mask[:int(small_h * 0.05), :] = 0
+    mask[int(small_h * 0.92):, :] = 0
+    
+    kernel = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours: return None
-    # Lọc contour có shape blob-like (aspect ratio không quá dài/cao như legend)
     candidates = []
     for c in contours:
         area = float(cv2.contourArea(c))
-        if area < 80: continue
+        if area < 10: continue
         x, y, cw, ch = cv2.boundingRect(c)
-        # Bỏ contour quá thẳng đứng (legend) hoặc quá ngang (đường overlay)
         ar = max(cw, ch) / max(1, min(cw, ch))
         if ar > 4.5: continue
         candidates.append((area, c))
     if not candidates: return None
     _, largest = max(candidates, key=lambda t: t[0])
-    area = float(cv2.contourArea(largest))
     M = cv2.moments(largest)
     if M["m00"] == 0: return None
+    area = float(cv2.contourArea(largest))
     cx = M["m10"] / M["m00"]; cy = M["m01"] / M["m00"]
-    return (cx / w, cy / h, area)
+    return (cx / small_w, cy / small_h, area / (scale * scale))
+
+class VideoCaptureThreading:
+    def __init__(self, src):
+        self.src = src
+        self.cap = cv2.VideoCapture(self.src, cv2.CAP_FFMPEG)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.ret, self.frame = self.cap.read()
+        self.running = True
+        self.t = threading.Thread(target=self._reader, daemon=True)
+        self.t.start()
+        
+    def _reader(self):
+        while self.running:
+            if not self.cap.isOpened():
+                time.sleep(1)
+                self.cap = cv2.VideoCapture(self.src, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                continue
+            ret, frame = self.cap.read()
+            if not ret:
+                self.cap.release()
+            else:
+                self.ret = ret
+                self.frame = frame
+
+    def read(self):
+        return self.ret, self.frame
 
 # ── RTSP stream + detection thread (realtime ~15fps) ────────────────────
-def detect_from_frame(img):
-    """Như detect_acoustic_blob nhưng nhận numpy BGR thay vì JPEG bytes."""
-    h, w = img.shape[:2]
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    m_red1 = cv2.inRange(hsv, (0, 120, 150), (15, 255, 255))
-    m_red2 = cv2.inRange(hsv, (165, 120, 150), (180, 255, 255))
-    m_oy   = cv2.inRange(hsv, (15, 120, 150), (35, 255, 255))
-    mask = m_red1 | m_red2 | m_oy
-    mask[:, int(w * 0.92):] = 0
-    mask[:int(h * 0.05), :] = 0
-    mask[int(h * 0.92):, :] = 0
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours: return None
-    candidates = []
-    for c in contours:
-        area = float(cv2.contourArea(c))
-        if area < 80: continue
-        x, y, cw, ch = cv2.boundingRect(c)
-        ar = max(cw, ch) / max(1, min(cw, ch))
-        if ar > 4.5: continue
-        candidates.append((area, c))
-    if not candidates: return None
-    _, largest = max(candidates, key=lambda t: t[0])
-    M = cv2.moments(largest)
-    if M["m00"] == 0: return None
-    area = float(cv2.contourArea(largest))
-    cx = M["m10"] / M["m00"]; cy = M["m01"] / M["m00"]
-    return (cx / w, cy / h, area)
-
 def rtsp_loop():
     last_boundary = None
+    stream = VideoCaptureThreading(RTSP_URL)
+    print(f"[RTSP] Connected to {CAM_IP} (Fast Threaded)")
+    
     while True:
-        cap = cv2.VideoCapture(RTSP_URL, cv2.CAP_FFMPEG)
-        # Giảm buffer để latency thấp
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        if not cap.isOpened():
-            print(f"[RTSP] Không mở được {RTSP_URL}, retry 3s...")
-            time.sleep(3); continue
-        print(f"[RTSP] Connected to {CAM_IP}")
-        while True:
-            ok, img = cap.read()
-            if not ok or img is None:
-                print("[RTSP] Mất frame, reconnecting...")
-                break
-            # Encode JPEG cho MJPEG endpoint (quality 75 — đủ đẹp, nhẹ)
-            ok2, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 75])
-            if ok2:
-                with lock:
-                    state["frame"] = buf.tobytes()
-            # Detect blob
-            det = detect_from_frame(img)
+        ret, img = stream.read()
+        if not ret or img is None:
+            time.sleep(0.1)
+            continue
+            
+        # Encode JPEG cho MJPEG endpoint (quality 65 cho nhẹ)
+        ok2, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 65])
+        if ok2:
             with lock:
-                if det:
-                    x, y, area = det
-                    state["detection"] = {"x": x, "y": y, "area": area}
-                    active = None
-                    for b in boundaries:
-                        if point_in_polygon([x, y], b["polygon"]):
-                            active = b["name"]; break
-                    state["active_boundary"] = active
-                    if active and active != last_boundary:
-                        ev = {
-                            "ts": datetime.now().strftime("%H:%M:%S"),
-                            "boundary": active,
-                            "db": state["db"], "hz": state["hz"],
-                            "x": round(x, 3), "y": round(y, 3),
-                        }
-                        state["events"].append(ev)
-                        if len(state["events"]) > 50: state["events"].pop(0)
-                    last_boundary = active
-                else:
-                    state["detection"] = None
-                    state["active_boundary"] = None
-                    last_boundary = None
-            time.sleep(max(0, 1.0 / TARGET_FPS - 0.005))
-        cap.release()
-        time.sleep(1)
+                state["frame"] = buf.tobytes()
+                
+        # Detect blob
+        det = detect_from_frame(img)
+        with lock:
+            if det:
+                x, y, area = det
+                state["detection"] = {"x": x, "y": y, "area": area}
+                active = None
+                for b in boundaries:
+                    if point_in_polygon([x, y], b["polygon"]):
+                        active = b["name"]; break
+                state["active_boundary"] = active
+                if active and active != last_boundary:
+                    ev = {
+                        "ts": datetime.now().strftime("%H:%M:%S"),
+                        "boundary": active,
+                        "db": state["db"], "hz": state["hz"],
+                        "x": round(x, 3), "y": round(y, 3),
+                    }
+                    state["events"].append(ev)
+                    if len(state["events"]) > 50: state["events"].pop(0)
+                last_boundary = active
+            else:
+                state["detection"] = None
+                state["active_boundary"] = None
+                last_boundary = None
+                
+        time.sleep(max(0, 1.0 / TARGET_FPS - 0.005))
 
 # ── alertStream thread ──────────────────────────────────────────────────
 def alert_loop():

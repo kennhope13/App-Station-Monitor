@@ -5,8 +5,6 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { Edit2, Key, UserX } from 'lucide-react';
-import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 import { stationApi, UserItem } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 
@@ -130,7 +128,7 @@ export default function UserManagementPage() {
 
   return (
     <div className="admin-page-container">
-      <div className="page-toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="page-toolbar-row">
         <div className="page-title-cell">
           <h2>QUẢN LÝ NGƯỜI DÙNG</h2>
         </div>
@@ -167,14 +165,10 @@ export default function UserManagementPage() {
                     <td>{u.email || '—'}</td>
                     <td><span className="tag" style={{ background: `${roleColor}20`, color: roleColor }}>{roleLabel}</span></td>
                     <td>{u.isActive ? <span className="tag tag-success">Hoạt động</span> : <span className="tag tag-danger">Vô hiệu</span>}</td>
-                    <td>
-                      <ActionDropdown>
-                        <ActionDropdownItem icon={<Edit2 size={14} />} label="Sửa thông tin" onClick={() => openEditModal(u)} />
-                        <ActionDropdownItem icon={<Key size={14} />} label="Đổi mật khẩu" onClick={() => openPwModal(u.id)} />
-                        {u.isActive && (
-                          <ActionDropdownItem icon={<UserX size={14} />} label="Vô hiệu hóa" danger onClick={() => deactivateUser(u)} />
-                        )}
-                      </ActionDropdown>
+                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button className="btn-industrial btn-sm" onClick={() => openEditModal(u)} title="Sửa thông tin">Sửa</button>
+                      <button className="btn-industrial btn-sm" onClick={() => openPwModal(u.id)} title="Đổi mật khẩu">Đổi MK</button>
+                      {u.isActive && <button className="btn-industrial btn-sm btn-danger" onClick={() => deactivateUser(u)} title="Vô hiệu hóa">Vô hiệu</button>}
                     </td>
                   </tr>
                 );

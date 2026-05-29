@@ -37,8 +37,8 @@
   --admin-tag-danger-text: #b91c1c;
 
   /* Typography */
-  --admin-font: var(--font-body);
-  --admin-font-mono: var(--font-mono);
+  --admin-font: 'Inter', 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+  --admin-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
 
   /* Overlay layers — đảo ngược so với dark/blue: dùng black opacity thay white opacity */
   --admin-layer-1: rgba(0,0,0,.03);

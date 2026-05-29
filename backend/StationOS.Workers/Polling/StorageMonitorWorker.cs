@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // StorageMonitorWorker — Theo dõi dung lượng ổ đĩa
 // Chạy mỗi 1 giờ (delay 5 phút khi khởi động)
 //
@@ -64,9 +64,7 @@ public class StorageMonitorWorker : BackgroundService
         if (station == null) return;
 
         var drives = DriveInfo.GetDrives()
-            .Where(d => d.IsReady 
-                     && d.DriveType == DriveType.Fixed 
-                     && !d.Name.StartsWith("/snap", StringComparison.OrdinalIgnoreCase))
+            .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
             .ToList();
 
         var metrics = new List<object>();

@@ -111,7 +111,8 @@ public class MeasurementsController : ControllerBase
         [FromQuery] DateTime from,
         [FromQuery] DateTime to,
         [FromQuery] string? pointIds = null,
-        [FromQuery] int intervalMinutes = 5)
+        [FromQuery] int intervalMinutes = 5,
+        [FromQuery] Guid? deviceId = null)
     {
         // Validate interval whitelist
         var allowedIntervals = new[] { 0, 1, 5, 10, 15, 30, 60 };
@@ -121,6 +122,7 @@ public class MeasurementsController : ControllerBase
         if ((to - from).TotalDays > 90) from = to.AddDays(-90);
 
         var selectedPoints = pointIds?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        string deviceFilter = deviceId.HasValue ? $"AND \"DeviceId\" = '{deviceId.Value}'" : "";
 
         var conn = _db.Database.GetDbConnection();
         await conn.OpenAsync();
@@ -131,9 +133,10 @@ public class MeasurementsController : ControllerBase
         {
             // Raw data
             sql = $"""
-                SELECT "PointId", "Time", "Value"
+                SELECT "PointId", "Time", "Value", "DeviceId"
                 FROM "SensorReadings"
                 WHERE "StationId" = '{stationId}'
+                  {deviceFilter}
                   AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
                   AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
                 ORDER BY "Time", "PointId"
@@ -146,12 +149,14 @@ public class MeasurementsController : ControllerBase
             sql = $"""
                 SELECT "PointId",
                        time_bucket('{intervalMinutes} minutes', "Time") AS "Time",
-                       AVG("Value")::float8 AS "Value"
+                       AVG("Value")::float8 AS "Value",
+                       "DeviceId"
                 FROM "SensorReadings"
                 WHERE "StationId" = '{stationId}'
+                  {deviceFilter}
                   AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
                   AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
-                GROUP BY "PointId", time_bucket('{intervalMinutes} minutes', "Time")
+                GROUP BY "PointId", "DeviceId", time_bucket('{intervalMinutes} minutes', "Time")
                 ORDER BY "Time", "PointId"
                 """;
         }
@@ -166,9 +171,10 @@ public class MeasurementsController : ControllerBase
             if (selectedPoints != null && !selectedPoints.Contains(pid)) continue;
             rows.Add(new
             {
-                PointId = pid,
-                Time    = reader.GetDateTime(1),
-                Value   = reader.GetDouble(2),
+                PointId  = pid,
+                Time     = reader.GetDateTime(1),
+                Value    = reader.GetDouble(2),
+                DeviceId = reader.GetGuid(3)
             });
         }
         await conn.CloseAsync();
@@ -274,7 +280,6 @@ public class MeasurementsController : ControllerBase
             ty       = r.Ty,
             ox       = r.Ox,
             oy       = r.Oy,
-            isZone   = r.IsZone,
             time     = DateTime.UtcNow
         }));
 
@@ -457,6 +462,5 @@ public class MeasurementsController : ControllerBase
         public double? Ty { get; set; }
         public double? Ox { get; set; }
         public double? Oy { get; set; }
-        public bool IsZone { get; set; }
     }
 }
