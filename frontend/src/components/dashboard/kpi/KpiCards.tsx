@@ -91,7 +91,7 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
     <div
       id="floatKpi"
       style={{
-        width: 270,
+        width: '100%',
         background: 'var(--admin-overlay)', backdropFilter: 'blur(12px)',
         border: `1px solid ${dangerCount > 0 ? 'rgba(239,68,68,0.4)' : 'var(--admin-border)'}`,
         borderRadius: 4, overflow: 'hidden', boxShadow: 'var(--admin-shadow)'
@@ -146,8 +146,8 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
                   key={cab.id}
                   onClick={() => navigate(`/analytics?cabinet=${cab.id}`)}
                   style={{
-                    display: 'flex', flexDirection: 'column', gap: 4,
-                    padding: '8px 10px', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', gap: 2,
+                    padding: '5px 8px', cursor: 'pointer',
                     borderBottom: idx < cabinetList.length - 1 ? '1px solid var(--admin-border-light)' : 'none',
                     borderLeft: `3px solid ${color}`,
                     transition: 'background .1s',
@@ -173,28 +173,28 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
                   </div>
 
                   {/* Row 2: Grid of Pha A, B, C, PD */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: 4, marginTop: 2, width: '100%' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: 2, marginTop: 1, width: '100%' }}>
                     <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.45rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA A</div>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 800, color: getTempColor(cab.t1), fontFamily: 'Consolas,monospace' }}>
+                      <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA A</div>
+                      <div style={{ fontSize: '0.62rem', fontWeight: 800, color: getTempColor(cab.t1), fontFamily: 'Consolas,monospace' }}>
                         {isOffline || cab.t1 === null ? '--' : `${cab.t1}°C`}
                       </div>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.45rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA B</div>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 800, color: getTempColor(cab.t2), fontFamily: 'Consolas,monospace' }}>
+                      <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA B</div>
+                      <div style={{ fontSize: '0.62rem', fontWeight: 800, color: getTempColor(cab.t2), fontFamily: 'Consolas,monospace' }}>
                         {isOffline || cab.t2 === null ? '--' : `${cab.t2}°C`}
                       </div>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.45rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA C</div>
-                      <div style={{ fontSize: '0.68rem', fontWeight: 800, color: getTempColor(cab.t3), fontFamily: 'Consolas,monospace' }}>
+                      <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA C</div>
+                      <div style={{ fontSize: '0.62rem', fontWeight: 800, color: getTempColor(cab.t3), fontFamily: 'Consolas,monospace' }}>
                         {isOffline || cab.t3 === null ? '--' : `${cab.t3}°C`}
                       </div>
                     </div>
                     <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.45rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>P.ĐIỆN</div>
-                      <div style={{ fontSize: '0.65rem', fontWeight: 800, color: getPdColor(cab.pdCount, isOffline), fontFamily: 'Consolas,monospace' }}>
+                      <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>P.ĐIỆN</div>
+                      <div style={{ fontSize: '0.6rem', fontWeight: 800, color: getPdColor(cab.pdCount, isOffline), fontFamily: 'Consolas,monospace' }}>
                         {isOffline ? '--' : `${cab.pdCount}dB`}
                       </div>
                     </div>

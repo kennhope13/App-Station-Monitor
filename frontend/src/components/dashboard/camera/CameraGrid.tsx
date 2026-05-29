@@ -60,7 +60,7 @@ export default function CameraGrid({ sensors, alertsCount, rules = [] }: CameraG
     <div
       id="floatCamGrid"
       style={{
-        width: 270,
+        width: '100%',
         background: 'var(--admin-overlay)', backdropFilter: 'blur(12px)',
         border: '1px solid var(--admin-border)', borderRadius: 4, overflow: 'hidden',
         boxShadow: 'var(--admin-shadow)'
