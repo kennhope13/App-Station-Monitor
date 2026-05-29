@@ -282,8 +282,8 @@ export default function AlertsHistoryPage() {
       <div className="ah-toolbar-container">
         {/* Title Cell */}
         <div className="ah-toolbar-cell title-cell">
-          <h2 style={{ margin: 0, fontSize: '.8rem', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Consolas, monospace' }}>
-            NHẬT KÝ CẢNH BÁO
+          <h2 style={{ margin: 0, fontSize: '.72rem', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Consolas, monospace', whiteSpace: 'nowrap' }}>
+            CẢNH BÁO
           </h2>
         </div>
 
@@ -291,7 +291,7 @@ export default function AlertsHistoryPage() {
           {/* Preset Selector + Calendar Button */}
           <div className="ah-toolbar-cell" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <span className="ah-cell-label">LỌC NHANH:</span>
-            <select className="form-select" style={{ width: 100, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={timeRange} onChange={e => { setTimeRange(e.target.value); if (e.target.value === 'custom') setDateModalOpen(true); }}>
+            <select className="form-select" style={{ width: 90, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={timeRange} onChange={e => { setTimeRange(e.target.value); if (e.target.value === 'custom') setDateModalOpen(true); }}>
               <option value="today">Hôm nay</option>
               <option value="yesterday">Hôm qua</option>
               <option value="7d">7 ngày qua</option>
@@ -299,13 +299,13 @@ export default function AlertsHistoryPage() {
               <option value="all">Tất cả</option>
               <option value="custom">Tùy chỉnh</option>
             </select>
-            <button className="btn-industrial" style={{ height: 24, width: 24, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.8rem', border: 'none', background: 'transparent', opacity: 0.8 }} title="Chọn ngày tùy chỉnh" onClick={() => setDateModalOpen(true)}><Calendar size={14} strokeWidth={1.8} /></button>
+            <button className="btn-industrial" style={{ height: 22, width: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.7rem', border: 'none', background: 'transparent', opacity: 0.8 }} title="Chọn ngày tùy chỉnh" onClick={() => setDateModalOpen(true)}><Calendar size={12} strokeWidth={1.8} /></button>
           </div>
 
           {/* Dynamic Devices selector */}
           <div className="ah-toolbar-cell">
             <span className="ah-cell-label">THIẾT BỊ:</span>
-            <select className="form-select" style={{ width: 120, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterDevice} onChange={e => setFilterDevice(e.target.value)}>
+            <select className="form-select" style={{ width: 100, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterDevice} onChange={e => setFilterDevice(e.target.value)}>
               <option value="">Tất cả ({devices.length})</option>
               {devices.map(d => (
                 <option key={d.id} value={d.id}>{d.name}</option>
@@ -316,7 +316,7 @@ export default function AlertsHistoryPage() {
           {/* Alert Event Types selector */}
           <div className="ah-toolbar-cell">
             <span className="ah-cell-label">SỰ KIỆN:</span>
-            <select className="form-select" style={{ width: 100, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterType} onChange={e => setFilterType(e.target.value)}>
               <option value="">Tất cả</option>
               <option value="nguoi">Người</option>
               <option value="chay">Cháy / Khói</option>
@@ -327,7 +327,7 @@ export default function AlertsHistoryPage() {
           {/* Alert Level Cell */}
           <div className="ah-toolbar-cell">
             <span className="ah-cell-label">MỨC ĐỘ:</span>
-            <select className="form-select" style={{ width: 90, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
+            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
               <option value="">Tất cả</option>
               <option value="alarm">Báo động</option>
               <option value="warning">Cảnh báo</option>
@@ -337,7 +337,7 @@ export default function AlertsHistoryPage() {
           {/* Status Filter Cell */}
           <div className="ah-toolbar-cell">
             <span className="ah-cell-label">TRẠNG THÁI:</span>
-            <select className="form-select" style={{ width: 100, height: 24, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
               <option value="">Tất cả</option>
               <option value="open">Chưa xử lý</option>
               <option value="acked">Đang xử lý</option>
@@ -347,12 +347,12 @@ export default function AlertsHistoryPage() {
 
           {/* CSV Cell */}
           <div className="ah-toolbar-cell" style={{ padding: '0 6px' }}>
-            <button className="btn-industrial" style={{ height: 24, padding: '0 8px', fontSize: '.72rem', border: 'none', background: 'transparent' }} title="Xuất CSV" onClick={exportCsv}>⬇ CSV</button>
+            <button className="btn-industrial" style={{ height: 22, padding: '0 6px', fontSize: '.65rem', border: 'none', background: 'transparent' }} title="Xuất CSV" onClick={exportCsv}>⬇ CSV</button>
           </div>
 
           {/* Refresh Cell */}
           <div className="ah-toolbar-cell" style={{ padding: '0 6px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.2)' }}>
-            <button className="btn-industrial btn-primary" style={{ height: 24, padding: '0 8px', fontSize: '.72rem', border: 'none', background: 'transparent', color: 'var(--admin-btn-secondary-text)', fontWeight: 'bold' }} onClick={loadAlerts}>↺ Làm mới</button>
+            <button className="btn-industrial btn-primary" style={{ height: 22, padding: '0 6px', fontSize: '.65rem', border: 'none', background: 'transparent', color: 'var(--admin-btn-secondary-text)', fontWeight: 'bold' }} onClick={loadAlerts}>↺ Mới</button>
           </div>
         </div>
       </div>

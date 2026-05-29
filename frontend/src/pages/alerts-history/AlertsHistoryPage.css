@@ -14,37 +14,41 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 0 6px 0;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 0 0 4px 0;
   flex-shrink: 0;
   border-bottom: 1px solid var(--admin-border);
+  min-height: 32px;
 }
 
 .ah-toolbar-cell {
   background: var(--admin-border-light);
   border: 1px solid var(--admin-border-light);
-  padding: 4px 10px;
+  padding: 2px 6px;
   border-radius: 4px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 34px;
+  gap: 4px;
+  height: 28px;
   box-sizing: border-box;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .ah-toolbar-cell.title-cell {
   background: rgba(59, 130, 246, 0.04);
   border-color: rgba(59, 130, 246, 0.12);
+  flex-shrink: 0;
 }
 
 .ah-cell-label {
-  font-size: .52rem;
+  font-size: .48rem;
   font-weight: 800;
   color: var(--admin-text);
   opacity: .45;
   text-transform: uppercase;
-  letter-spacing: .7px;
+  letter-spacing: .5px;
   font-family: 'Consolas', 'Courier New', monospace;
   white-space: nowrap;
 }
@@ -52,8 +56,10 @@
 .ah-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 /* ── Layout: list + optional detail panel ── */
