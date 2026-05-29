@@ -4087,7 +4087,7 @@ input:checked+.slider-industrial:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* Enforce single row layout on desktop */
   gap: 6px;
   padding: 0 0 6px 0;
   flex-shrink: 0;
@@ -4104,6 +4104,7 @@ input:checked+.slider-industrial:before {
   height: 34px;
   box-sizing: border-box;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .page-title-cell h2 {
@@ -4117,13 +4118,15 @@ input:checked+.slider-industrial:before {
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
 
 .page-toolbar-group {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap; /* Enforce single row layout on desktop */
+  flex-shrink: 1;
 }
 
 .page-toolbar-cell {
@@ -4136,6 +4139,7 @@ input:checked+.slider-industrial:before {
   height: 34px;
   box-sizing: border-box;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .page-cell-label {
@@ -4147,6 +4151,46 @@ input:checked+.slider-industrial:before {
   letter-spacing: .7px;
   font-family: 'Consolas', 'Courier New', monospace;
   white-space: nowrap;
+}
+
+/* Tinh chỉnh siêu gọn để giữ 1 dòng trên toàn bộ các trang khi màn hình nhỏ hoặc Sidebar mở */
+@media (max-width: 1440px) {
+  .page-toolbar-row {
+    gap: 4px;
+  }
+  .page-title-cell {
+    padding: 0 8px;
+    height: 30px;
+    gap: 4px;
+  }
+  .page-title-cell h2 {
+    font-size: .72rem;
+  }
+  .page-toolbar-group {
+    gap: 4px;
+  }
+  .page-toolbar-cell {
+    padding: 2px 6px;
+    height: 30px;
+    gap: 4px;
+  }
+  .page-toolbar-cell button {
+    height: 30px !important;
+    padding: 0 8px !important;
+    font-size: .68rem !important;
+  }
+  .page-toolbar-cell span {
+    font-size: .68rem !important;
+  }
+  .btn-industrial {
+    height: 30px !important;
+    padding: 0 10px !important;
+    font-size: .7rem !important;
+  }
+  .page-cell-label {
+    font-size: .48rem;
+    letter-spacing: .5px;
+  }
 }
 
 .page-stat-grid {
