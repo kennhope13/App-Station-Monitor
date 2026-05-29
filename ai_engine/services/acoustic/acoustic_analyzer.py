@@ -253,7 +253,7 @@ class AcousticAnalyzer:
         xml_data = (
             f'<EventNotificationAlert version="2.0">'
             f'<ipAddress>{self.camera_ip}</ipAddress>'
-            f'<eventType>acoustic_discharge</eventType>'
+            f'<eventType>dischargedetection</eventType>'
             f'<eventState>active</eventState>'
             f'<channelID>1</channelID>'
             f'<dateTime>{time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}</dateTime>'
@@ -261,12 +261,29 @@ class AcousticAnalyzer:
             f'</EventNotificationAlert>'
         )
         try:
+            # Lấy frame vẽ đè mới nhất để chụp ảnh sự cố phóng điện
+            from services.detection.pd_region_analyzer import _pd_annotated_frames
+            annotated = _pd_annotated_frames.get(self.stream_id)
+            
+            img_bytes = None
+            if annotated is not None:
+                import cv2
+                success, encoded_img = cv2.imencode('.jpg', annotated)
+                if success:
+                    img_bytes = encoded_img.tobytes()
+
+            files = {
+                'event': (None, xml_data, 'application/xml'),
+            }
+            if img_bytes:
+                files['image_hd'] = ('snapshot.jpg', img_bytes, 'image/jpeg')
+
             requests.post(
                 f"{cfg.backend_url}/api/v1/camera-webhook",
-                content=xml_data,
-                headers={"Content-Type": "application/xml"},
-                timeout=2.0
+                files=files,
+                timeout=3.0
             )
+            logger.info("[Acoustic] Sent PD alert with snapshot successfully!")
         except Exception as e:
             logger.debug("[Acoustic] Alert trigger failed: %s", e)
 
