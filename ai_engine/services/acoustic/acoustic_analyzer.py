@@ -32,7 +32,7 @@ class AcousticAnalyzer:
     username:    str
     password:    str
     stream_id:   str
-    data_dir:    str = "/home/admin-/Desktop/DA/stationos-main/ai_engine/data"
+    data_dir:    str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
 
     _reader:        RtspReader | None = field(default=None, init=False, repr=False)
     _listener:      threading.Thread | None = field(default=None, init=False, repr=False)

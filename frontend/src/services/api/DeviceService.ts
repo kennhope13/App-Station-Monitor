@@ -96,10 +96,10 @@ export class DeviceService {
   }
 
   async createRoiPoint(deviceId: string, data: Omit<RoiPoint, 'id'>): Promise<RoiPoint> {
-    const txVal = data.x !== undefined ? data.x / 100 : (data.tx !== undefined ? data.tx : 0);
-    const tyVal = data.y !== undefined ? data.y / 100 : (data.ty !== undefined ? data.ty : 0);
-    const oxVal = data.x !== undefined ? data.x / 100 : (data.ox !== undefined ? data.ox : txVal);
-    const oyVal = data.y !== undefined ? data.y / 100 : (data.oy !== undefined ? data.oy : tyVal);
+    const txVal = data.tx !== undefined ? data.tx : (data.x !== undefined ? data.x / 100 : 0);
+    const tyVal = data.ty !== undefined ? data.ty : (data.y !== undefined ? data.y / 100 : 0);
+    const oxVal = data.ox !== undefined ? data.ox : (data.x !== undefined ? data.x / 100 : txVal);
+    const oyVal = data.oy !== undefined ? data.oy : (data.y !== undefined ? data.y / 100 : tyVal);
 
     const payload = {
       name: data.label || data.name,
@@ -124,10 +124,10 @@ export class DeviceService {
   }
 
   async updateRoiPoint(deviceId: string, roiId: string, data: Partial<Omit<RoiPoint, 'id'>>): Promise<RoiPoint> {
-    const txVal = data.x !== undefined ? data.x / 100 : data.tx;
-    const tyVal = data.y !== undefined ? data.y / 100 : data.ty;
-    const oxVal = data.x !== undefined ? data.x / 100 : data.ox;
-    const oyVal = data.y !== undefined ? data.y / 100 : data.oy;
+    const txVal = data.tx !== undefined ? data.tx : (data.x !== undefined ? data.x / 100 : undefined);
+    const tyVal = data.ty !== undefined ? data.ty : (data.y !== undefined ? data.y / 100 : undefined);
+    const oxVal = data.ox !== undefined ? data.ox : (data.x !== undefined ? data.x / 100 : undefined);
+    const oyVal = data.oy !== undefined ? data.oy : (data.y !== undefined ? data.y / 100 : undefined);
 
     const payload = {
       name: data.label || data.name,

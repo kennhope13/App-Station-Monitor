@@ -332,15 +332,23 @@ public class DevicesController : ControllerBase
     }
 
     [HttpGet("devices/{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetById(Guid id)
     {
+        var remoteIp = Request.HttpContext.Connection.RemoteIpAddress?.ToString();
+        if (!IsTrustedInternal(remoteIp) && !User.Identity!.IsAuthenticated)
+            return Unauthorized();
+
         var d = await _db.Devices.FindAsync(id);
         if (d == null) return NotFound();
-        // Redact password trước khi trả về (encrypted thì cũng không nên expose)
+
+        var isTrusted = IsTrustedInternal(remoteIp);
         return Ok(new {
             d.Id, d.Name, d.Type, d.Protocol, d.Status, d.CreatedAt,
             d.Capabilities, d.StationId,
-            Config = _crypto.RedactPasswordInConfigJson(d.Config),
+            Config = isTrusted
+                ? _crypto.DecryptPasswordInConfigJson(d.Config)
+                : _crypto.RedactPasswordInConfigJson(d.Config),
         });
     }
 

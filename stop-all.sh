@@ -18,10 +18,19 @@ pkill -9 -f "dotnet run --project StationOS.Api" || true
 pkill -9 -f "StationOS.Api" || true
 
 echo "[3/5] Dừng AI Engine (Python)..."
-pkill -9 -f "python3 main.py" || true
+pkill -9 -f "main.py" || true
 
 echo "[4/5] Dừng Frontend (Vite/Node)..."
 pkill -9 -f "npm run dev" || true
+pkill -9 -f "vite" || true
+
+# Quét dọn triệt để các cổng
+for port in 5173 5000 8100 8105; do
+    PIDS=$(lsof -t -i:$port 2>/dev/null)
+    if [ -n "$PIDS" ]; then
+        echo "$PIDS" | xargs kill -9 >/dev/null 2>&1 || true
+    fi
+done
 
 echo "[5/5] Giữ nguyên Database PostgreSQL container để bảo lưu dữ liệu."
 echo "      Để dừng Database:  sudo docker compose -f docker-compose.db.yml down"

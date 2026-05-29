@@ -136,8 +136,7 @@ public static class DbInitializer
         var station = await db.Stations.FirstOrDefaultAsync();
         if (station == null) return;
 
-        // Tắt tính năng tự động thêm lại camera 152 và 153 nếu đã bị người dùng xóa
-        /*
+        // Tự động tạo lại camera 152 và 153 để có sẵn camera cho người dùng
         if (!await db.Devices.AnyAsync(d => d.Type == "camera_dual"))
         {
             db.Devices.Add(new StationOS.Data.Entities.Device
@@ -165,7 +164,6 @@ public static class DbInitializer
             });
             await db.SaveChangesAsync();
         }
-        */
     }
 
     // ── Seed rules nhiệt độ 3 pha ────────────────────────────────
