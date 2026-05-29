@@ -243,9 +243,8 @@ class AcousticAnalyzer:
             ]
             requests.post(f"{cfg.backend_url}/api/v1/measurements/ingest", json=payload, timeout=2)
             
-            # Đẩy cảnh báo NETA nếu vượt ngưỡng
-            if db >= 35.0:
-                self._trigger_discharge_alert(db)
+            # Cảnh báo phóng điện giờ đây được kiểm tra và kích hoạt độc lập trong PdRegionAnalyzer
+            # khi có đốm phóng điện thực tế xuất hiện bên trong các vùng được cấu hình.
         except Exception as ex:
             logger.debug("[Acoustic] Ingest failed: %s", ex)
 

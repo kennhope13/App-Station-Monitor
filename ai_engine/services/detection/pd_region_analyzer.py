@@ -158,21 +158,24 @@ class PdRegionAnalyzer:
                 dtype=np.int32,
             )
 
-            # FIX: Khởi tạo giá trị mặc định để tránh UnboundLocalError
-            color = (0, 255, 0) # Xanh lá cây (Bình thường)
-            fill_alpha = 0.0
-            border_thickness = region.border_thickness
+            # Phân loại mức độ cảnh báo dựa trên decibel thực tế đo được
+            is_alarm = current_db >= region.alarm_threshold or current_db >= 35.0
+            is_warning = current_db >= region.warning_threshold
 
-            # CHỈ ĐỔI MÀU & BÁO ĐỘNG KHI CÓ HOTSPOT NẰM TRONG VÙNG!
-            if hotspot and self._point_in_polygon(hotspot, verts):
-                # FIX: Cứ có hotspot trong vùng là ĐỎ (Alarm), không cần check dB
-                color = (0, 0, 255)  # Đỏ rực
+            # CHỈ ĐỔI MÀU & BÁO ĐỘNG KHI CÓ HOTSPOT NẰM TRONG VÙNG VÀ ĐẠT NGƯỠNG CẢNH BÁO/BÁO ĐỘNG!
+            if hotspot and self._point_in_polygon(hotspot, verts) and (is_alarm or is_warning):
+                level = "alarm" if is_alarm else "warning"
+                # Màu đỏ cho Alarm (0, 0, 255), màu cam cho Warning (0, 165, 255)
+                color = (0, 0, 255) if is_alarm else (0, 165, 255)
                 fill_alpha = 0.35 if self._flash_state else 0.15
                 border_thickness = region.border_thickness + 1
-                self._maybe_send_alert(region, current_db, "alarm")
-                self._update_ui_state(region.name, current_db, current_hz, "alarm", hotspot)
+                
+                # Chỉ gửi thông báo thực tế (còi báo động, popup) khi ở mức độ Đỏ (Alarm)
+                if is_alarm:
+                    self._maybe_send_alert(region, current_db, "alarm", annotated)
+                self._update_ui_state(region.name, current_db, current_hz, level, hotspot)
             else:
-                # XANH LÁ — Trạng thái bình thường (không có hotspot trong vùng)
+                # XANH LÁ — Trạng thái bình thường (không có hotspot hoặc chưa đạt ngưỡng)
                 color = (0, 255, 0) # Xanh lá cây
                 fill_alpha = 0.0     # Hoàn toàn trong suốt
                 self._clear_ui_state(region.name)
@@ -286,7 +289,7 @@ class PdRegionAnalyzer:
 
     # ── Alert ─────────────────────────────────────────────────────────
 
-    def _maybe_send_alert(self, region: PdRegion, db: float, level: str) -> None:
+    def _maybe_send_alert(self, region: PdRegion, db: float, level: str, annotated: np.ndarray | None = None) -> None:
         """Gửi alert, cooldown 60s mỗi (region, level)."""
         key = f"{region.id}:{level}"
         now = time.time()
@@ -294,25 +297,36 @@ class PdRegionAnalyzer:
             return
         self._last_alert[key] = now
 
-        event_type = "acoustic_alarm" if level == "alarm" else "acoustic_warning"
         xml = (
             f'<EventNotificationAlert version="2.0">'
             f'<ipAddress>{self.camera_ip}</ipAddress>'
-            f'<eventType>{event_type}</eventType>'
+            f'<eventType>dischargedetection</eventType>'
             f'<eventState>active</eventState>'
             f'<channelID>1</channelID>'
             f'<dateTime>{time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}</dateTime>'
-            f'<eventDescription>Vùng "{region.name}": {db:.1f} dB ({level})</eventDescription>'
+            f'<eventDescription>Phong dien tai vung "{region.name}": {db:.1f} dB</eventDescription>'
             f'</EventNotificationAlert>'
         )
         try:
+            img_bytes = None
+            if annotated is not None:
+                import cv2
+                success, encoded_img = cv2.imencode('.jpg', annotated)
+                if success:
+                    img_bytes = encoded_img.tobytes()
+
+            files = {
+                'event': (None, xml, 'application/xml'),
+            }
+            if img_bytes:
+                files['image_hd'] = ('snapshot.jpg', img_bytes, 'image/jpeg')
+
             requests.post(
                 f"{cfg.backend_url}/api/v1/camera-webhook",
-                data=xml,
-                headers={"Content-Type": "application/xml"},
-                timeout=2.0,
+                files=files,
+                timeout=3.0,
             )
-            logger.info("[PdRegion] Alert sent: region=%s level=%s db=%.1f", region.name, level, db)
+            logger.info("[PdRegion] Alert sent with snapshot: region=%s level=%s db=%.1f", region.name, level, db)
         except Exception as ex:
             logger.debug("[PdRegion] Alert send failed: %s", ex)
 
