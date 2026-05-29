@@ -6,11 +6,13 @@
 // ============================================================
 
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.NetworkInformation;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StationOS.Data.Entities;
@@ -43,8 +45,7 @@ public class DeviceService
     /// </summary>
     public async Task<TestResult> TestConnectionAsync(Device device)
     {
-        var decryptedConfig = _crypto.DecryptPasswordInConfigJson(device.Config);
-        var config = ParseConfig(decryptedConfig);
+        var config = ParseConfig(device.Config);
         var ip = config?.GetValueOrDefault("ip")?.ToString();
         if (string.IsNullOrEmpty(ip))
             return new TestResult(false, "Thiết bị không có cấu hình IP", 0);
@@ -125,80 +126,109 @@ public class DeviceService
     /// </summary>
     public async Task RegisterCameraStreamAsync(Device device)
     {
-        var decryptedConfig = _crypto.DecryptPasswordInConfigJson(device.Config);
-        var config = ParseConfig(decryptedConfig);
+        var config = ParseConfig(device.Config);
         if (config == null) return;
 
         var ip       = config.GetValueOrDefault("ip")?.ToString();
         var username = config.GetValueOrDefault("username")?.ToString() ?? "admin";
-        var password = config.GetValueOrDefault("password")?.ToString() ?? "admin";
-        var encodedPassword = password; // Không escape pass ở đây vì ffmpeg/go2rtc có thể không decode đúng %40
+        var rawPassword = config.GetValueOrDefault("password")?.ToString() ?? "admin";
+        var password = _crypto.Decrypt(rawPassword);
+        var encodedPassword = Uri.EscapeDataString(password);
 
         try
         {
             var client = _http.CreateClient();
 
-            // Chỉ build streams của camera này — không đọc/re-PUT toàn bộ go2rtc
-            // (tránh tích lũy stream cũ khi đổi tên go2rtc_id)
-            var streamsToRegister = new Dictionary<string, string>();
+            // Bước 1: Lấy streams hiện tại từ go2rtc
+            var existingStreams = new Dictionary<string, string>();
+            try
+            {
+                var getRes = await client.GetAsync($"{Go2RtcUrl}/api/streams");
+                if (getRes.IsSuccessStatusCode)
+                {
+                    var json = await getRes.Content.ReadAsStringAsync();
+                    var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                    if (parsed != null)
+                    {
+                        foreach (var kv in parsed)
+                        {
+                            if (kv.Value.TryGetProperty("producers", out var producers) &&
+                                producers.GetArrayLength() > 0 &&
+                                producers[0].TryGetProperty("url", out var urlEl))
+                            {
+                                existingStreams[kv.Key] = urlEl.GetString()!;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { /* go2rtc chưa sẵn sàng, bỏ qua */ }
 
             if (device.Type == "camera_dual")
             {
-                var optP = config.GetValueOrDefault("rtsp_optical")?.ToString();
-                var opticalPath = string.IsNullOrWhiteSpace(optP) ? "/Streaming/Channels/101" : optP;
-                var optI = config.GetValueOrDefault("go2rtc_optical")?.ToString();
-                var opticalId   = string.IsNullOrWhiteSpace(optI) ? $"cam_{ip?.Replace(".", "_")}_optical" : optI;
+                // Đăng ký cả 2 luồng: quang học và nhiệt
+                var opticalPath = config.GetValueOrDefault("rtsp_optical")?.ToString() ?? "/Streaming/Channels/101";
+                var opticalId   = config.GetValueOrDefault("go2rtc_optical")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_optical";
+                var thermalPath = config.GetValueOrDefault("rtsp_thermal")?.ToString() ?? "/Streaming/Channels/201";
+                var thermalId   = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_thermal";
 
-                var thmP = config.GetValueOrDefault("rtsp_thermal")?.ToString();
-                var thermalPath = string.IsNullOrWhiteSpace(thmP) ? "/Streaming/Channels/201" : thmP;
-                var thmI = config.GetValueOrDefault("go2rtc_thermal")?.ToString();
-                var thermalId   = string.IsNullOrWhiteSpace(thmI) ? $"cam_{ip?.Replace(".", "_")}_thermal" : thmI;
+                var rtspOpticalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{opticalPath}";
+                var rtspThermalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
 
-                streamsToRegister[opticalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{opticalPath}";
-                streamsToRegister[thermalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
+                existingStreams[opticalId] = rtspOpticalUrl;
+                existingStreams[thermalId] = rtspThermalUrl;
 
+                // Thêm sub-stream cho luồng quang học nếu có
                 var subOpticalPath = DeriveHikvisionSubPath(opticalPath);
                 if (subOpticalPath != null)
-                    streamsToRegister[opticalId + "_sub"] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subOpticalPath}";
+                {
+                    var subOpticalId = opticalId + "_sub";
+                    existingStreams[subOpticalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subOpticalPath}";
+                }
 
                 _logger.LogInformation("[go2rtc] Đăng ký camera_dual: {OptId} ({OptPath}) + {ThId} ({ThPath})",
                     opticalId, opticalPath, thermalId, thermalPath);
             }
             else if (device.Type == "camera_thermal")
             {
-                var thmP = config.GetValueOrDefault("rtsp_thermal")?.ToString();
-                var thermalPath = string.IsNullOrWhiteSpace(thmP) ? "/Streaming/Channels/201" : thmP;
-                var thmI = config.GetValueOrDefault("go2rtc_thermal")?.ToString();
-                var thermalId   = string.IsNullOrWhiteSpace(thmI) ? $"cam_{ip?.Replace(".", "_")}_thermal" : thmI;
+                var thermalPath = config.GetValueOrDefault("rtsp_thermal")?.ToString() ?? "/Streaming/Channels/201";
+                var thermalId   = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_thermal";
+                var rtspThermalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
 
-                streamsToRegister[thermalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
+                existingStreams[thermalId] = rtspThermalUrl;
 
                 var subThermalPath = DeriveHikvisionSubPath(thermalPath);
                 if (subThermalPath != null)
-                    streamsToRegister[thermalId + "_sub"] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subThermalPath}";
+                {
+                    var subThermalId = thermalId + "_sub";
+                    existingStreams[subThermalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subThermalPath}";
+                }
 
                 _logger.LogInformation("[go2rtc] Đăng ký camera_thermal: {ThId} ({ThPath})", thermalId, thermalPath);
             }
             else
             {
-                var rP = config.GetValueOrDefault("rtsp_path")?.ToString();
-                var rtspPath = string.IsNullOrWhiteSpace(rP) ? "/stream1" : rP;
-                var sI = config.GetValueOrDefault("go2rtc_id")?.ToString();
-                var streamId = string.IsNullOrWhiteSpace(sI) ? device.Id.ToString()[..8] : sI;
+                var rtspPath = config.GetValueOrDefault("rtsp_path")?.ToString() ?? "/stream1";
+                var streamId = config.GetValueOrDefault("go2rtc_id")?.ToString() ?? device.Id.ToString()[..8];
+                var rtspUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{rtspPath}";
 
-                streamsToRegister[streamId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{rtspPath}";
+                existingStreams[streamId] = rtspUrl;
 
                 var subRtspPath = DeriveHikvisionSubPath(rtspPath);
                 if (subRtspPath != null)
-                    streamsToRegister[streamId + "_sub"] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subRtspPath}";
+                {
+                    var subStreamId = streamId + "_sub";
+                    existingStreams[subStreamId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subRtspPath}";
+                }
 
                 _logger.LogInformation("[go2rtc] Đăng ký stream {StreamId} -> {RtspPath}", streamId, rtspPath);
             }
 
-            // PUT từng stream qua go2rtc API
-            // Format: PUT /api/streams?name=<id>&src=<rtsp_url>
+            // Bước 3: Đăng ký từng stream qua go2rtc API
+            // Format đúng: PUT /api/streams?name=<id>&src=<rtsp_url>
+            // (KHÔNG phải PUT body JSON — go2rtc không support format đó)
             int registered = 0, failed = 0;
-            foreach (var kv in streamsToRegister)
+            foreach (var kv in existingStreams)
             {
                 try
                 {
@@ -233,13 +263,7 @@ public class DeviceService
     {
         foreach (var cam in cameras.Where(c => c.Type.StartsWith("camera")))
         {
-            // Giải mã config trước khi gửi go2rtc để tránh "wrong password"
-            var decryptedCam = new Device
-            {
-                Id = cam.Id, Name = cam.Name, Type = cam.Type,
-                Config = _crypto.DecryptPasswordInConfigJson(cam.Config),
-            };
-            await RegisterCameraStreamAsync(decryptedCam);
+            await RegisterCameraStreamAsync(cam);
             await Task.Delay(100); // tránh flood go2rtc
         }
         _logger.LogInformation("[go2rtc] Đã sync {Count} camera streams", cameras.Count(c => c.Type.StartsWith("camera")));
@@ -251,18 +275,15 @@ public class DeviceService
     /// </summary>
     public async Task UnregisterCameraStreamAsync(Device device)
     {
-        var decryptedConfig = _crypto.DecryptPasswordInConfigJson(device.Config);
-        var config = ParseConfig(decryptedConfig);
+        var config = ParseConfig(device.Config);
         if (config == null) return;
         try
         {
             var client = _http.CreateClient();
-            var ip = config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_") ?? "";
-
             if (device.Type == "camera_dual")
             {
-                var opticalId = config.GetValueOrDefault("go2rtc_optical")?.ToString() ?? $"cam_{ip}_optical";
-                var thermalId = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip}_thermal";
+                var opticalId = config.GetValueOrDefault("go2rtc_optical")?.ToString() ?? $"cam_{config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_")}_optical";
+                var thermalId = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_")}_thermal";
 
                 await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={opticalId}");
                 await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={opticalId}_sub");
@@ -271,26 +292,144 @@ public class DeviceService
             }
             else if (device.Type == "camera_thermal")
             {
-                var thermalId = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip}_thermal";
+                var thermalId = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{config.GetValueOrDefault("ip")?.ToString()?.Replace(".", "_")}_thermal";
 
                 await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={thermalId}");
+                await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={thermalId}_sub");
                 _logger.LogInformation("[go2rtc] Đã xóa camera_thermal stream: {ThId}", thermalId);
             }
             else
             {
-                var streamId = config.GetValueOrDefault("go2rtc_id")?.ToString() ?? device.Id.ToString()[..8];
-                var rtspPath = config.GetValueOrDefault("rtsp_path")?.ToString();
+                var streamId = config.GetValueOrDefault("go2rtc_id")?.ToString()
+                               ?? device.Id.ToString()[..8];
+                var rtspPath = config?.GetValueOrDefault("rtsp_path")?.ToString();
 
                 await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={streamId}");
-                if (rtspPath != null && DeriveHikvisionSubPath(rtspPath) != null)
-                    await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={streamId}_sub");
-
                 _logger.LogInformation("[go2rtc] Đã xóa stream {StreamId}", streamId);
+
+                // Xóa sub-stream nếu camera có /Channels/101
+                if (rtspPath != null && DeriveHikvisionSubPath(rtspPath) != null)
+                {
+                    var subStreamId = streamId + "_sub";
+                    await client.DeleteAsync($"{Go2RtcUrl}/api/streams?src={subStreamId}");
+                    _logger.LogInformation("[go2rtc] Đã xóa sub-stream {SubStreamId}", subStreamId);
+                }
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning("[go2rtc] Không xóa được stream: {Msg}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Đồng bộ cả ROI points và boundaries (zones) sang AI Engine.
+    /// </summary>
+    public async Task SyncThermalConfigToAIEngineAsync(Data.AppDbContext db, Guid deviceId)
+    {
+        try
+        {
+            var device = await db.Devices.FindAsync(deviceId);
+            if (device == null || (!device.Type.Equals("camera_dual", StringComparison.OrdinalIgnoreCase) && !device.Type.Equals("camera_thermal", StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            var points = await db.RoiPoints
+                .Where(r => r.DeviceId == deviceId)
+                .OrderBy(r => r.CreatedAt)
+                .ToListAsync();
+
+            var boundaries = await db.Boundaries
+                .Where(b => b.DeviceId == deviceId && b.Type == "roi")
+                .ToListAsync();
+
+            var configDict = ParseConfig(device.Config) ?? [];
+            var ip = configDict.GetValueOrDefault("ip")?.ToString() ?? "";
+            var username = configDict.GetValueOrDefault("username")?.ToString() ?? "admin";
+            var password = "";
+            var rawPassword = configDict.GetValueOrDefault("password")?.ToString();
+            if (!string.IsNullOrEmpty(rawPassword))
+            {
+                try { password = _crypto.Decrypt(rawPassword); }
+                catch { password = rawPassword; }
+            }
+
+            var streamId = configDict.GetValueOrDefault("go2rtc_thermal")?.ToString();
+            if (string.IsNullOrEmpty(streamId))
+            {
+                streamId = configDict.GetValueOrDefault("go2rtc_id")?.ToString();
+            }
+
+            if (string.IsNullOrEmpty(streamId))
+                return;
+
+            var zonesList = new List<object>();
+            foreach (var b in boundaries)
+            {
+                var thresholds = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(b.ThresholdsJson))
+                {
+                    try { thresholds = JsonSerializer.Deserialize<Dictionary<string, object>>(b.ThresholdsJson) ?? []; } catch {}
+                }
+
+                double alarmVal = 70.0;
+                double warningVal = 50.0;
+                if (thresholds.TryGetValue("alarm", out var aVal) && aVal != null)
+                {
+                    try { alarmVal = Convert.ToDouble(aVal.ToString()); } catch {}
+                }
+                if (thresholds.TryGetValue("warning", out var wVal) && wVal != null)
+                {
+                    try { warningVal = Convert.ToDouble(wVal.ToString()); } catch {}
+                }
+
+                double[][] poly = [];
+                try { poly = JsonSerializer.Deserialize<double[][]>(b.PolygonJson ?? "[]") ?? []; } catch {}
+
+                zonesList.Add(new
+                {
+                    id = b.Id.ToString(),
+                    polygon = poly,
+                    pre_alarm = warningVal,
+                    alarm = alarmVal,
+                    label = b.Name ?? ""
+                });
+            }
+
+            var payload = new
+            {
+                stream_id = streamId,
+                device_id = deviceId.ToString(),
+                camera_ip = ip,
+                username = username,
+                password = password,
+                points = points.Select((p, idx) => new
+                {
+                    id = !string.IsNullOrEmpty(p.PointId) ? p.PointId : $"P{idx + 1}",
+                    x = p.Tx,
+                    y = p.Ty,
+                    pre_alarm = (double)p.PreAlarmThreshold,
+                    alarm = (double)p.AlarmThreshold,
+                    label = p.Name ?? ""
+                }).ToList(),
+                zones = zonesList
+            };
+
+            using var client = _http.CreateClient();
+            var json = JsonSerializer.Serialize(payload);
+            var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("http://localhost:8100/api/v1/config/thermal", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning($"[SyncThermalConfigToAIEngineAsync] AI Engine returned status {resp.StatusCode} for device {deviceId}");
+            }
+            else
+            {
+                _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully synchronized {points.Count} points and {boundaries.Count} zones for device {deviceId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[SyncThermalConfigToAIEngineAsync] Error synchronizing device {deviceId}: {ex.Message}");
         }
     }
 

@@ -43,6 +43,11 @@ export class DeviceService {
     return apiMutate('POST', `/devices/${id}/test`);
   }
 
+  /** Lấy credentials đã giải mã (username + password) — chỉ dùng trong UI admin. */
+  async getCredentials(id: string): Promise<{ username: string; password: string }> {
+    return apiFetch(`/devices/${id}/credentials`);
+  }
+
   /** Lấy danh sách camera (lọc devices theo type=camera). */
   async getCameras(stationId: string): Promise<CameraDevice[]> {
     const devices = await this.getDevices(stationId, 'camera');

@@ -46,13 +46,17 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/media': {
-        target: 'http://localhost:5056',
+        target: 'http://localhost:5000',
         changeOrigin: true,
         secure: false,
       },
       '/ws': {
-        target: 'http://localhost:5056',
+        target: 'http://localhost:5000',
         ws: true,
+      },
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
       }
     }
   }
