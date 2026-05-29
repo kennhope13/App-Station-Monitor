@@ -30,7 +30,7 @@ const sortPolygonPoints = (poly: [number, number][]): [number, number][] => {
   });
 };
 
-export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, onBack: () => void }) {
+export default function ThermalConfigTab({ device, onBack }: { device: CameraDevice, onBack: () => void }) {
   const deviceId = device.id;
 
   const [points, setPoints] = useState<RoiPoint[]>([]);
@@ -53,7 +53,6 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
   // Picker State
   const [pickerMode, setPickerMode] = useState<'thermal' | 'optical'>('thermal');
   const [zoomLevel, setZoomLevel] = useState<number>(100);
-  // @ts-ignore
   const [overlayOpacity, setOverlayOpacity] = useState<number>(100);
   
   // VisibleValidRect — Hikvision ISAPI trả về hình chữ nhật mô tả vùng optical tương ứng
@@ -273,7 +272,6 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
   */
 
   /** Dùng một điểm có sẵn làm chuẩn để hiệu chỉnh VVR và cập nhật tất cả điểm khác */
-  // @ts-ignore
   const setPointAsCalibrationAnchor = async (pt: RoiPoint) => {
     const txVal = pt.tx !== undefined && pt.tx !== null ? pt.tx : (pt.x ?? 0) / 100;
     const tyVal = pt.ty !== undefined && pt.ty !== null ? pt.ty : (pt.y ?? 0) / 100;
@@ -624,6 +622,7 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
       setActivePolygon([]);
       await loadData();
       await syncWithAi();
+      onBack();
     } catch (err) {
       alert('Lỗi lưu vùng');
     }
@@ -711,6 +710,7 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
       setIsEditing(false);
       await loadData();
       await syncWithAi();
+      onBack();
     } catch (err) {
       alert('Lỗi lưu điểm');
     }
@@ -1318,60 +1318,5 @@ export function ThermalConfigPanel({ device, onBack }: { device: CameraDevice, o
         </div>
 
       </div>
-  );
-}
-
-// ── Orchestrator Component ───────────────────────────────────
-export default function ThermalConfigTab({ cameras, initialCamera }: { cameras: CameraDevice[], initialCamera?: CameraDevice | null }) {
-  const [selectedCamera, setSelectedCamera] = useState<CameraDevice | null>(initialCamera ?? null);
-  const [hoveredCamId, setHoveredCamId] = useState<string | null>(null);
-
-  return (
-    <div style={{ display: 'flex', flex: 1, gap: 8, overflow: 'hidden', minHeight: 0, height: '100%', width: '100%' }}>
-      {/* Left sidebar: camera list */}
-      <div className="admin-card" style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', borderRight: '1px solid var(--admin-border)' }}>
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', background: 'var(--admin-layer-1)' }}>
-          Camera nhiệt ({cameras.length})
-        </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {cameras.length === 0 ? (
-            <div style={{ padding: 16, fontSize: '.78rem', color: 'var(--admin-text-muted)', textAlign: 'center' }}>Chưa có camera nhiệt.</div>
-          ) : cameras.map(cam => {
-            const isSelected = selectedCamera?.id === cam.id;
-            const isHovered = hoveredCamId === cam.id;
-            return (
-              <div 
-                key={cam.id} 
-                onClick={() => setSelectedCamera(cam)}
-                onMouseEnter={() => setHoveredCamId(cam.id)}
-                onMouseLeave={() => setHoveredCamId(null)}
-                style={{
-                  padding: '12px 14px', cursor: 'pointer', borderBottom: '1px solid var(--admin-border)',
-                  background: isSelected ? 'rgba(59,130,246,.08)' : (isHovered ? 'rgba(255,255,255,.02)' : 'transparent'),
-                  borderLeft: isSelected ? '3px solid var(--admin-accent)' : '3px solid transparent',
-                  transition: 'all 0.15s ease-in-out',
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: '.8rem', color: isSelected ? 'var(--admin-accent)' : 'var(--admin-text)' }}>{cam.name}</div>
-                <div style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)', marginTop: 4 }}>IP: {cam.config?.ip || 'N/A'}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Right side: configuration panel */}
-      <div className="admin-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', minWidth: 0, border: 'none', background: 'transparent' }}>
-        {selectedCamera ? (
-          <ThermalConfigPanel device={selectedCamera} onBack={() => setSelectedCamera(null)} />
-        ) : (
-          <div style={{ margin: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-text-muted)', gap: 12, padding: 32 }}>
-            <span style={{ fontSize: '3rem', opacity: 0.75 }}>🌡️</span>
-            <div style={{ fontSize: '.85rem', fontWeight: 700 }}>Chọn camera nhiệt bên trái để bắt đầu cấu hình</div>
-            <div style={{ fontSize: '.75rem', opacity: 0.6 }}>Hệ thống hỗ trợ chấm điểm nhiệt độ tùy chỉnh và vẽ vùng đa giác cảnh báo.</div>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }

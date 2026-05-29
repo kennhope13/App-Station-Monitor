@@ -5,13 +5,37 @@
 // Panel phải: danh sách sự kiện theo thời gian, lọc theo loại/ngày
 // ============================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
-import { GO2RTC_URL, AI_ENGINE_URL } from '@/utils/env';
+import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
 import { createRealtimeHub } from '@/services/realtime.service';
 import './RealtimeMonitorPage.css';
 
 type Layout = 'l1' | 'l4' | 'l9';
+
+interface DetectionEvent {
+  id: string;
+  cameraId: string;
+  cameraName: string | null;
+  detectionType: string;
+  detectedAt: string;
+  maxTemp: number | null;
+  affectedZone: string | null;
+  alertId: string | null;
+  metadata: string | null;
+}
+
+const EVT_CFG: Record<string, { label: string; icon: string; color: string }> = {
+  thermal_hotspot: { label: 'Nhiệt bất thường', icon: '◈', color: 'var(--admin-danger)' },
+  fire: { label: 'Cháy', icon: '◈', color: 'var(--admin-danger)' },
+  smoke: { label: 'Khói', icon: '◈', color: '#f97316' },
+  intrusion: { label: 'Xâm nhập', icon: '◈', color: 'var(--admin-warning)' },
+  partial_discharge: { label: 'Phóng điện', icon: '◈', color: '#a855f7' },
+  tampering: { label: 'Che camera', icon: '◈', color: 'var(--admin-warning)' },
+  video_loss: { label: 'Mất tín hiệu', icon: '◈', color: 'var(--admin-text-muted)' },
+  motion: { label: 'Chuyển động', icon: '◈', color: 'var(--admin-accent)' },
+  storage_error: { label: 'Lỗi lưu trữ', icon: '◈', color: 'var(--admin-warning)' },
+};
 
 export default function RealtimeMonitorPage() {
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
@@ -34,6 +58,12 @@ export default function RealtimeMonitorPage() {
 
   // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
   const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
+
+  // Warning Log / Detection Events Panel states
+  const [detections, setDetections] = useState<DetectionEvent[]>([]);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
 
   // Load cameras
   useEffect(() => {
@@ -80,13 +110,8 @@ export default function RealtimeMonitorPage() {
           uniqueBaseIds.map(id => 
             Promise.all([
               stationApi.getBoundaries(id, 'roi').catch(() => []),
-              stationApi.getBoundaries(id, 'pd').catch(() => []),
               stationApi.getRoiPoints(id).catch(() => [])
-            ]).then(([roiBounds, pdBounds, points]) => ({ 
-              id, 
-              boundaries: [...roiBounds, ...pdBounds], 
-              points 
-            }))
+            ]).then(([boundaries, points]) => ({ id, boundaries, points }))
           )
         ).then(results => {
           const boundMap: Record<string, Boundary[]> = {};
@@ -134,8 +159,7 @@ export default function RealtimeMonitorPage() {
     };
   }, []);
 
-  // Load detections is currently commented out as the detections panel is not rendered in the main grid
-  /*
+  // Load detections
   const loadDetections = useCallback(async () => {
     try {
       const params = new URLSearchParams({ limit: '80' });
@@ -158,7 +182,6 @@ export default function RealtimeMonitorPage() {
   useEffect(() => {
     loadDetections();
   }, [loadDetections]);
-  */
 
   // SignalR (Simplified: only local UI state, global alerts handled in AppShell)
   useEffect(() => {
@@ -167,7 +190,14 @@ export default function RealtimeMonitorPage() {
       setDeviceStatus(prev => ({ ...prev, [data.deviceId]: data.status }));
     });
     
-    // AlertNew and CameraEvent removed here - handled in AppShell
+    hubConnection.on('CameraEvent', (evt: DetectionEvent) => {
+      setDetections(prev => {
+        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '');
+        if (selectedCamFilter && evt.cameraId !== baseFilterId) return prev;
+        if (typeFilter && evt.detectionType !== typeFilter) return prev;
+        return [evt, ...prev];
+      });
+    });
     
     hubConnection.on('SensorUpdate', (data: any[]) => {
       if (!Array.isArray(data)) return;
@@ -191,7 +221,7 @@ export default function RealtimeMonitorPage() {
 
     hubConnection.start().catch(() => {});
     return () => { hubConnection.stop(); };
-  }, [selectedCamFilter]);
+  }, [selectedCamFilter, typeFilter]);
 
   // Helpers
   const cellCount = layout === 'l1' ? 1 : layout === 'l4' ? 4 : 9;
@@ -230,7 +260,7 @@ export default function RealtimeMonitorPage() {
       const lookupId = b.id.toLowerCase();
       const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
 
-      let color = b.type === 'pd' ? '#a855f7' : '#3b82f6';
+      let color = '#3b82f6';
       let warningTemp = 50;
       let alarmTemp = 70;
       if (b.thresholds) {
@@ -290,7 +320,7 @@ export default function RealtimeMonitorPage() {
       const lookupId = b.id.toLowerCase();
       const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
       
-      let color = b.type === 'pd' ? '#a855f7' : '#3b82f6';
+      let color = '#3b82f6';
       let warningTemp = 50, alarmTemp = 70;
       if (b.thresholds) {
         try {
@@ -335,11 +365,9 @@ export default function RealtimeMonitorPage() {
             }}
           >
             <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{b.name}</span>
-            {b.type !== 'pd' && (
-              <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
-                {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
-              </span>
-            )}
+            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+              {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
+            </span>
           </div>
         </div>
       );
@@ -678,6 +706,67 @@ export default function RealtimeMonitorPage() {
         <div className="nvr-wrap">
           <div className={`nvr-grid ${layout}`}>
             {Array.from({ length: cellCount }).map((_, i) => renderCell(displayCams[i], i))}
+          </div>
+        </div>
+
+        {/* Events Panel */}
+        <div className={`nvr-ep ${isPanelCollapsed ? 'collapsed' : ''}`}>
+          <button className="nvr-ep-tab" onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}>
+            <span className="nvr-ep-tab-arrow">◀</span>
+            <span className="nvr-ep-tab-label">NHẬT KÝ</span>
+          </button>
+          
+          <div className="nvr-ep-body">
+            <div className="nvr-ep-hdr">
+              <div className="nvr-ep-hdr-row">
+                <span className="nvr-ep-title">{selectedCamFilter ? cameras.find(c => c.id === selectedCamFilter)?.name || 'SỰ KIỆN CAM' : 'SỰ KIỆN CAM'}</span>
+                <span className="nvr-ep-cnt">{detections.length}</span>
+              </div>
+              <div className="nvr-ep-filters">
+                <select className="nvr-ep-fsel" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+                  <option value="">Tất cả loại</option>
+                  {Object.entries(EVT_CFG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                </select>
+                <input type="date" className="nvr-ep-fdate" value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
+                <button className="nvr-ep-rbtn" onClick={() => { setTypeFilter(''); setDateFilter(''); loadDetections(); }}>↻</button>
+              </div>
+            </div>
+
+            <div className="nvr-ep-list">
+              {detections.length === 0 ? (
+                <div className="nvr-ep-empty">Chưa có sự kiện nào</div>
+              ) : (
+                detections.map(evt => {
+                  const cfg = EVT_CFG[evt.detectionType] || { label: evt.detectionType, icon: '◈', color: 'var(--admin-text-muted)' };
+                  const meta = evt.metadata ? JSON.parse(evt.metadata) : {};
+                  const snap = meta.snapshotUrl ? `${API_BASE_URL}${meta.snapshotUrl}` : '';
+                  const vidUrl = meta.videoUrl ? `${API_BASE_URL}${meta.videoUrl}` : '';
+                  const time = new Date(evt.detectedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' });
+
+                  return (
+                    <div 
+                      key={evt.id} 
+                      className="nvr-evt" 
+                      onClick={() => {
+                        if (vidUrl) setLightbox({ url: vidUrl, isVideo: true });
+                        else if (snap) setLightbox({ url: snap, isVideo: false });
+                      }}
+                    >
+                      <div className="nvr-evt-thumb">
+                        {snap ? <img src={snap} alt="" loading="lazy" /> : cfg.icon}
+                        {vidUrl && <div style={{ position: 'absolute', bottom: 2, right: 2, background: 'rgba(0,0,0,0.6)', borderRadius: 2, padding: '1px 3px', fontSize: 8 }}></div>}
+                      </div>
+                      <div className="nvr-evt-body">
+                        <span className="nvr-evt-badge" style={{ color: cfg.color }}>{cfg.icon} {cfg.label}</span>
+                        <span className="nvr-evt-cam">{evt.cameraName || 'Camera'}</span>
+                        {evt.maxTemp != null && <span className="nvr-evt-temp">{evt.maxTemp.toFixed(1)}°C</span>}
+                        <span className="nvr-evt-time">{time}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         </div>
       </div>
