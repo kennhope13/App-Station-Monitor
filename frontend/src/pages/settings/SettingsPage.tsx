@@ -15,18 +15,18 @@ import CloudSyncTab from './tabs/CloudSyncTab';
 import LinkageTab from './tabs/LinkageTab';
 import './SettingsPage.css';
 
-const TABS = ['Cài đặt chung', 'Thông báo', 'Giao diện', 'Cloud Sync', 'Liên kết Camera'];
+const TABS = ['', '', '', '', ''];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(0);
 
   return (
     <div className="admin-page-container">
-      <div className="page-toolbar-row" style={{ flexWrap: 'wrap', rowGap: 6 }}>
+      <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2>CÀI ĐẶT HỆ THỐNG</h2>
+          <h2>CÀI ĐẶT</h2>
         </div>
-        <div className="page-toolbar-group" style={{ flexWrap: 'wrap' }}>
+        <div className="page-toolbar-group">
           {TABS.map((t, idx) => (
             <button
               key={idx}

@@ -866,7 +866,7 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
               style={{
                 position: 'relative',
                 width: `${zoomLevel}%`,
-                aspectRatio: '16/9',
+                height: `${zoomLevel}%`,
                 margin: 'auto',
                 cursor: isPanning ? 'grabbing' : (isEditing || continuousMode) ? 'crosshair' : 'default',
                 flexShrink: 0,

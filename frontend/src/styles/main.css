@@ -14958,11 +14958,142 @@ body.has-critical-banner .panels-grid {
 }
 
 /* Bottom pinned area */
+/* Bottom pinned area */
 .sb-bottom {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   padding-bottom: 6px;
+}
+
+.sb-user-action-wrap {
+  position: relative;
+}
+
+.sb-user-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  margin: 4px 7px;
+  border: 1px solid transparent;
+}
+
+.sb-wrap.expanded .sb-user-action {
+  justify-content: flex-start;
+  padding: 6px 8px;
+  margin: 4px 6px;
+}
+
+.sb-user-action:hover {
+  background: var(--admin-hover);
+  border-color: var(--admin-border);
+}
+
+.sb-user-action.active {
+  background: var(--admin-hover);
+  border-color: var(--admin-accent);
+}
+
+.sb-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.sb-profile-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.sb-profile-name {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--admin-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.sb-profile-role {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+  text-align: left;
+}
+
+.sb-user-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 7px;
+  width: 176px;
+  background: var(--admin-panel);
+  border: 1px solid var(--admin-border);
+  border-radius: 6px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3), 0 10px 20px rgba(0, 0, 0, 0.2);
+  padding: 8px 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.15s ease-out;
+}
+
+.sb-wrap.expanded .sb-user-popover {
+  left: 6px;
+  width: 178px;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sb-popover-sep {
+  height: 1px;
+  background: var(--admin-border);
+  margin: 4px 0;
+}
+
+.sb-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  color: var(--admin-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sb-popover-item:hover {
+  background: var(--admin-hover);
+  color: var(--admin-text);
+}
+
+.sb-popover-item.danger {
+  color: var(--admin-danger);
+}
+
+.sb-popover-item.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--admin-danger);
 }
 
 /* ── Nav item ── */

@@ -27,7 +27,7 @@ export default function ReportsPage() {
       {/* TOOLBAR & TAB BAR */}
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2>BÁO CÁO HỆ THỐNG</h2>
+          <h2>BÁO CÁO</h2>
         </div>
         <div className="page-toolbar-group">
           <button onClick={() => setActiveTab('export')} className={`btn-industrial${activeTab === 'export' ? ' btn-primary' : ''}`} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>

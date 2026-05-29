@@ -49,7 +49,7 @@
 .nvr-grid.l4 { grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; }
 .nvr-grid.l9 { grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
 
-.nvr-cell { position:relative; background:#0c0f16; overflow:hidden; cursor:pointer; user-select:none; transition:box-shadow .12s; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; }
+.nvr-cell { position:relative; background:#0c0f16; overflow:hidden; cursor:pointer; user-select:none; transition:box-shadow .12s; display:flex; align-items:center; justify-content:center; }
 .nvr-cell:hover { box-shadow:inset 0 0 0 1px var(--admin-accent); }
 .nvr-cell.expanded { position:absolute!important; inset:0!important; z-index:20; box-shadow:0 0 0 2px var(--admin-accent)!important; aspect-ratio:unset; }
 .nvr-cell iframe, .nvr-cell img {

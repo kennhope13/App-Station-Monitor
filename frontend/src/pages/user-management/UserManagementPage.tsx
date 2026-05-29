@@ -130,7 +130,7 @@ export default function UserManagementPage() {
     <div className="admin-page-container">
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2>QUẢN LÝ NGƯỜI DÙNG</h2>
+          <h2>NGƯỜI DÙNG</h2>
         </div>
         <div className="page-toolbar-group">
           <button className="btn-industrial btn-primary" onClick={openAddModal}>+ Thêm tài khoản</button>

@@ -3,14 +3,12 @@ import CabinetAnalyticsTab from './tabs/CabinetAnalyticsTab';
 
 export default function AnalyticsLayout() {
   return (
-    <div className="alerts-history-page" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* TOOLBAR */}
-      <div className="ah-toolbar-container">
-        <div className="ah-toolbar-cell title-cell">
-          <h2 style={{ margin: 0, fontSize: '.85rem', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Consolas,monospace', color: 'var(--admin-text)' }}>
-            PHÂN TÍCH
-          </h2>
+    <div className="admin-page-container">
+      <div className="page-toolbar-row">
+        <div className="page-title-cell">
+          <h2>PHÂN TÍCH</h2>
         </div>
+        <div className="page-toolbar-group" />
       </div>
 
       {/* CONTENT */}

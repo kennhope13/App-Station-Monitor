@@ -18,7 +18,6 @@ import SldEditPanel from '@/components/dashboard/sld/SldEditPanel';
 import KpiCards from '@/components/dashboard/kpi/KpiCards';
 import CameraGrid, { CameraSensor } from '@/components/dashboard/camera/CameraGrid';
 import DashboardToolbar from '@/components/dashboard/toolbar/DashboardToolbar';
-import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
 import CameraLiveViewer from '@/components/dashboard/camera/CameraLiveViewer';
 
 export default function DashboardPage() {
@@ -230,12 +229,10 @@ export default function DashboardPage() {
         <div
           id="floatRightCol"
           style={{
-            position: 'absolute', top: 10, right: 10, zIndex: 30, width: '18%', minWidth: 210, maxWidth: 250,
-            display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 38px)'
+            position: 'absolute', bottom: 40, right: 10, zIndex: 30, width: '18%', minWidth: 210, maxWidth: 250,
+            display: 'flex', flexDirection: 'column', gap: 8
           }}
         >
-          <AlertPanel alerts={alerts} />
-          
           <CameraLiveViewer 
             cameraSrc={activeCameraSrc} 
             headerAddon={

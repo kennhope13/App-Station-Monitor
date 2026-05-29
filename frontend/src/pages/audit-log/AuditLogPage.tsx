@@ -390,7 +390,7 @@ export default function AuditLogPage() {
     <div className="admin-page-container">
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2>NHẬT KÝ HỆ THỐNG</h2>
+          <h2>NHẬT KÝ</h2>
         </div>
 
         {/* Right controls — all 34px tall, same row */}

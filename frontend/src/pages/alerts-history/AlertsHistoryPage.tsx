@@ -279,81 +279,58 @@ export default function AlertsHistoryPage() {
 
   return (
     <div className="alerts-history-page">
-      <div className="ah-toolbar-container">
-        {/* Title Cell */}
-        <div className="ah-toolbar-cell title-cell">
-          <h2 style={{ margin: 0, fontSize: '.72rem', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', fontFamily: 'Consolas, monospace', whiteSpace: 'nowrap' }}>
-            CẢNH BÁO
-          </h2>
+      <div className="page-toolbar-row">
+        <div className="page-title-cell">
+          <h2>CẢNH BÁO</h2>
         </div>
-
-        <div className="ah-toolbar-group" style={{ flexWrap: 'nowrap' }}>
-          {/* Preset Selector + Calendar Button */}
-          <div className="ah-toolbar-cell" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <span className="ah-cell-label">LỌC NHANH:</span>
+        <div className="page-toolbar-group">
+          <div className="page-toolbar-cell">
+            <span className="page-cell-label">LỌC NHANH:</span>
             <select className="form-select" style={{ width: 90, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={timeRange} onChange={e => { setTimeRange(e.target.value); if (e.target.value === 'custom') setDateModalOpen(true); }}>
               <option value="today">Hôm nay</option>
               <option value="yesterday">Hôm qua</option>
-              <option value="7d">7 ngày qua</option>
-              <option value="30d">30 ngày qua</option>
+              <option value="7d">7 ngày</option>
+              <option value="30d">30 ngày</option>
               <option value="all">Tất cả</option>
               <option value="custom">Tùy chỉnh</option>
             </select>
-            <button className="btn-industrial" style={{ height: 22, width: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.7rem', border: 'none', background: 'transparent', opacity: 0.8 }} title="Chọn ngày tùy chỉnh" onClick={() => setDateModalOpen(true)}><Calendar size={12} strokeWidth={1.8} /></button>
+            <button className="btn-industrial" style={{ height: 22, width: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.7rem', border: 'none', background: 'transparent', opacity: 0.8 }} title="Chọn ngày" onClick={() => setDateModalOpen(true)}><Calendar size={12} strokeWidth={1.8} /></button>
           </div>
-
-          {/* Dynamic Devices selector */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">THIẾT BỊ:</span>
+          <div className="page-toolbar-cell">
+            <span className="page-cell-label">THIẾT BỊ:</span>
             <select className="form-select" style={{ width: 100, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterDevice} onChange={e => setFilterDevice(e.target.value)}>
               <option value="">Tất cả ({devices.length})</option>
-              {devices.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
+              {devices.map(d => (<option key={d.id} value={d.id}>{d.name}</option>))}
             </select>
           </div>
-
-          {/* Alert Event Types selector */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">SỰ KIỆN:</span>
-            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterType} onChange={e => setFilterType(e.target.value)}>
+          <div className="page-toolbar-cell">
+            <span className="page-cell-label">SỰ KIỆN:</span>
+            <select className="form-select" style={{ width: 70, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterType} onChange={e => setFilterType(e.target.value)}>
               <option value="">Tất cả</option>
               <option value="nguoi">Người</option>
-              <option value="chay">Cháy / Khói</option>
-              <option value="diem">Điểm nhiệt</option>
+              <option value="chay">Cháy</option>
+              <option value="diem">Nhiệt</option>
             </select>
           </div>
-
-          {/* Alert Level Cell */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">MỨC ĐỘ:</span>
-            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
+          <div className="page-toolbar-cell">
+            <span className="page-cell-label">MỨC:</span>
+            <select className="form-select" style={{ width: 60, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
               <option value="">Tất cả</option>
               <option value="alarm">Báo động</option>
               <option value="warning">Cảnh báo</option>
             </select>
           </div>
-
-          {/* Status Filter Cell */}
-          <div className="ah-toolbar-cell">
-            <span className="ah-cell-label">TRẠNG THÁI:</span>
-            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <div className="page-toolbar-cell">
+            <span className="page-cell-label">TT:</span>
+            <select className="form-select" style={{ width: 60, height: 22, fontSize: '.68rem', padding: '0 2px', background: 'transparent', border: 'none', color: 'var(--admin-text)' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
               <option value="">Tất cả</option>
-              <option value="open">Chưa xử lý</option>
-              <option value="acked">Đang xử lý</option>
-              <option value="closed">Đã đóng</option>
+              <option value="open">Mở</option>
+              <option value="acked">Đang XL</option>
+              <option value="closed">Đóng</option>
             </select>
           </div>
-
-          {/* CSV Cell */}
-          <div className="ah-toolbar-cell" style={{ padding: '0 6px' }}>
-            <button className="btn-industrial" style={{ height: 22, padding: '0 6px', fontSize: '.65rem', border: 'none', background: 'transparent' }} title="Xuất CSV" onClick={exportCsv}>⬇ CSV</button>
-          </div>
-
-          {/* Refresh Cell */}
-          <div className="ah-toolbar-cell" style={{ padding: '0 6px', background: 'rgba(59, 130, 246, 0.08)', borderColor: 'rgba(59, 130, 246, 0.2)' }}>
-            <button className="btn-industrial btn-primary" style={{ height: 22, padding: '0 6px', fontSize: '.65rem', border: 'none', background: 'transparent', color: 'var(--admin-btn-secondary-text)', fontWeight: 'bold' }} onClick={loadAlerts}>↺ Mới</button>
-          </div>
+          <button className="btn-industrial btn-sm" title="Xuất CSV" onClick={exportCsv} style={{ height: 22, padding: '0 8px', fontSize: '.65rem' }}>⬇ CSV</button>
+          <button className="btn-industrial btn-sm btn-primary" onClick={loadAlerts} style={{ height: 22, padding: '0 8px', fontSize: '.65rem' }}>↺ Mới</button>
         </div>
       </div>
 

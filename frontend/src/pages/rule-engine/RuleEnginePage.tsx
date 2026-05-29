@@ -279,8 +279,7 @@ export default function RuleEnginePage() {
       {/* Toolbar */}
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2>BỘ QUY TẮC GIÁM SÁT TỰ ĐỘNG (RULE ENGINE)</h2>
-          <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: 4 }}>Thiết lập các ngưỡng cảnh báo màu sắc trên giao diện và tự động hóa kích hoạt các tác vụ bảo trì</div>
+          <h2>RULE ENGINE</h2>
         </div>
         <div className="page-toolbar-group">
           <button className="btn-industrial btn-primary" onClick={() => openAddModal()}>

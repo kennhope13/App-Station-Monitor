@@ -18,18 +18,18 @@ log:
   level: info
 streams:
   cam_192_168_10_152_optical:
-    - rtsp://admin:Demo@2024@192.168.10.152:554/Streaming/Channels/101
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/101
   cam_192_168_10_152_thermal:
-    - rtsp://admin:Demo@2024@192.168.10.152:554/Streaming/Channels/201
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/201
   cam_192_168_10_152_optical_sub:
-    - rtsp://admin:Demo@2024@192.168.10.152:554/Streaming/Channels/102
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/102
   camera_192_168_10_153_pd:
-    - rtsp://admin:Demo@2024@192.168.10.153:554/Streaming/Channels/101
+    - rtsp://admin:Demo%402024@192.168.10.153:554/Streaming/Channels/101
   camera_192_168_10_153_pd_sub:
-    - rtsp://admin:Demo@2024@192.168.10.153:554/Streaming/Channels/102
+    - rtsp://admin:Demo%402024@192.168.10.153:554/Streaming/Channels/102
   cam_192_168_10_120_optical:
-    - rtsp://admin:Demo@2024@192.168.10.120:554/Streaming/Channels/101
+    - rtsp://admin:Demo%402024@192.168.10.120:554/Streaming/Channels/101
   cam_192_168_10_120_thermal:
-    - rtsp://admin:Demo@2024@192.168.10.120:554/Streaming/Channels/201
+    - rtsp://admin:Demo%402024@192.168.10.120:554/Streaming/Channels/201
   cam_192_168_10_120_optical_sub:
-    - rtsp://admin:Demo@2024@192.168.10.120:554/Streaming/Channels/102
+    - rtsp://admin:Demo%402024@192.168.10.120:554/Streaming/Channels/102
