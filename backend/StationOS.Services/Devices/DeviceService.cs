@@ -6,11 +6,13 @@
 // ============================================================
 
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Net.Http.Json;
 using System.Net.NetworkInformation;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StationOS.Data.Entities;
@@ -317,6 +319,117 @@ public class DeviceService
         catch (Exception ex)
         {
             _logger.LogWarning("[go2rtc] Không xóa được stream: {Msg}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Đồng bộ cả ROI points và boundaries (zones) sang AI Engine.
+    /// </summary>
+    public async Task SyncThermalConfigToAIEngineAsync(Data.AppDbContext db, Guid deviceId)
+    {
+        try
+        {
+            var device = await db.Devices.FindAsync(deviceId);
+            if (device == null || (!device.Type.Equals("camera_dual", StringComparison.OrdinalIgnoreCase) && !device.Type.Equals("camera_thermal", StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            var points = await db.RoiPoints
+                .Where(r => r.DeviceId == deviceId)
+                .OrderBy(r => r.CreatedAt)
+                .ToListAsync();
+
+            var boundaries = await db.Boundaries
+                .Where(b => b.DeviceId == deviceId && b.Type == "roi")
+                .ToListAsync();
+
+            var configDict = ParseConfig(device.Config) ?? [];
+            var ip = configDict.GetValueOrDefault("ip")?.ToString() ?? "";
+            var username = configDict.GetValueOrDefault("username")?.ToString() ?? "admin";
+            var password = "";
+            var rawPassword = configDict.GetValueOrDefault("password")?.ToString();
+            if (!string.IsNullOrEmpty(rawPassword))
+            {
+                try { password = _crypto.Decrypt(rawPassword); }
+                catch { password = rawPassword; }
+            }
+
+            var streamId = configDict.GetValueOrDefault("go2rtc_thermal")?.ToString();
+            if (string.IsNullOrEmpty(streamId))
+            {
+                streamId = configDict.GetValueOrDefault("go2rtc_id")?.ToString();
+            }
+
+            if (string.IsNullOrEmpty(streamId))
+                return;
+
+            var zonesList = new List<object>();
+            foreach (var b in boundaries)
+            {
+                var thresholds = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(b.ThresholdsJson))
+                {
+                    try { thresholds = JsonSerializer.Deserialize<Dictionary<string, object>>(b.ThresholdsJson) ?? []; } catch {}
+                }
+
+                double alarmVal = 70.0;
+                double warningVal = 50.0;
+                if (thresholds.TryGetValue("alarm", out var aVal) && aVal != null)
+                {
+                    try { alarmVal = Convert.ToDouble(aVal.ToString()); } catch {}
+                }
+                if (thresholds.TryGetValue("warning", out var wVal) && wVal != null)
+                {
+                    try { warningVal = Convert.ToDouble(wVal.ToString()); } catch {}
+                }
+
+                double[][] poly = [];
+                try { poly = JsonSerializer.Deserialize<double[][]>(b.PolygonJson ?? "[]") ?? []; } catch {}
+
+                zonesList.Add(new
+                {
+                    id = b.Id.ToString(),
+                    polygon = poly,
+                    pre_alarm = warningVal,
+                    alarm = alarmVal,
+                    label = b.Name ?? ""
+                });
+            }
+
+            var payload = new
+            {
+                stream_id = streamId,
+                device_id = deviceId.ToString(),
+                camera_ip = ip,
+                username = username,
+                password = password,
+                points = points.Select((p, idx) => new
+                {
+                    id = !string.IsNullOrEmpty(p.PointId) ? p.PointId : $"P{idx + 1}",
+                    x = p.Tx,
+                    y = p.Ty,
+                    pre_alarm = (double)p.PreAlarmThreshold,
+                    alarm = (double)p.AlarmThreshold,
+                    label = p.Name ?? ""
+                }).ToList(),
+                zones = zonesList
+            };
+
+            using var client = _http.CreateClient();
+            var json = JsonSerializer.Serialize(payload);
+            var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("http://localhost:8100/api/v1/config/thermal", content);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning($"[SyncThermalConfigToAIEngineAsync] AI Engine returned status {resp.StatusCode} for device {deviceId}");
+            }
+            else
+            {
+                _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully synchronized {points.Count} points and {boundaries.Count} zones for device {deviceId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"[SyncThermalConfigToAIEngineAsync] Error synchronizing device {deviceId}: {ex.Message}");
         }
     }
 

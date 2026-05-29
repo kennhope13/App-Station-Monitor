@@ -1,10 +1,34 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { stationApi, RoiPoint, CameraDevice, Boundary } from '@/services/StationApiService';
 import { GO2RTC_URL } from '@/utils/env';
+import { confirmDialog } from '@/utils/confirm';
+import { createRealtimeHub } from '@/services/realtime.service';
 
 // ============================================================
 // ThermalConfigTab — Giao diện cấu hình nhiệt (Điểm & Vùng)
 // ============================================================
+
+// Helper để sắp xếp các điểm của đa giác xoay tròn theo centroid, giúp tránh hiện tượng chéo nét
+const sortPolygonPoints = (poly: [number, number][]): [number, number][] => {
+  if (poly.length <= 3) return poly;
+  
+  // Tính tọa độ trọng tâm (centroid)
+  let cx = 0;
+  let cy = 0;
+  for (const [x, y] of poly) {
+    cx += x;
+    cy += y;
+  }
+  cx /= poly.length;
+  cy /= poly.length;
+
+  // Sắp xếp các điểm theo góc cực relative to centroid
+  return [...poly].sort((a, b) => {
+    const angleA = Math.atan2(a[1] - cy, a[0] - cx);
+    const angleB = Math.atan2(b[1] - cy, b[0] - cx);
+    return angleA - angleB;
+  });
+};
 
 export default function ThermalConfigTab({ device, onBack }: { device: CameraDevice, onBack: () => void }) {
   const deviceId = device.id;
@@ -12,6 +36,9 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
   const [points, setPoints] = useState<RoiPoint[]>([]);
   const [boundaries, setBoundaries] = useState<Boundary[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Real-time readings
+  const [readings, setReadings] = useState<Record<string, number>>({});
 
   // Mode: Point (điểm) vs Area (vùng polygon)
   const [configMode, setConfigMode] = useState<'point' | 'area'>('point');
@@ -55,6 +82,40 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Real-time setup
+  useEffect(() => {
+    if (!deviceId) return;
+
+    const hub = createRealtimeHub();
+    hub.on('SensorUpdate', (data: any[]) => {
+      if (!Array.isArray(data)) return;
+      setReadings(prev => {
+        const next = { ...prev };
+        let hasChanges = false;
+        data.forEach(item => {
+          if (item.deviceId === deviceId) {
+            next[item.pointId] = item.value;
+            hasChanges = true;
+          }
+        });
+        return hasChanges ? next : prev;
+      });
+    });
+
+    hub.start().catch(console.error);
+
+    // Initial fetch of latest readings
+    stationApi.getLatestPoints().then(data => {
+      const initial: Record<string, number> = {};
+      data.forEach(r => {
+        if (r.deviceId === deviceId) initial[r.pointId] = r.value;
+      });
+      setReadings(initial);
+    }).catch(console.error);
+
+    return () => { hub.stop(); };
+  }, [deviceId]);
 
   // Xử lý kéo bằng nút giữa (nút lăn)
   const handlePanMouseDown = (e: React.MouseEvent) => {
@@ -315,8 +376,9 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
   const handleImageClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (!wrapperRef.current) return;
     
-    // In Area mode, clicking adds a vertex to the polygon
+    // In Area mode, clicking adds a vertex to the polygon only if actively editing
     if (configMode === 'area') {
+      if (!isEditing) return;
       const rect = wrapperRef.current.getBoundingClientRect();
       let nx = (e.clientX - rect.left) / rect.width;
       let ny = (e.clientY - rect.top) / rect.height;
@@ -508,14 +570,40 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
     setIsEditing(true);
   };
 
+  useEffect(() => {
+    // Tự động chuyển sang form nhập liệu khi vẽ đủ 4 điểm
+    if (configMode === 'area' && activePolygon.length === 4 && !isEditing) {
+      openAreaEditor();
+    }
+  }, [activePolygon, configMode, isEditing]);
+
+  const syncWithAi = async () => {
+    try {
+      // Re-fetch current state to ensure we send latest to AI
+      const [pts, bnds] = await Promise.all([
+        stationApi.getRoiPoints(deviceId),
+        stationApi.getBoundaries(deviceId, 'roi')
+      ]);
+      await stationApi.syncThermalConfig(deviceId, pts, bnds);
+    } catch (err) {
+      console.warn("Failed to sync with AI Engine:", err);
+    }
+  };
+
   const saveArea = async () => {
     if (!pointName) { alert('Vui lòng nhập tên vùng'); return; }
     if (activePolygon.length < 3) { alert('Vùng phải có ít nhất 3 điểm'); return; }
+    if (!await confirmDialog({
+      title: 'Lưu vùng nhiệt',
+      message: `Xác nhận lưu vùng nhiệt "${pointName}"?`,
+      confirmText: 'Lưu lại',
+      cancelText: 'Hủy'
+    })) return;
 
     const payload: Partial<Boundary> = {
       name: pointName,
       type: 'roi',
-      polygon: JSON.stringify(activePolygon),
+      polygon: JSON.stringify(sortPolygonPoints(activePolygon)),
       thresholds: JSON.stringify({
         warning: parseFloat(preAlarm) || 50,
         alarm: parseFloat(alarm) || 70
@@ -533,16 +621,25 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
       setIsEditing(false);
       setActivePolygon([]);
       await loadData();
+      await syncWithAi();
+      onBack();
     } catch (err) {
       alert('Lỗi lưu vùng');
     }
   };
 
   const deleteArea = async (id: string) => {
-    if (!window.confirm('Xác nhận xóa vùng này?')) return;
+    if (!await confirmDialog({
+      title: 'Xóa vùng nhiệt',
+      message: 'Xác nhận xóa vùng nhiệt này?',
+      confirmText: 'Xóa vùng',
+      cancelText: 'Hủy',
+      danger: true
+    })) return;
     try {
       await stationApi.deleteBoundary(id);
       await loadData();
+      await syncWithAi();
     } catch (err) {
       alert('Lỗi xóa vùng');
     }
@@ -560,7 +657,7 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
       setAlarm((pt.alarmThreshold ?? 70).toString());
     } else {
       setEditingId(null);
-      setPointName('');
+      setPointName(`Điểm ${points.length + 1}`);
       setTx(''); setTy(''); setOx(''); setOy('');
       setPreAlarm('50'); setAlarm('70');
     }
@@ -570,6 +667,12 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
 
   const savePoint = async () => {
     if (!pointName) { alert('Vui lòng nhập tên điểm'); return; }
+    if (!await confirmDialog({
+      title: 'Lưu điểm nhiệt',
+      message: `Xác nhận lưu điểm nhiệt "${pointName}"?`,
+      confirmText: 'Lưu lại',
+      cancelText: 'Hủy'
+    })) return;
     
     let ftx = parseFloat(tx);
     let fty = parseFloat(ty);
@@ -606,6 +709,8 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
       }
       setIsEditing(false);
       await loadData();
+      await syncWithAi();
+      onBack();
     } catch (err) {
       alert('Lỗi lưu điểm');
     }
@@ -618,10 +723,30 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
       await stationApi.deleteRoiPoint(deviceId!, id);
       console.log('Deleted successfully. Reloading data...');
       await loadData();
+      await syncWithAi();
     } catch (err) {
       console.error('Delete point error:', err);
       alert('Lỗi kết nối/Xóa thất bại: ' + (err instanceof Error ? err.message : String(err)));
     }
+  };
+
+  const handleTabSwitch = async (mode: 'point' | 'area') => {
+    if (configMode === mode) return;
+    if (isEditing) {
+      const typeStr = configMode === 'point' ? 'Điểm nhiệt' : 'Vùng nhiệt';
+      if (!await confirmDialog({
+        title: 'Thay đổi chưa lưu',
+        message: `${typeStr} đang được tạo/sửa chưa lưu lại. Bạn có chắc muốn chuyển tab và hủy bỏ các thay đổi này không?`,
+        confirmText: 'Chuyển tab (Hủy)',
+        cancelText: 'Quay lại',
+        danger: true
+      })) return;
+    }
+    setConfigMode(mode);
+    setIsEditing(false);
+    setActivePolygon([]);
+    setEditingId(null);
+    setTx(''); setTy(''); setOx(''); setOy(''); // Clear point editing coordinate dots!
   };
 
   if (loading) return <div style={{ padding: 24, color: 'var(--admin-text)' }}>Đang tải...</div>;
@@ -648,8 +773,9 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
       {/* Standard Modal Header */}
       <div className="modal-header">
         <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800 }}>
-          🌡️ CẤU HÌNH NHIỆT 
+          CẤU HÌNH NHIỆT
           <span style={{ fontSize: '.7rem', background: 'var(--admin-layer-3)', padding: '2px 8px', border: '1px solid var(--admin-border)', color: 'var(--admin-accent)' }}>
+
             {device.name}
           </span>
         </h3>
@@ -671,14 +797,14 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
               <button 
                 className={`btn-industrial btn-sm ${configMode === 'point' ? 'btn-primary' : ''}`}
                 style={{ height: 26, fontSize: '.65rem', border: 'none' }}
-                onClick={() => { setConfigMode('point'); setIsEditing(false); setActivePolygon([]); }}
+                onClick={() => handleTabSwitch('point')}
               >
                 Điểm nhiệt
               </button>
               <button 
                 className={`btn-industrial btn-sm ${configMode === 'area' ? 'btn-primary' : ''}`}
                 style={{ height: 26, fontSize: '.65rem', border: 'none' }}
-                onClick={() => { setConfigMode('area'); setIsEditing(false); }}
+                onClick={() => handleTabSwitch('area')}
               >
                 Vùng nhiệt
               </button>
@@ -706,42 +832,10 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
             {configMode === 'area' && activePolygon.length > 0 && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn-industrial btn-sm" onClick={() => setActivePolygon([])}>Xóa vẽ</button>
-                <button 
-                  className="btn-industrial btn-sm"
-                  style={{
-                    height: 26,
-                    fontSize: '.65rem',
-                    background: activePolygon.length >= 3 ? '#fbbf24' : 'var(--admin-layer-3)',
-                    color: activePolygon.length >= 3 ? '#000' : 'var(--admin-text-muted)',
-                    fontWeight: activePolygon.length >= 3 ? 800 : 'normal',
-                    border: activePolygon.length >= 3 ? 'none' : '1px solid var(--admin-border)',
-                    boxShadow: activePolygon.length >= 3 ? '0 0 10px rgba(251, 191, 36, 0.5)' : 'none',
-                    cursor: activePolygon.length >= 3 ? 'pointer' : 'not-allowed'
-                  }}
-                  disabled={activePolygon.length < 3}
-                  onClick={() => openAreaEditor()}
-                >
-                  Xong vùng nhiệt
-                </button>
               </div>
             )}
 
             {loading && <span style={{ color: 'var(--admin-text-muted)', fontSize: '11px' }}>⏳ Đang tải...</span>}
-
-            {/* Calibration status badge */}
-            {(() => {
-              const saved = localStorage.getItem(calibKey);
-              if (!saved) return (
-                <span style={{ fontSize: '0.68rem', background: 'var(--admin-tag-danger-bg)', border: '1px solid var(--admin-danger)', color: 'var(--admin-tag-danger-text)', padding: '2px 8px', borderRadius: 3, fontWeight: 700, opacity: 0.8 }}>
-                  ⚠ Chưa hiệu chỉnh optical
-                </span>
-              );
-              return (
-                <span style={{ fontSize: '0.68rem', background: 'var(--admin-tag-success-bg)', border: '1px solid var(--admin-success)', color: 'var(--admin-tag-success-text)', padding: '2px 8px', borderRadius: 3, fontWeight: 700, opacity: 0.8 }}>
-                  ✓ Đã hiệu chỉnh
-                </span>
-              );
-            })()}
 
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
               <label className="checkbox-label" style={{ fontWeight: 700, fontSize: '.75rem' }}>
@@ -755,47 +849,6 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
               </div>
             </div>
           </div>
-
-          {/* Calibration Instruction Banner — hiển thị khi chưa hiệu chỉnh */}
-          {!localStorage.getItem(calibKey) && (
-            <div style={{ padding: '8px 16px', background: 'var(--admin-tag-warning-bg)', borderBottom: '1px solid var(--admin-warning)', fontSize: '0.72rem', color: 'var(--admin-tag-warning-text)', display: 'flex', alignItems: 'center', gap: 10, opacity: 0.9 }}>
-              <span style={{ fontSize: '1rem' }}>💡</span>
-              <span>
-                <b>Để điểm hiển thị đúng trên cả 2 luồng:</b> (1) Chấm điểm ở tab <b>Ảnh nhiệt</b> → (2) Chuyển sang <b>Ảnh quang</b> → click <b>cùng vị trí</b> → (3) Nhấn <b>Lưu hiệu chỉnh</b> trong bảng bên phải.
-              </span>
-            </div>
-          )}
-
-          {/* Hướng dẫn vẽ vùng nhiệt (Area Mode Instruction Banner) */}
-          {configMode === 'area' && (
-            <div style={{ 
-              padding: '10px 16px', 
-              background: activePolygon.length >= 3 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)', 
-              borderBottom: '1px solid var(--admin-border)',
-              fontSize: '0.75rem', 
-              color: activePolygon.length >= 3 ? '#3b82f6' : 'var(--admin-warning)', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 10,
-              fontWeight: 600,
-              transition: 'all 0.3s ease'
-            }}>
-              <span style={{ fontSize: '1rem' }}>📐</span>
-              {activePolygon.length === 0 ? (
-                <span>
-                  <b>Hướng dẫn vẽ vùng:</b> Click liên tiếp trên khung hình camera để nối thành các cạnh đa giác (cần ít nhất 3 đỉnh).
-                </span>
-              ) : activePolygon.length < 3 ? (
-                <span>
-                  <b>Đang vẽ vùng:</b> Đã tạo {activePolygon.length} đỉnh. Hãy click tiếp để tạo thêm đỉnh (cần tối thiểu 3 đỉnh để xong).
-                </span>
-              ) : (
-                <span>
-                  <b>Đủ điều kiện hoàn thành:</b> Nhấn nút <b style={{ background: '#fbbf24', color: '#000', padding: '2px 8px', borderRadius: 3, boxShadow: '0 0 6px rgba(251, 191, 36, 0.6)' }}>Xong vùng nhiệt</b> trên thanh công cụ, sau đó <b>nhập Tên & Ngưỡng</b> ở cột bên phải rồi nhấn <b>Lưu vùng nhiệt</b> để lưu!
-                </span>
-              )}
-            </div>
-          )}
 
           {/* Camera Viewport Canvas */}
           <div
@@ -863,11 +916,11 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                       <polygon 
                         key={b.id}
                         points={pointsStr} 
-                        fill="rgba(var(--admin-accent-rgb), 0.15)"
+                        fill="none"
                         stroke="var(--admin-accent)"
-                        strokeWidth={2}
+                        strokeWidth={1.5}
                         vectorEffect="non-scaling-stroke"
-                        opacity={0.8}
+                        opacity={0.9}
                       />
                     );
                   })}
@@ -875,20 +928,27 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                   {/* Active drawing polygon shapes */}
                   {activePolygon.length > 0 && (
                     <g>
-                      <polyline 
-                        points={activePolygon.map(p => `${p[0] * 100},${p[1] * 100}`).join(' ')} 
-                        fill="none"
-                        stroke="var(--admin-warning)"
-                        strokeWidth={2}
-                        vectorEffect="non-scaling-stroke"
-                        strokeDasharray="5 3"
-                      />
-                      {activePolygon.length > 2 && (
-                        <polygon 
-                          points={activePolygon.map(p => `${p[0] * 100},${p[1] * 100}`).join(' ')} 
-                          fill="rgba(var(--admin-warning-rgb), 0.2)"
+                      {activePolygon.length === 2 && activePolygon[0] && activePolygon[1] ? (
+                        <line
+                          x1={activePolygon[0][0] * 100}
+                          y1={activePolygon[0][1] * 100}
+                          x2={activePolygon[1][0] * 100}
+                          y2={activePolygon[1][1] * 100}
+                          stroke="var(--admin-warning)"
+                          strokeWidth={2}
+                          vectorEffect="non-scaling-stroke"
+                          strokeDasharray="5 3"
                         />
-                      )}
+                      ) : activePolygon.length > 2 ? (
+                        <polygon 
+                          points={sortPolygonPoints(activePolygon).map(p => `${p[0] * 100},${p[1] * 100}`).join(' ')} 
+                          fill="rgba(245, 158, 11, 0.15)"
+                          stroke="var(--admin-warning)"
+                          strokeWidth={2}
+                          vectorEffect="non-scaling-stroke"
+                          strokeDasharray="5 3"
+                        />
+                      ) : null}
                     </g>
                   )}
                 </svg>
@@ -900,6 +960,18 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                     poly = JSON.parse(b.polygon);
                   } catch (e) { return null; }
                   if (poly.length === 0 || !poly[0]) return null;
+
+                  const lookupId = b.id.toLowerCase();
+                  const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[b.name.toLowerCase()];
+                  let color = 'var(--admin-accent)';
+                  if (temp !== undefined && b.thresholds) {
+                    try {
+                      const t = JSON.parse(b.thresholds);
+                      if (temp >= (t.alarm || 70)) color = 'var(--admin-danger)';
+                      else if (temp >= (t.warning || 50)) color = 'var(--admin-warning)';
+                    } catch {}
+                  }
+
                   return (
                     <text 
                       key={`label-${b.id}`}
@@ -909,15 +981,15 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                       textAnchor="middle"
                       fontSize={11}
                       fontWeight="bold"
-                      style={{ fill: 'var(--admin-accent)', paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 3 }}
+                      style={{ fill: color, paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 3 }}
                     >
-                      {b.name}
+                      {b.name} {temp !== undefined ? `[${temp.toFixed(1)}°C]` : ''}
                     </text>
                   );
                 })}
 
                 {/* Active drawing vertices (orange circles) */}
-                {activePolygon.map((p, i) => (
+                {sortPolygonPoints(activePolygon).map((p, i) => (
                   <circle 
                     key={`active-vertex-${i}`} 
                     cx={`${p[0] * 100}%`} 
@@ -954,6 +1026,16 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                   
                   const px = rx * 100;
                   const py = ry * 100;
+
+                  const lookupId = (pt.pointId || pt.label || pt.name || '').toLowerCase();
+                  const temp = readings[lookupId] ?? readings[pt.pointId || ''] ?? readings[pt.label || ''] ?? readings[pt.name || ''];
+                  
+                  let color = roiColor(pt);
+                  if (temp !== undefined) {
+                    if (temp >= (pt.alarmThreshold || 70)) color = 'var(--admin-danger)';
+                    else if (temp >= (pt.warningThreshold || 50)) color = 'var(--admin-warning)';
+                  }
+
                   return (
                     <g 
                       key={pt.id} 
@@ -964,7 +1046,7 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                         cx={`${px}%`} 
                         cy={`${py}%`} 
                         r={8}
-                        fill={roiColor(pt)} 
+                        fill={color} 
                         opacity={0.85}
                         stroke="white" 
                         strokeWidth={1.5} 
@@ -978,7 +1060,7 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                         fontWeight="bold"
                         style={{ fontFamily: 'Consolas, monospace', paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.8)', strokeWidth: 4, fill: '#fff' }}
                       >
-                        {pt.label || pt.name}
+                        {pt.label || pt.name} {temp !== undefined ? `[${temp.toFixed(1)}°C]` : ''}
                       </text>
                     </g>
                   );
@@ -1067,9 +1149,16 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
             <span>
               {configMode === 'area' ? `Danh sách vùng nhiệt (${boundaries.length})` : `Danh sách điểm nhiệt (${points.length})`}
             </span>
-            {!isEditing && configMode === 'point' && (
+            {!isEditing && (
               <button 
-                onClick={() => openEditor()} 
+                onClick={() => {
+                  if (configMode === 'point') {
+                    openEditor();
+                  } else {
+                    setActivePolygon([]);
+                    openAreaEditor();
+                  }
+                }} 
                 className="btn-industrial btn-sm btn-primary"
               >
                 + Thêm
@@ -1219,9 +1308,9 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
                 marginTop: 'auto'
               }}>
                 <b style={{ color: 'var(--admin-accent)' }}>Mẹo vẽ vùng nhiệt:</b><br />
-                • Click chuột trái để thêm đỉnh.<br />
-                • Phải có ít nhất 3 đỉnh để tạo vùng.<br />
-                • Nhấn "Xong vùng nhiệt" ở toolbar để lưu.
+                • Click 4 góc **theo thứ tự vòng tròn** (clockwise hoặc counter-clockwise).<br />
+                • **Tránh click chéo** (ví dụ: trên-trái xong click chéo xuống dưới-phải) để nét vẽ không bị chéo tạo thành 2 hình tam giác.<br />
+                • **Tự động hoàn thành:** Vùng sẽ tự động đóng sau khi bạn click đủ 4 góc.
               </div>
             )}
           </div>

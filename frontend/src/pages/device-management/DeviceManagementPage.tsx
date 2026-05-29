@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { Edit2, LayoutList, Trash2, Thermometer } from 'lucide-react';
+import { Edit2, LayoutList, Trash2, Settings } from 'lucide-react';
 import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
@@ -355,7 +355,7 @@ export default function DeviceManagementPage() {
                         <ActionDropdownItem icon={<Edit2 size={14} />} label="Sửa thiết bị" onClick={() => openDeviceModal(d)} />
                         <ActionDropdownItem icon={<LayoutList size={14} />} label="Kiểm tra kết nối" onClick={() => handleTestDevice(d.id)} />
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                          <ActionDropdownItem icon={<Thermometer size={14} />} label="Cấu hình nhiệt" onClick={() => { setSelectedRoiDevice(d as CameraDevice); }} />
+                          <ActionDropdownItem icon={<Settings size={14} />} label="Cấu hình nhiệt" onClick={() => setSelectedRoiDevice(d as CameraDevice)} />
                         )}
                         <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa thiết bị" danger onClick={() => handleDelete(d)} />
                       </ActionDropdown>
@@ -427,7 +427,7 @@ export default function DeviceManagementPage() {
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
                           <button className="btn-industrial btn-sm"
                             style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                            onClick={() => { setSelectedRoiDevice(d as CameraDevice); setRoiTab(2); }}>⊕ Nhiệt</button>
+                            onClick={() => setSelectedRoiDevice(d as CameraDevice)}>Cấu hình nhiệt</button>
                         )}
                       </td>
                     </tr>
@@ -443,7 +443,7 @@ export default function DeviceManagementPage() {
 
       {/* DEVICE MODAL */}
       {isDeviceModalOpen && (
-        <div className="modal-overlay active">
+        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setIsDeviceModalOpen(false); }}>
           <div className="modal-content" style={{ maxWidth: 560 }}>
             <div className="modal-header">
               <h3>{editingId ? `Sửa: ${formData.name}` : 'Thêm thiết bị mới'}</h3>
@@ -560,19 +560,23 @@ export default function DeviceManagementPage() {
 
                 {/* Camera thường — single stream */}
                 {formData.type !== 'camera_dual' && formData.type !== 'camera_thermal' && formData.type.startsWith('camera') && (
-                  <div className="form-group" style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <label>RTSP Path
-                      <select className="form-select" style={{ marginLeft: 8, fontSize: 11, display: 'inline-block', width: 'auto' }} onChange={e => { if (e.target.value) setFormData({ ...formData, rtspPath: e.target.value }) }}>
-                        <option value="">-- Preset Hikvision --</option>
-                        <option value="/Streaming/Channels/101">Kênh chính (101)</option>
-                        <option value="/Streaming/Channels/102">Kênh phụ (102)</option>
-                        <option value="/stream1">Generic /stream1</option>
-                      </select>
-                    </label>
-                    <input type="text" className="form-input" placeholder="/Streaming/Channels/101" value={formData.rtspPath} onChange={e => setFormData({ ...formData, rtspPath: e.target.value })} />
-                    <label style={{ marginTop: 8 }}>go2rtc Stream ID <small style={{ opacity: .6 }}>(tự tạo nếu bỏ trống)</small></label>
-                    <input type="text" className="form-input" placeholder="vd: camera_152_normal" value={formData.go2rtcId} onChange={e => setFormData({ ...formData, go2rtcId: e.target.value })} />
-                  </div>
+                  <>
+                    <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                      <label>RTSP Path
+                        <select className="form-select" style={{ marginLeft: 8, fontSize: 11, display: 'inline-block', width: 'auto' }} onChange={e => { if (e.target.value) setFormData({ ...formData, rtspPath: e.target.value }) }}>
+                          <option value="">-- Preset Hikvision --</option>
+                          <option value="/Streaming/Channels/101">Kênh chính (101)</option>
+                          <option value="/Streaming/Channels/102">Kênh phụ (102)</option>
+                          <option value="/stream1">Generic /stream1</option>
+                        </select>
+                      </label>
+                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="/Streaming/Channels/101" value={formData.rtspPath} onChange={e => setFormData({ ...formData, rtspPath: e.target.value })} />
+                    </div>
+                    <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                      <label>go2rtc Stream ID <small style={{ opacity: .6 }}>(tự tạo nếu bỏ trống)</small></label>
+                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="vd: camera_152_normal" value={formData.go2rtcId} onChange={e => setFormData({ ...formData, go2rtcId: e.target.value })} />
+                    </div>
+                  </>
                 )}
 
 
@@ -602,7 +606,7 @@ export default function DeviceManagementPage() {
 
       {/* SCAN MODAL */}
       {isScanModalOpen && (
-        <div className="modal-overlay active">
+        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setIsScanModalOpen(false); }}>
           <div className="modal-content" style={{ maxWidth: 680 }}>
             <div className="modal-header">
               <h3>Khám phá thiết bị</h3>
@@ -705,7 +709,7 @@ export default function DeviceManagementPage() {
 
       {/* AUTO-CONFIGURE MODAL */}
       {autoConfigTarget && (
-        <div className="modal-overlay active">
+        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setAutoConfigTarget(null); }}>
           <div className="modal-content" style={{ maxWidth: 420 }}>
             <div className="modal-header">
               <h3>Auto-thêm camera Hikvision</h3>
@@ -754,22 +758,15 @@ export default function DeviceManagementPage() {
           </div>
         </div>
       )}
-      {/* ╔═══ ROI CONFIGURATION MODAL OVERLAY ═══╗ */}
+      {/* ╔═══ ROI CONFIGURATION POPUP DIALOG ═══╗ */}
       {selectedRoiDevice && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 1000,
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--admin-overlay)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-        }}>
-          <ThermalConfigTab
-            device={selectedRoiDevice}
-            onBack={() => setSelectedRoiDevice(null)}
-          />
+        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setSelectedRoiDevice(null); }}>
+          <div className="modal-content" style={{ maxWidth: 1400, width: '95%', height: '90vh', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <ThermalConfigTab
+              device={selectedRoiDevice}
+              onBack={() => setSelectedRoiDevice(null)}
+            />
+          </div>
         </div>
       )}
     </div>

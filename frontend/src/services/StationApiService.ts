@@ -56,6 +56,7 @@ class StationApiService {
   getThermalReadings = deviceService.getThermalReadings.bind(deviceService);
   getCameraSnapshot = deviceService.getCameraSnapshot.bind(deviceService);
   getThermalMapping = deviceService.getThermalMapping.bind(deviceService);
+  syncThermalConfig = deviceService.syncThermalConfig.bind(deviceService);
 
   // ── Boundaries ───────────────────────────────────────────
   getBoundaries = boundaryService.getBoundaries.bind(boundaryService);

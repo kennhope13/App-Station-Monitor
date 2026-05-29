@@ -512,66 +512,7 @@ public class DevicesController : ControllerBase
 
     private async Task SyncThermalPointsToAIEngineAsync(Guid deviceId)
     {
-        try
-        {
-            var device = await _db.Devices.FindAsync(deviceId);
-            if (device == null || (!device.Type.Equals("camera_dual", StringComparison.OrdinalIgnoreCase) && !device.Type.Equals("camera_thermal", StringComparison.OrdinalIgnoreCase)))
-                return;
-
-            var points = await _db.RoiPoints
-                .Where(r => r.DeviceId == deviceId)
-                .OrderBy(r => r.CreatedAt)
-                .ToListAsync();
-
-            var cfg = TryParseConfig(device.Config);
-            var ip = GetStringValue(cfg, "ip");
-            var username = GetStringValue(cfg, "username", "admin");
-            var password = "";
-            var rawPassword = GetStringValue(cfg, "password");
-            if (!string.IsNullOrEmpty(rawPassword))
-            {
-                try
-                {
-                    password = _crypto.Decrypt(rawPassword);
-                }
-                catch { password = rawPassword; }
-            }
-            var streamId = GetStringValue(cfg, "go2rtc_thermal");
-            if (string.IsNullOrEmpty(streamId))
-            {
-                streamId = GetStringValue(cfg, "go2rtc_id");
-            }
-
-            if (string.IsNullOrEmpty(streamId))
-                return;
-
-            var payload = new
-            {
-                stream_id = streamId,
-                device_id = deviceId.ToString(),
-                camera_ip = ip,
-                username = username,
-                password = password,
-                points = points.Select((p, idx) => new
-                {
-                    id = !string.IsNullOrEmpty(p.PointId) ? p.PointId : $"P{idx + 1}",
-                    x = p.Tx,
-                    y = p.Ty,
-                    pre_alarm = (double)p.PreAlarmThreshold,
-                    alarm = (double)p.AlarmThreshold,
-                    label = p.Name ?? ""
-                }).ToList()
-            };
-
-            using var client = new System.Net.Http.HttpClient();
-            var json = JsonSerializer.Serialize(payload);
-            var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
-            await client.PostAsync("http://localhost:8100/api/v1/config/thermal", content);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[SyncThermalPointsToAIEngineAsync] Error: {ex.Message}");
-        }
+        await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
     }
 
     private static string GetStringValue(Dictionary<string, object?> dict, string key, string defaultValue = "")

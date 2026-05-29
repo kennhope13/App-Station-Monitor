@@ -73,7 +73,7 @@ def _placeholder_frame(label: str):
     return frame
 
 
-# ── Config: Thermal points ────────────────────────────────────
+# ── Config: Thermal points & zones ────────────────────────────
 
 class ThermalPointConfig(BaseModel):
     id:        str
@@ -83,27 +83,36 @@ class ThermalPointConfig(BaseModel):
     alarm:     float = 70.0
     label:     str  = ""
 
+class ThermalZoneConfig(BaseModel):
+    id:          str
+    polygon:     list[list[float]]
+    pre_alarm:   float = 50.0
+    alarm:       float = 70.0
+    label:       str = ""
+
 class ThermalConfig(BaseModel):
     stream_id:  str
     device_id:  str
     camera_ip:  str
     username:   str
     password:   str
-    points:     list[ThermalPointConfig]
+    points:     list[ThermalPointConfig] = []
+    zones:      list[ThermalZoneConfig] = []
 
 @router.post("/config/thermal")
 async def configure_thermal(body: ThermalConfig):
     """
-    Cấu hình điểm đo nhiệt cho một camera thermal.
-    Gọi khi: thêm camera mới, thay đổi điểm đo, thay đổi ngưỡng cảnh báo.
+    Cấu hình điểm và vùng đo nhiệt cho một camera thermal.
     """
-    from services.thermal.thermal_analyzer import ThermalAnalyzer, ThermalPoint
+    from services.thermal.thermal_analyzer import ThermalAnalyzer, ThermalPoint, ThermalZone
 
     # Dừng analyzer cũ nếu đang chạy
     if body.stream_id in _thermal_analyzers:
         _thermal_analyzers[body.stream_id].stop()
 
     points = [ThermalPoint(**p.model_dump()) for p in body.points]
+    zones = [ThermalZone(**z.model_dump()) for z in body.zones]
+    
     analyzer = ThermalAnalyzer(
         device_id=body.device_id,
         camera_ip=body.camera_ip,
@@ -111,11 +120,12 @@ async def configure_thermal(body: ThermalConfig):
         password=body.password,
         stream_id=body.stream_id,
         points=points,
+        zones=zones
     )
     analyzer.start()
     _thermal_analyzers[body.stream_id] = analyzer
-    logger.info("[Routes] Thermal configured: %s (%d points)", body.stream_id, len(points))
-    return {"ok": True, "stream_id": body.stream_id, "points": len(points)}
+    logger.info("[Routes] Thermal configured: %s (%d points, %d zones)", body.stream_id, len(points), len(zones))
+    return {"ok": True, "stream_id": body.stream_id, "points": len(points), "zones": len(zones)}
 
 
 # ── Config: Virtual lines ─────────────────────────────────────

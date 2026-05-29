@@ -4376,19 +4376,19 @@ h2 {
 }
 
 .st-toast {
-  background: linear-gradient(145deg, hsl(220 15% 25% / 0.9), hsl(220 20% 18% / 0.9));
+  background: var(--admin-panel);
   backdrop-filter: blur(10px);
-  border: 1px solid hsl(220 15% 30%);
-  border-radius: 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 0;
   padding: 16px;
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--admin-shadow);
   transform: translateX(120%);
   opacity: 0;
   transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.4s ease;
-  color: var(--admin-text-light);
+  color: var(--admin-text);
   width: 100%;
 }
 

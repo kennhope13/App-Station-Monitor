@@ -231,7 +231,7 @@ export default function MaintenancePage() {
                 </div>
                 <div className="form-group">
                   <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>LOẠI BẢO TRÌ</label>
-                  <select className="form-select" style={{ background: 'var(--admin-layer-2)' }} value={mType} onChange={e => handleTypeChange(e.target.value)}>
+                  <select className="form-select" style={{ background: 'var(--admin-layer-2)' }} value={mType} onChange={e => setMType(e.target.value)}>
                     <option value="inspection">Kiểm tra</option>
                     <option value="repair">Sửa chữa</option>
                     <option value="cleaning">Vệ sinh</option>
@@ -255,7 +255,7 @@ export default function MaintenancePage() {
 
               <div className="form-group">
                 <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>GHI CHÚ</label>
-                <textarea rows={2} className="form-input" style={{ background: 'var(--admin-layer-2)' }} value={mNotes} onChange={e => setMNotes(e.target.value)} placeholder="Mô tả công việc..." style={{ resize: 'vertical' }}></textarea>
+                <textarea rows={2} className="form-input" style={{ background: 'var(--admin-layer-2)', resize: 'vertical' }} value={mNotes} onChange={e => setMNotes(e.target.value)} placeholder="Mô tả công việc..."></textarea>
               </div>
 
               <div className="form-group">

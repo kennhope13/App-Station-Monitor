@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore;
 using StationOS.Data;
 using StationOS.Data.Entities;
 using StationOS.Services;
+using StationOS.Services.Devices;
 
 namespace StationOS.Api.Controllers;
 
@@ -29,12 +30,14 @@ public class BoundariesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly PermissionService _permissions;
     private readonly IRealtimeNotifier _notifier;
+    private readonly DeviceService _deviceService;
 
-    public BoundariesController(AppDbContext db, PermissionService permissions, IRealtimeNotifier notifier)
+    public BoundariesController(AppDbContext db, PermissionService permissions, IRealtimeNotifier notifier, DeviceService deviceService)
     {
         _db = db;
         _permissions = permissions;
         _notifier = notifier;
+        _deviceService = deviceService;
     }
 
     /// <summary>Lấy danh sách vùng polygon đã định nghĩa trên camera.</summary>
@@ -109,6 +112,11 @@ public class BoundariesController : ControllerBase
             boundary = new { b.Id, b.Name, b.Type, polygon = b.PolygonJson }
         });
 
+        if (b.Type == "roi")
+        {
+            await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
+        }
+
         return CreatedAtAction(nameof(GetById), new { id = b.Id }, new {
             b.Id, b.DeviceId, b.Name, b.Type,
             Polygon       = b.PolygonJson,
@@ -142,6 +150,11 @@ public class BoundariesController : ControllerBase
             boundary = new { b.Id, b.Name, b.Type, polygon = b.PolygonJson }
         });
 
+        if (b.Type == "roi")
+        {
+            await _deviceService.SyncThermalConfigToAIEngineAsync(_db, b.DeviceId);
+        }
+
         return Ok(new {
             b.Id, b.DeviceId, b.Name, b.Type,
             Polygon       = b.PolygonJson,
@@ -159,6 +172,7 @@ public class BoundariesController : ControllerBase
         if (b == null) return NotFound();
 
         var deviceId = b.DeviceId;
+        var wasRoi = b.Type == "roi";
         _db.Boundaries.Remove(b);
         await _db.SaveChangesAsync();
 
@@ -167,6 +181,11 @@ public class BoundariesController : ControllerBase
             deviceId = deviceId,
             boundary = new { Id = id }
         });
+
+        if (wasRoi)
+        {
+            await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
+        }
 
         return NoContent();
     }

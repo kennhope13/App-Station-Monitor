@@ -6,7 +6,8 @@
 // ============================================================
 
 import { apiFetch, apiMutate } from './BaseApiService';
-import type { Device, CameraDevice, RoiPoint } from '@/types/api.types';
+import type { Device, CameraDevice, RoiPoint, Boundary } from '@/types/api.types';
+import { AI_ENGINE_URL } from '@/utils/env';
 
 export class DeviceService {
   /** Lấy danh sách thiết bị của trạm. config JSON được parse tự động. */
@@ -162,6 +163,53 @@ export class DeviceService {
   // Lấy thông số VisibleValidRect từ camera qua backend
   async getThermalMapping(deviceId: string): Promise<{ x: number; y: number; width: number; height: number }> {
     return apiFetch<{ x: number; y: number; width: number; height: number }>(`/devices/${deviceId}/thermal-mapping`);
+  }
+
+  /** Đồng bộ cấu hình điểm & vùng đo nhiệt sang AI Engine. */
+  async syncThermalConfig(deviceId: string, points: RoiPoint[], boundaries: Boundary[]): Promise<void> {
+    const devices = await apiFetch<any[]>(`/devices`); // Lấy list device để lấy config (ip, auth)
+    const d = devices.find(x => x.id === deviceId);
+    if (!d) return;
+
+    const cfg = typeof d.config === 'string' ? JSON.parse(d.config) : (d.config ?? {});
+    const streamId = cfg.go2rtc_thermal || cfg.go2rtc_id;
+    if (!streamId) return;
+
+    const payload = {
+      stream_id: streamId,
+      device_id: deviceId,
+      camera_ip: cfg.ip,
+      username: cfg.username || 'admin',
+      password: cfg.password || '',
+      points: points.map(pt => ({
+        id: pt.pointId || pt.id,
+        x: pt.tx ?? (pt.x ? pt.x / 100 : 0.5),
+        y: pt.ty ?? (pt.y ? pt.y / 100 : 0.5),
+        pre_alarm: pt.warningThreshold ?? pt.preAlarmThreshold ?? 50,
+        alarm: pt.alarmThreshold ?? 70,
+        label: pt.label || pt.name || ''
+      })),
+      zones: boundaries.map(b => {
+        const thresholds = typeof b.thresholds === 'string' ? JSON.parse(b.thresholds) : (b.thresholds ?? {});
+        return {
+          id: b.id,
+          polygon: typeof b.polygon === 'string' ? JSON.parse(b.polygon) : (b.polygon ?? []),
+          pre_alarm: thresholds.warning || thresholds.preAlarm || 50,
+          alarm: thresholds.alarm || 70,
+          label: b.name
+        };
+      })
+    };
+
+    try {
+      await fetch(`${AI_ENGINE_URL}/api/v1/config/thermal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      console.warn('[AI Engine] Sync failed:', err);
+    }
   }
 }
 

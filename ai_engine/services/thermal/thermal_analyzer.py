@@ -109,12 +109,7 @@ class ThermalAnalyzer:
             masked_floats = floats.reshape((h, w))[mask == 255]
             if masked_floats.size > 0:
                 max_val = float(np.max(masked_floats))
-                # Tìm tọa độ điểm nóng nhất (để vẽ lên frame)
-                # Lưu ý: argmax trả về index trong flat array của masked_floats, 
-                # ta cần tìm index trong matrix (h,w) ban đầu.
                 
-                # Cách đơn giản: lấy sub-matrix và findNonZero hoặc tương tự
-                # Nhưng matrix nhỏ, ta có thể dùng np.where trên matrix đã mask
                 full_matrix = floats.reshape((h, w))
                 full_matrix_masked = np.where(mask == 255, full_matrix, -1000.0)
                 max_idx = np.argmax(full_matrix_masked)
@@ -125,6 +120,10 @@ class ThermalAnalyzer:
                     "x": float(max_x / w),
                     "y": float(max_y / h)
                 }
+                # logger.debug("[Thermal] Zone %s: max=%.1f", zn.label, max_val)
+
+        if zone_results:
+            logger.info("[Thermal] Processed %d zones for device %s", len(zone_results), self.device_id)
 
         # 4. Gửi nhiệt độ thực tế về backend
         await self._ingest_measurements(point_temps, zone_results)

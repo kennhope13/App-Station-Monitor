@@ -63,35 +63,32 @@ export default function AppShell() {
     // Khởi tạo SignalR Hub toàn cục để lắng nghe mọi sự kiện trên mọi Tab
     const hub = createRealtimeHub();
 
-    // 1. Lắng nghe cảnh báo mới từ Rule Engine
+    // 1. Lắng nghe cảnh báo mới từ Rule Engine, Camera, Maintenance
     hub.on('AlertNew', (alert: AlertItem) => {
       invalidateAlerts(ALERT_STATUS.OPEN);
       fetchAlerts(ALERT_STATUS.OPEN, true);
+      
+      const isCritical = alert.level === 'alarm' || alert.level === 'warning';
+      if (isCritical) {
+        playAlertSound(alert.level === 'alarm' ? 'alarm' : 'warning');
+        setActiveAlert(alert);
+      } else {
+        showToast(alert.message || 'Cảnh báo mới', 'info');
+      }
     });
 
     // 2. Lắng nghe cập nhật cảnh báo
-    hub.on('AlertUpdated', (alert: AlertItem) => {
+    hub.on('AlertUpdated', () => {
       invalidateAlerts(ALERT_STATUS.OPEN);
       fetchAlerts(ALERT_STATUS.OPEN, true);
     });
 
     // 3. Lắng nghe sự kiện Camera AI
     hub.on('CameraEvent', (evt: any) => {
+      // Chúng ta không gọi setActiveAlert ở đây nữa vì AlertNew sẽ hiển thị Popup 
+      // với đầy đủ ảnh và thông tin chi tiết (do backend đã thống nhất gửi chung vào AlertNew)
       const isCritical = ['fire', 'thermal_hotspot', 'intrusion'].includes(evt.detectionType);
-      playAlertSound(isCritical ? 'alarm' : 'warning');
-      
-      if (isCritical) {
-        const mockAlert: any = {
-          id: evt.alertId || evt.id,
-          level: 'alarm',
-          status: 'open',
-          message: `[AI] ${evt.cameraName || 'Camera'}: ${evt.detectionType.toUpperCase()}${evt.maxTemp ? ` (${evt.maxTemp.toFixed(1)}°C)` : ''}`,
-          triggeredAt: evt.detectedAt,
-          deviceId: evt.cameraId,
-          metadata: evt.metadata ? (typeof evt.metadata === 'string' ? JSON.parse(evt.metadata) : evt.metadata) : {}
-        };
-        setActiveAlert(mockAlert);
-      } else {
+      if (!isCritical) {
         showToast(`Camera: ${evt.detectionType.toUpperCase()}`, 'info');
       }
     });

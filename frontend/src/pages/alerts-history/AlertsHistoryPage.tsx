@@ -493,7 +493,7 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert }: { data: AlertDe
   };
 
   const fullUrl = resolveUrl(data, 'full');
-  const hasVideo = !!(data.videoUrl || data.VideoUrl);
+  const hasVideo = !!data.videoUrl;
 
   return (
     <>

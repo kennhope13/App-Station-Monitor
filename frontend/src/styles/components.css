@@ -255,6 +255,8 @@
 
 .form-input,
 .form-select {
+    width: 100%;
+    box-sizing: border-box;
     padding: 10px 14px;
     border-radius: 0px;
     border: 1px solid var(--admin-border, var(--admin-border));

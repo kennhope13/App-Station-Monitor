@@ -41,14 +41,16 @@ public class ThermalEvidenceService
         Guid stationId,
         CancellationToken ct)
     {
+        // Ưu tiên camera_dual rồi đến camera_thermal
         var camera = await db.Devices
-            .Where(d => d.StationId == stationId && d.Type == "camera_thermal")
-            .OrderBy(d => d.Name)
+            .Where(d => d.StationId == stationId && (d.Type == "camera_dual" || d.Type == "camera_thermal"))
+            .OrderByDescending(d => d.Type == "camera_dual")
+            .ThenBy(d => d.Name)
             .FirstOrDefaultAsync(ct);
 
         if (camera == null)
         {
-            _logger.LogWarning("[Evidence] Khong tim thay camera_thermal cho station {StationId}", stationId);
+            _logger.LogWarning("[Evidence] Khong tim thay camera (dual/thermal) cho station {StationId}", stationId);
             return null;
         }
 
@@ -59,11 +61,12 @@ public class ThermalEvidenceService
             return new ThermalEvidenceResult(camera);
         }
 
-        var streamId = GetCfg(cfg, "go2rtc_id");
+        // Ưu tiên go2rtc_thermal cho camera nhiệt/dual
+        var streamId = GetCfg(cfg, "go2rtc_thermal") ?? GetCfg(cfg, "go2rtc_id") ?? GetCfg(cfg, "go2rtc_optical");
         var ip = GetCfg(cfg, "ip");
         var user = GetCfg(cfg, "username") ?? "admin";
         var pass = GetCfg(cfg, "password") ?? "admin";
-        var rtspPath = GetCfg(cfg, "rtsp_path") ?? "/Streaming/Channels/201";
+        var rtspPath = GetCfg(cfg, "rtsp_thermal") ?? GetCfg(cfg, "rtsp_path") ?? "/Streaming/Channels/201";
 
         var mediaRoot = Path.Combine(_env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot"), "media");
         var detectionsDir = Path.Combine(mediaRoot, "detections");

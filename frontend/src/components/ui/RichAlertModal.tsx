@@ -12,10 +12,19 @@ interface RichAlertModalProps {
 export default function RichAlertModal({ alert, onClose }: RichAlertModalProps) {
   const navigate = useNavigate();
   
+  // Parse metadata
+  let meta: any = {};
+  if (typeof alert.metadata === 'string') {
+    try { meta = JSON.parse(alert.metadata); } catch {}
+  } else if (alert.metadata) {
+    meta = alert.metadata;
+  }
+
   // Xử lý URL ảnh
-  const imageUrl = alert.imageUrl 
-    ? (alert.imageUrl.startsWith('http') ? alert.imageUrl : `${API_BASE_URL}${alert.imageUrl}`) 
-    : (alert.metadata?.snapshotUrl ? `${API_BASE_URL}${alert.metadata.snapshotUrl}` : null);
+  let rawUrl = alert.thumbnailUrl || alert.imageUrl || meta.snapshotUrl || meta.thumbnailUrl;
+  const imageUrl = rawUrl
+    ? (rawUrl.startsWith('http') || rawUrl.startsWith('blob:') || rawUrl.startsWith('data:') ? rawUrl : `${API_BASE_URL}${rawUrl}`)
+    : null;
 
   const handleContainerClick = () => {
     navigate(`/alerts-history?alertId=${alert.id}`);

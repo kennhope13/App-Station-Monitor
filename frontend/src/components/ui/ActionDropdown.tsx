@@ -75,7 +75,7 @@ export default function ActionDropdown({ children }: ActionDropdownProps) {
 }
 
 interface ActionDropdownItemProps {
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   label: string;
   onClick: (e: React.MouseEvent) => void;
   danger?: boolean;
@@ -86,7 +86,7 @@ export function ActionDropdownItem({ icon, label, onClick, danger }: ActionDropd
     <button 
       className={`dropdown-item ${danger ? 'danger' : ''}`} 
       style={{ 
-        display: 'flex', alignItems: 'center', gap: 10,
+        display: 'flex', alignItems: 'center', gap: icon ? 10 : 0,
         padding: '8px 12px', border: 'none', background: 'transparent',
         width: '100%', textAlign: 'left', cursor: 'pointer',
         fontSize: '0.78rem', fontWeight: 600, borderRadius: 4,
@@ -100,7 +100,7 @@ export function ActionDropdownItem({ icon, label, onClick, danger }: ActionDropd
       onMouseEnter={(e) => { e.currentTarget.style.background = danger ? 'rgba(239,68,68,0.1)' : 'var(--admin-hover)'; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
     >
-      <span style={{ display: 'flex', opacity: 0.7 }}>{icon}</span>
+      {icon && <span style={{ display: 'flex', opacity: 0.7 }}>{icon}</span>}
       <span>{label}</span>
     </button>
   );

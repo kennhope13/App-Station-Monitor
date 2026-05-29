@@ -15182,6 +15182,8 @@ body.has-critical-banner .panels-grid {
 
 .form-input,
 .form-select {
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px;
   border: 1px solid var(--admin-border);
   background: var(--admin-bg);
@@ -15191,6 +15193,8 @@ body.has-critical-banner .panels-grid {
 }
 
 .form-textarea {
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px;
   border: 1px solid var(--admin-border);
   background: var(--admin-bg);

@@ -193,153 +193,23 @@ export default function RealtimeMonitorPage() {
   const onlineCount = cameras.filter(c => deviceStatus[c.id.replace(/_(optical|thermal)$/, '')] === 'online').length;
   const displayCams = selectedCamFilter ? cameras.filter(c => c.id === selectedCamFilter) : cameras;
 
-  const renderOverlayPoints = (cam: CameraDevice) => {
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
-    const points = roiPoints[baseDeviceId] || [];
-    const readings = roiReadings[baseDeviceId] || {};
-    const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
-
-    return points.map((pt, index) => {
-      const txVal = pt.tx !== undefined && pt.tx !== null ? pt.tx : (pt.x !== undefined && pt.x !== null ? pt.x / 100 : 0);
-      const tyVal = pt.ty !== undefined && pt.ty !== null ? pt.ty : (pt.y !== undefined && pt.y !== null ? pt.y / 100 : 0);
-      
-      let rx = txVal;
-      let ry = tyVal;
-
-      if (!isThermal) {
-        const oxVal = pt.ox !== undefined && pt.ox !== null ? pt.ox : txVal;
-        const oyVal = pt.oy !== undefined && pt.oy !== null ? pt.oy : tyVal;
-
-        const cfg = cam.config || {};
-        const vvrRaw = (cfg as any).visible_valid_rect;
-        const vvr = vvrRaw && typeof vvrRaw.x === 'number'
-          ? vvrRaw
-          : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 }; // Hikvision default
-
-        if (Math.abs(oxVal - txVal) < 0.0001 && Math.abs(oyVal - tyVal) < 0.0001) {
-          rx = Math.max(0, Math.min(1, txVal * vvr.width + vvr.x));
-          ry = Math.max(0, Math.min(1, tyVal * vvr.height + vvr.y));
-        } else {
-          rx = oxVal;
-          ry = oyVal;
-        }
-      }
-
-      if (rx === 0 && ry === 0) return null;
-
-      const lookupId = pt.pointId || `P${index + 1}`;
-      const temp = readings[lookupId];
-      
-      let color = pt.color || '#10b981';
-      if (temp !== undefined) {
-        if (pt.alarmThreshold && temp >= pt.alarmThreshold) {
-          color = '#ef4444';
-        } else if (pt.preAlarmThreshold && temp >= pt.preAlarmThreshold) {
-          color = '#fbbf24';
-        }
-      }
-
-      return (
-        <div
-          key={pt.id}
-          className="nvr-roi-marker"
-          style={{
-            position: 'absolute',
-            left: `${rx * 100}%`,
-            top: `${ry * 100}%`,
-            transform: 'translate(-50%, -50%)',
-            pointerEvents: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            zIndex: 10,
-          }}
-        >
-          <div
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              border: `1.5px solid ${color}`,
-              background: 'rgba(0, 0, 0, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: `0 0 8px ${color}44`,
-              flexShrink: 0
-            }}
-          >
-            <div style={{ width: 2, height: 2, borderRadius: '50%', background: color }} />
-          </div>
-          
-          <div
-            className="nvr-roi-label"
-            style={{
-              background: 'rgba(13, 17, 23, 0.8)',
-              backdropFilter: 'blur(4px)',
-              border: `1px solid ${color}44`,
-              borderRadius: 3,
-              padding: '1px 5px',
-              fontSize: '0.65rem',
-              color: '#fff',
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-              fontFamily: 'var(--font-mono)',
-              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          >
-            <span className="nvr-roi-name" style={{ 
-              fontWeight: 500, 
-              color: '#cbd5e1',
-              maxWidth: 0, 
-              overflow: 'hidden', 
-              display: 'inline-block',
-              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)' 
-            }}>
-              {pt.name}
-            </span>
-            <span style={{ 
-              fontWeight: 800, 
-              color: color,
-              marginLeft: 0,
-              transition: 'margin 0.2s'
-            }}>
-              {temp !== undefined ? `${temp.toFixed(1)}°` : '--°'}
-            </span>
-          </div>
-        </div>
-      );
-    });
-  };
-
   const renderOverlayBoundaries = (cam: CameraDevice) => {
     const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
     const boundaries = roiBoundaries[baseDeviceId] || [];
     const readings = roiReadings[baseDeviceId] || {};
     const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
 
-    // VisibleValidRect từ Hikvision ISAPI metadata (hoặc config camera)
-    // Công thức: optical = thermal_norm * vvr.width + vvr.x
     const cfg = cam.config || {};
     const vvrRaw = (cfg as any).visible_valid_rect;
     const vvr = vvrRaw && typeof vvrRaw.x === 'number'
       ? vvrRaw
-      : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 }; // Hikvision default
+      : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 };
 
     return boundaries.map((b, index) => {
       let poly: [number, number][] = [];
-      try {
-        poly = JSON.parse(b.polygon);
-      } catch (e) {
-        console.error("Invalid polygon JSON", b.polygon);
-        return null;
-      }
-
+      try { poly = JSON.parse(b.polygon); } catch { return null; }
       if (poly.length < 3) return null;
 
-      // Áp dụng VVR nếu không phải camera nhiệt (là camera quang học)
       const mappedPoly = poly.map(([txVal, tyVal]) => {
         let rx = txVal;
         let ry = tyVal;
@@ -352,12 +222,10 @@ export default function RealtimeMonitorPage() {
 
       const pointsStr = mappedPoly.map(p => `${p[0] * 100},${p[1] * 100}`).join(' ');
 
-      // Lấy nhiệt độ của vùng (ROI)
-      const lookupId = b.name || `Vùng ${index + 1}`;
-      const temp = readings[lookupId] ?? readings[b.id] ?? readings[`R${index + 1}`];
+      const lookupId = b.id.toLowerCase();
+      const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
 
-      // Xác định màu sắc dựa trên nhiệt độ hiện tại và ngưỡng
-      let color = '#3b82f6'; // mặc định xanh lam
+      let color = '#3b82f6';
       let warningTemp = 50;
       let alarmTemp = 70;
       if (b.thresholds) {
@@ -369,75 +237,192 @@ export default function RealtimeMonitorPage() {
       }
 
       if (temp !== undefined) {
-        if (temp >= alarmTemp) {
-          color = '#ef4444'; // đỏ nguy hiểm
-        } else if (temp >= warningTemp) {
-          color = '#fbbf24'; // vàng cảnh báo
+        if (temp >= alarmTemp) color = '#ef4444';
+        else if (temp >= warningTemp) color = '#fbbf24';
+      }
+
+      return (
+        <polygon
+          key={b.id}
+          points={pointsStr}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+          opacity={0.9}
+        />
+      );
+    });
+  };
+
+  const renderOverlayLabels = (cam: CameraDevice) => {
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const points = roiPoints[baseDeviceId] || [];
+    const boundaries = roiBoundaries[baseDeviceId] || [];
+    const readings = roiReadings[baseDeviceId] || {};
+    const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
+    const cfg = cam.config || {};
+    const vvrRaw = (cfg as any).visible_valid_rect;
+    const vvr = vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 };
+
+    const labels: React.ReactNode[] = [];
+
+    // 1. Boundary Labels
+    boundaries.forEach((b, index) => {
+      let poly: [number, number][] = [];
+      try { poly = JSON.parse(b.polygon); } catch { return; }
+      if (poly.length < 1) return;
+
+      const firstPt = poly[0];
+      if (!firstPt) return;
+      let rx = firstPt[0];
+      let ry = firstPt[1];
+      if (!isThermal) {
+        rx = rx * vvr.width + vvr.x;
+        ry = ry * vvr.height + vvr.y;
+      }
+
+      const lookupId = b.id.toLowerCase();
+      const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
+      
+      let color = '#3b82f6';
+      let warningTemp = 50, alarmTemp = 70;
+      if (b.thresholds) {
+        try {
+          const t = JSON.parse(b.thresholds);
+          warningTemp = t.warning || 50; alarmTemp = t.alarm || 70;
+        } catch {}
+      }
+      if (temp !== undefined) {
+        if (temp >= alarmTemp) color = '#ef4444';
+        else if (temp >= warningTemp) color = '#fbbf24';
+      }
+
+      labels.push(
+        <div
+          key={`label-b-${b.id}`}
+          style={{
+            position: 'absolute',
+            left: `${rx * 100}%`,
+            top: `${ry * 100}%`,
+            transform: 'translate(-50%, -100%)',
+            pointerEvents: 'none',
+            zIndex: 10,
+            marginBottom: 4
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(13, 17, 23, 0.95)',
+              backdropFilter: 'blur(4px)',
+              border: `1.5px solid ${color}`,
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: `0 4px 12px rgba(0,0,0,0.7), 0 0 10px ${color}44`,
+              fontFamily: 'var(--font-mono)',
+              animation: temp !== undefined ? 'pulse-subtle 2s infinite' : 'none'
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{b.name}</span>
+            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+              {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
+            </span>
+          </div>
+        </div>
+      );
+    });
+
+    // 2. Point Labels
+    points.forEach((pt, index) => {
+      const txVal = pt.tx !== undefined && pt.tx !== null ? pt.tx : (pt.x !== undefined && pt.x !== null ? pt.x / 100 : 0);
+      const tyVal = pt.ty !== undefined && pt.ty !== null ? pt.ty : (pt.y !== undefined && pt.y !== null ? pt.y / 100 : 0);
+      
+      let rx = txVal;
+      let ry = tyVal;
+
+      if (!isThermal) {
+        const oxVal = pt.ox !== undefined && pt.ox !== null ? pt.ox : txVal;
+        const oyVal = pt.oy !== undefined && pt.oy !== null ? pt.oy : tyVal;
+        if (Math.abs(oxVal - txVal) < 0.0001 && Math.abs(oyVal - tyVal) < 0.0001) {
+          rx = Math.max(0, Math.min(1, txVal * vvr.width + vvr.x));
+          ry = Math.max(0, Math.min(1, tyVal * vvr.height + vvr.y));
+        } else {
+          rx = oxVal;
+          ry = oyVal;
         }
       }
 
-      // Tọa độ để hiển thị nhãn (ở đỉnh đầu tiên)
-      const firstPt = mappedPoly[0];
-      const labelX = (firstPt ? firstPt[0] : 0) * 100;
-      const labelY = (firstPt ? firstPt[1] : 0) * 100;
+      if (rx === 0 && ry === 0) return;
 
-      return (
-        <g key={b.id}>
-          {/* Vẽ đa giác trong hệ tọa độ tỷ lệ 0-100 */}
-          <svg
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            <polygon
-              points={pointsStr}
-              fill={`${color}22`}
-              stroke={color}
-              strokeWidth={2}
-              vectorEffect="non-scaling-stroke"
-              opacity={0.8}
-            />
-          </svg>
-          {/* Nhãn và nhiệt độ của vùng */}
-          <foreignObject
-            x={`${labelX}%`}
-            y={`${labelY}%`}
-            width="120"
-            height="35"
+      // Fallback lookup strategy for point readings (support P1, p1, 1, UUID etc.)
+      const ptIdLower = pt.pointId ? pt.pointId.toLowerCase() : '';
+      const nameLower = pt.name ? pt.name.toLowerCase() : '';
+      const temp = 
+        (pt.pointId ? (readings[pt.pointId] ?? readings[ptIdLower]) : undefined) ??
+        (pt.name ? (readings[pt.name] ?? readings[`P${pt.name}`] ?? readings[`p${pt.name}`] ?? readings[`P${nameLower}`] ?? readings[`p${nameLower}`]) : undefined) ??
+        readings[pt.id] ??
+        readings[pt.id.toLowerCase()] ??
+        readings[`P${index + 1}`] ??
+        readings[`p${index + 1}`];
+      
+      let color = pt.color || '#10b981';
+      if (temp !== undefined) {
+        if (pt.alarmThreshold && temp >= pt.alarmThreshold) color = '#ef4444';
+        else if (pt.preAlarmThreshold && temp >= pt.preAlarmThreshold) color = '#fbbf24';
+      }
+
+      labels.push(
+        <div
+          key={`label-p-${pt.id}`}
+          style={{
+            position: 'absolute',
+            left: `${rx * 100}%`,
+            top: `${ry * 100}%`,
+            transform: 'translate(-50%, -50%)',
+            pointerEvents: 'none',
+            zIndex: 11,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5
+          }}
+        >
+          <div style={{ width: 10, height: 10, borderRadius: '50%', border: `1.5px solid ${color}`, background: 'rgba(0, 0, 0, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 8px ${color}44`, flexShrink: 0 }}>
+            <div style={{ width: 2, height: 2, borderRadius: '50%', background: color }} />
+          </div>
+          
+          <div
             style={{
-              overflow: 'visible',
-              transform: 'translate(-50%, -100%)',
-              pointerEvents: 'none'
+              background: 'rgba(13, 17, 23, 0.9)',
+              backdropFilter: 'blur(4px)',
+              border: `1.5px solid ${color}`,
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: `0 4px 12px rgba(0,0,0,0.6), 0 0 10px ${color}33`,
+              fontFamily: 'var(--font-mono)',
+              animation: temp !== undefined ? 'pulse-subtle 2s infinite' : 'none'
             }}
           >
-            <div
-              style={{
-                background: 'rgba(13, 17, 23, 0.85)',
-                backdropFilter: 'blur(4px)',
-                border: `1px solid ${color}66`,
-                borderRadius: 3,
-                padding: '2px 6px',
-                fontSize: '0.65rem',
-                color: '#fff',
-                whiteSpace: 'nowrap',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-                fontFamily: 'var(--font-mono)'
-              }}
-            >
-              <span style={{ fontWeight: 500, color: '#cbd5e1' }}>
-                {b.name}
-              </span>
-              <span style={{ fontWeight: 800, color: color }}>
-                {temp !== undefined ? `${temp.toFixed(1)}°` : '--°'}
-              </span>
-            </div>
-          </foreignObject>
-        </g>
+            <span style={{ fontWeight: 600, color: '#e2e8f0', marginRight: 6 }}>{pt.name}</span>
+            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+              {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
+            </span>
+          </div>
+        </div>
       );
     });
+
+    return labels;
   };
 
   // Render Grid Cells
@@ -523,6 +508,8 @@ export default function RealtimeMonitorPage() {
               }}
             >
               <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
                 style={{
                   position: 'absolute',
                   inset: 0,
@@ -535,7 +522,7 @@ export default function RealtimeMonitorPage() {
               >
                 {renderOverlayBoundaries(cam)}
               </svg>
-              {renderOverlayPoints(cam)}
+              {renderOverlayLabels(cam)}
             </div>
           )}
         </div>

@@ -48,3 +48,19 @@ test_files/cam153_snapshots/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Logs and PIDs
+*.log
+.pids
+
+# Backups
+backup/
+
+# Scratch and test scripts
+scratch_*.py
+test_maintenance_data.py
+thermal_realtime_stream.py
+
+# Generated media / reports
+backend/StationOS.Api/wwwroot/media/detections/
+backend/StationOS.Api/wwwroot/reports/
