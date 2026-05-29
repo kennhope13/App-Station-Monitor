@@ -8,7 +8,8 @@ import { useState, useEffect } from 'react';
 import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
-import { Thermometer, Zap } from 'lucide-react';
+import { Thermometer, Zap, Activity, Edit2, Trash2 } from 'lucide-react';
+import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
 // Sub-components
 import DeviceModal from './components/DeviceModal';
@@ -155,24 +156,39 @@ export default function DeviceManagementPage() {
                     {d.status === 'online' ? ' 🟢 Online' : ' Offline'}
                   </td>
                   <td style={{ fontSize: '.8rem', opacity: .7 }}>{new Date(d.createdAt).toLocaleDateString('vi-VN')}</td>
-                  <td style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn-industrial btn-sm" onClick={() => handleTestDevice(d.id)}>Kiểm tra</button>
-                    <button className="btn-industrial btn-sm" onClick={() => openDeviceModal(d)}>Sửa</button>
-                    {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                      <button className="btn-industrial btn-sm"
-                        style={{ background: '#f59e0b', color: '#fff', borderColor: '#f59e0b' }}
-                        onClick={() => { setPreSelectedThermalCam(d as CameraDevice); setRoiTab(1); }}>
-                        <Thermometer size={11} style={{ display: 'inline', marginRight: 2 }} />Điểm nhiệt
-                      </button>
-                    )}
-                    {d.type === 'camera_pd' && (
-                      <button className="btn-industrial btn-sm"
-                        style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                        onClick={() => { setPreSelectedPdCam(d as CameraDevice); setRoiTab(2); }}>
-                        <Zap size={11} style={{ display: 'inline', marginRight: 2 }} />Vẽ vùng PD
-                      </button>
-                    )}
-                    <button className="btn-industrial btn-sm btn-danger" onClick={() => handleDelete(d)}>Xóa</button>
+                  <td style={{ textAlign: 'center' }}>
+                    <ActionDropdown>
+                      <ActionDropdownItem
+                        icon={<Activity size={14} />}
+                        label="Kiểm tra"
+                        onClick={() => handleTestDevice(d.id)}
+                      />
+                      <ActionDropdownItem
+                        icon={<Edit2 size={14} />}
+                        label="Sửa"
+                        onClick={() => openDeviceModal(d)}
+                      />
+                      {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
+                        <ActionDropdownItem
+                          icon={<Thermometer size={14} />}
+                          label="Điểm nhiệt"
+                          onClick={() => { setPreSelectedThermalCam(d as CameraDevice); setRoiTab(1); }}
+                        />
+                      )}
+                      {d.type === 'camera_pd' && (
+                        <ActionDropdownItem
+                          icon={<Zap size={14} />}
+                          label="Vẽ vùng PD"
+                          onClick={() => { setPreSelectedPdCam(d as CameraDevice); setRoiTab(2); }}
+                        />
+                      )}
+                      <ActionDropdownItem
+                        icon={<Trash2 size={14} />}
+                        label="Xóa"
+                        danger
+                        onClick={() => handleDelete(d)}
+                      />
+                    </ActionDropdown>
                   </td>
                 </tr>
               ))}

@@ -4087,7 +4087,7 @@ input:checked+.slider-industrial:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 0 0 6px 0;
   flex-shrink: 0;
@@ -4123,7 +4123,7 @@ input:checked+.slider-industrial:before {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .page-toolbar-cell {
