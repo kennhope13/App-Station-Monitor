@@ -1,6 +1,5 @@
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, X, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { AlertTriangle, X, Image as ImageIcon } from 'lucide-react';
 import type { AlertItem } from '@/types/api.types';
 import { API_BASE_URL } from '@/utils/env';
 

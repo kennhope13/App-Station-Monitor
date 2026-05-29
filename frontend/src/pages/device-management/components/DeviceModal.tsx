@@ -207,7 +207,7 @@ export default function DeviceModal({ open, editingDevice, stationId, onClose, o
                       setShowPassword(prev => {
                         const next = !prev;
                         if (next && editingId && formData.password === '***') {
-                          stationApi.getCredentials(editingId).then(creds => {
+                          stationApi.getCredentials(editingId).then((creds: any) => {
                             setFetchedPassword(creds.password);
                             setFormData(f => ({ ...f, password: creds.password }));
                           }).catch(() => {});
