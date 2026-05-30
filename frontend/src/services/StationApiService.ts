@@ -14,6 +14,7 @@ import { systemService } from './api/SystemService';
 import { ruleService } from './api/RuleService';
 import { logService } from './api/LogService';
 import { boundaryService } from './api/BoundaryService';
+import { aiService, type PredictionHistoryPoint, type TrainingStatus } from './api/AiService';
 
 import type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
@@ -27,10 +28,16 @@ export type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
   AlertHistoryEntry, AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry, UserItem,
   SldPoint, SldUnpinnedDevice, SldData, ReportItem, MaintenanceTask, MaintenanceSuggestion,
-  SmtpConfig, HealthScore, TrendItem, SyncStatus, Boundary
+  SmtpConfig, HealthScore, TrendItem, SyncStatus, Boundary,
+  PredictionHistoryPoint, TrainingStatus
 };
 
 class StationApiService {
+  // ── AI Engine ──────────────────────────────────────────────
+  getAiPredictionHistory = aiService.getPredictionHistory.bind(aiService);
+  getAiTrainingStatus = aiService.getTrainingStatus.bind(aiService);
+  triggerAiRetrain = aiService.triggerRetrain.bind(aiService);
+
   // ── Stations ──────────────────────────────────────────────
   getStations = stationService.getStations.bind(stationService);
   getFirstStationId = stationService.getFirstStationId.bind(stationService);

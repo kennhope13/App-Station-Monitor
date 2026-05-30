@@ -417,6 +417,7 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
         };
         await stationApi.createRoiPoint(deviceId, payload);
         await loadData();
+        await syncWithAi(); // ĐỒNG BỘ NGAY SAU KHI THÊM NHANH
       } catch (err) {
         console.error("Lỗi thêm nhanh điểm đo:", err);
       }
@@ -499,6 +500,7 @@ export default function ThermalConfigTab({ device, onBack }: { device: CameraDev
         warningThreshold: ptToSave.warningThreshold,
       };
       await stationApi.updateRoiPoint(deviceId, ptToSave.id, payload);
+      await syncWithAi(); // ĐỒNG BỘ NGAY SAU KHI KÉO THẢ
     } catch (err) {
       console.error('Lỗi khi kéo thả lưu điểm', err);
     }

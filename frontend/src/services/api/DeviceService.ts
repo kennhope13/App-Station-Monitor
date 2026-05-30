@@ -207,7 +207,7 @@ export class DeviceService {
     };
 
     try {
-      await fetch(`${AI_ENGINE_URL}/api/v1/config/thermal`, {
+      await fetch(`${AI_ENGINE_URL}/config/thermal`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

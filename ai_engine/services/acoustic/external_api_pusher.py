@@ -16,11 +16,12 @@ class ExternalApiPusher(threading.Thread):
     Module đẩy dữ liệu ảnh nhiệt (P1-P6) sang Jetson AI đối tác mỗi 5 phút,
     đồng thời định kỳ mô phỏng dự đoán phóng điện để phục vụ giao diện 2x2.
     """
-    def __init__(self, camera_ip, backend_url, data_dir):
+    def __init__(self, camera_ip, backend_url, data_dir, device_id=""):
         super().__init__(daemon=True)
         self.camera_ip = camera_ip
         self.backend_url = backend_url
         self.data_dir = data_dir
+        self.device_id = device_id
         self.running = True
         self._stop_event = threading.Event()
         
@@ -37,32 +38,48 @@ class ExternalApiPusher(threading.Thread):
         logger.info("[ExternalPusher] Đang chạy với Jetson Target: %s", EXTERNAL_API_URL)
         session = requests.Session()
         
-        last_ai_send = 0
+        last_ai_send = 0.0
         while self.running:
-            try:
-                # ── PHẦN 1: ĐO ĐẠC VÀ ĐẨY DỮ LIỆU ĐIỂM NHIỆT ──
-                # Lấy danh sách điểm đo hiện có trong các analyzer
-                from services.thermal.thermal_analyzer import _annotated_frames
-                from api.routes import _thermal_analyzers
-                
-                points_list = []
-                live_temps = {}
-                
-                # Gom dữ liệu nhiệt độ từ tất cả các analyzer đang chạy
-                for analyzer in list(_thermal_analyzers.values()):
-                    if analyzer.camera_ip == self.camera_ip:
-                        # Điểm đo thực tế
-                        for pt in analyzer.points:
-                            val = analyzer._parse_temp_xml("") # lấy giá trị thực từ cache nếu có
-                            # Tuy nhiên, để linh hoạt, ta sẽ lấy trực tiếp từ cache nhiệt độ thời gian thực
-                            # Lấy các điểm đo P1-P20
-                            pass
-
-                # Để tối giản và chính xác, ta sẽ import các biến toàn cục trực tiếp
-                # từ analyzer chính đang hoạt động.
-                
-            except Exception as e:
-                logger.debug("[ExternalPusher] Error gathering thermal data: %s", e)
+            # ── PHẦN 1: ĐO ĐẠC VÀ ĐẨY DỮ LIỆU ĐIỂM NHIỆT (MỖI 5 PHÚT = 300 GIÂY) ──
+            now = time.time()
+            if now - last_ai_send >= 300.0:
+                try:
+                    from api.routes import _thermal_analyzers
+                    
+                    points_list = []
+                    
+                    # Gom dữ liệu nhiệt độ từ tất cả các analyzer đang chạy
+                    for analyzer in list(_thermal_analyzers.values()):
+                        # Nhận diện đúng camera dựa trên IP hoặc DeviceId
+                        if analyzer.camera_ip == self.camera_ip or getattr(analyzer, "device_id", "") == self.device_id:
+                            last_temps = getattr(analyzer, "last_point_temps", {})
+                            for pt in analyzer.points:
+                                val = last_temps.get(pt.id)
+                                if val is not None:
+                                    points_list.append({
+                                        "id": pt.label or pt.id,
+                                        "temperature": val
+                                    })
+                            
+                            last_zones = getattr(analyzer, "last_zone_results", {})
+                            for zn in analyzer.zones:
+                                res = last_zones.get(zn.id)
+                                if res is not None:
+                                    points_list.append({
+                                        "id": zn.label or zn.id,
+                                        "temperature": res["max"]
+                                    })
+                    
+                    if points_list:
+                        payload = {
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "points": points_list
+                        }
+                        resp = session.post(EXTERNAL_API_URL, json=payload, timeout=5.0)
+                        logger.info("[ExternalPusher] Sent thermal points to partner Jetson (%s), Status: %d", EXTERNAL_API_URL, resp.status_code)
+                        last_ai_send = now
+                except Exception as e:
+                    logger.error("[ExternalPusher] Error pushing thermal data to partner: %s", e)
                 
             # Mô phỏng dữ liệu phóng điện + tần số dựa trên cảm biến thực tế thu được từ luồng camera 153
             try:

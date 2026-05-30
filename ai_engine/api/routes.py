@@ -111,28 +111,54 @@ async def configure_thermal(body: ThermalConfig):
     """
     Cấu hình điểm và vùng đo nhiệt cho một camera thermal.
     """
-    from services.thermal.thermal_analyzer import ThermalAnalyzer, ThermalPoint, ThermalZone
+    # 1. Cập nhật ngay danh sách targets cho AI Forecasting (Quan trọng để aggregator nhận data)
+    new_targets = []
+    for pt in body.points:
+        new_targets.append(pt.label or pt.id)
+    for zn in body.zones:
+        new_targets.append(zn.label or zn.id)
+        
+    if isinstance(new_targets, list):
+        current_cfg = load_or_create_model_config()
+        old_targets = current_cfg.get("targets", [])
+        if old_targets != new_targets:
+            current_cfg["targets"] = new_targets
+            save_model_config(current_cfg)
+            logger.info("[Routes] Forecasting targets synchronized: %s", new_targets)
+            
+            # Auto-trigger model retraining in background thread
+            if _model_status["status"] != "Training...":
+                import asyncio
+                asyncio.create_task(asyncio.to_thread(simulate_training_task))
+                logger.info("[Routes] Background retraining triggered automatically due to targets update.")
 
-    # Dừng analyzer cũ nếu đang chạy
-    if body.stream_id in _thermal_analyzers:
-        _thermal_analyzers[body.stream_id].stop()
-
-    points = [ThermalPoint(**p.model_dump()) for p in body.points]
-    zones = [ThermalZone(**z.model_dump()) for z in body.zones]
+    # 2. Chỉ khởi chạy analyzer nếu chúng ta đang ở chế độ xử lý trực tiếp (không phải aggregator thuần)
+    # Ở đây chúng ta kiểm tra nếu process_loop đang chạy hoặc đơn giản là check biến môi trường
+    enable_analyzer = os.environ.get("AI_ENABLE_ANALYZER", "false").lower() == "true"
     
-    analyzer = ThermalAnalyzer(
-        device_id=body.device_id,
-        camera_ip=body.camera_ip,
-        username=body.username,
-        password=body.password,
-        stream_id=body.stream_id,
-        points=points,
-        zones=zones
-    )
-    analyzer.start()
-    _thermal_analyzers[body.stream_id] = analyzer
-    logger.info("[Routes] Thermal configured: %s (%d points, %d zones)", body.stream_id, len(points), len(zones))
-    return {"ok": True, "stream_id": body.stream_id, "points": len(points), "zones": len(zones)}
+    if enable_analyzer:
+        from services.thermal.thermal_analyzer import ThermalAnalyzer, ThermalPoint, ThermalZone
+        # Dừng analyzer cũ nếu đang chạy
+        if body.stream_id in _thermal_analyzers:
+            _thermal_analyzers[body.stream_id].stop()
+
+        points = [ThermalPoint(**p.model_dump()) for p in body.points]
+        zones = [ThermalZone(**z.model_dump()) for z in body.zones]
+        
+        analyzer = ThermalAnalyzer(
+            device_id=body.device_id,
+            camera_ip=body.camera_ip,
+            username=body.username,
+            password=body.password,
+            stream_id=body.stream_id,
+            points=points,
+            zones=zones
+        )
+        analyzer.start()
+        _thermal_analyzers[body.stream_id] = analyzer
+        logger.info("[Routes] Thermal analyzer started locally for %s", body.stream_id)
+
+    return {"ok": True, "stream_id": body.stream_id, "targets": new_targets}
 
 
 # ── Config: Virtual lines ─────────────────────────────────────
@@ -238,7 +264,9 @@ async def status():
 
 # ── AI & PD Predictions (Selective Inheritance from Legacy) ──
 
-DATA_DIR = "/home/admin-/Desktop/DA/stationos-main/ai_engine/data"
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = str(BASE_DIR / "data")
 CSV_FILE = f"{DATA_DIR}/ai_history_v2.csv"
 PD_CSV_FILE = f"{DATA_DIR}/pd_history_v2.csv"
 
@@ -279,18 +307,75 @@ def get_last_csv_records(filename: str, n: int = 100) -> list:
         return []
 
 @router.post("/api/prediction")
-@router.get("/api/prediction")
-async def receive_prediction(data: dict = None):
+async def receive_prediction(data: dict = None, request: Request = None):
     import os, csv, time
+    from services.thermal.thermal_forecaster import save_prediction, append_prediction_history
     os.makedirs(DATA_DIR, exist_ok=True)
     
-    prediction = (data or {}).get("prediction", data or {})
-    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    forecast_ts = prediction.get("forecast_timestamp", ts)
+    # 1. Parse payload
+    if data is None and request is not None:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+            
+    prediction_payload = (data or {}).get("prediction", data or {})
     
+    # 2. Extract timestamps
+    ts_now = time.strftime("%Y-%m-%d %H:%M:%S")
+    issued_at = prediction_payload.get("issued_at") or ts_now
+    input_ts = prediction_payload.get("input_timestamp") or ts_now
+    
+    # default forecast to +5m if missing
+    forecast_ts = prediction_payload.get("forecast_timestamp")
+    if not forecast_ts:
+        try:
+            from datetime import datetime, timedelta
+            dt = datetime.strptime(input_ts, "%Y-%m-%d %H:%M:%S")
+            forecast_ts = (dt + timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            forecast_ts = ts_now
+            
+    # 3. Load active targets
+    config = load_or_create_model_config()
+    targets = config.get("targets", ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"])
+    
+    # 4. Extract target values and construct dynamic prediction dict
+    pred_dict = {
+        "issued_at": issued_at,
+        "input_timestamp": input_ts,
+        "forecast_timestamp": forecast_ts,
+    }
+    
+    for t in targets:
+        pred_val = None
+        cleaned_t = t.replace(":", "_")
+        
+        # Try different candidate keys in the incoming JSON
+        candidates = [
+            f"{t}_pred",
+            f"{cleaned_t}_pred",
+            t,
+            cleaned_t,
+        ]
+        for key in candidates:
+            if key in prediction_payload and prediction_payload[key] is not None:
+                try:
+                    pred_val = float(prediction_payload[key])
+                    break
+                except ValueError:
+                    pass
+                    
+        pred_dict[f"{t}_pred"] = pred_val
+
+    # 5. Save the prediction to both new system files
+    save_prediction(pred_dict, targets)
+    append_prediction_history(pred_dict, targets)
+    
+    # 6. Legacy code backward-compatibility write
     points_map = {}
-    if "points" in prediction:
-        for p in prediction["points"]:
+    if "points" in prediction_payload:
+        for p in prediction_payload["points"]:
             points_map[p.get("id")] = p.get("temperature")
             
     saved_count = 0
@@ -299,8 +384,8 @@ async def receive_prediction(data: dict = None):
         val = points_map.get(f"ID_{i}")
         if val is None:
             for key in [f"ID_{i}_pred", f"ID_{i}"]:
-                if key in prediction and prediction[key] is not None:
-                    val = prediction[key]
+                if key in prediction_payload and prediction_payload[key] is not None:
+                    val = prediction_payload[key]
                     break
         
         if val is not None:
@@ -309,10 +394,10 @@ async def receive_prediction(data: dict = None):
                 writer = csv.writer(f)
                 if not file_exists:
                     writer.writerow(['Timestamp', 'Id', 'PredictedValue', 'Status', 'ForecastTime'])
-                writer.writerow([ts, pid, val, "OK", forecast_ts])
+                writer.writerow([ts_now, pid, val, "OK", forecast_ts])
             saved_count += 1
             
-    return {"success": True, "saved": saved_count}
+    return {"success": True, "saved": len([k for k, v in pred_dict.items() if k.endswith("_pred") and v is not None]), "legacy_saved": saved_count}
 
 @router.post("/api/pd-prediction")
 @router.post("/api/pd-data")
@@ -726,3 +811,232 @@ async def pd_monitor_state(
         pass
 
     return s
+
+
+# ── AI Forecasting & Training Simulation ─────────────────────────
+import os
+import json
+import time
+import random
+import math
+from datetime import datetime, timedelta
+from fastapi import BackgroundTasks
+
+MODEL_CONFIG_FILE = "model/config.json"
+
+# Trạng thái huấn luyện ngầm
+_model_status = {
+    "status": "Idle",  # "Idle" hoặc "Training..."
+    "last_updated": "2026-05-30 09:20:00"
+}
+
+def load_or_create_model_config():
+    os.makedirs("model", exist_ok=True)
+    if not os.path.exists(MODEL_CONFIG_FILE):
+        default_config = {
+            "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
+            "window_size": 5,
+            "horizon": 5
+        }
+        with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(default_config, f, indent=2)
+        return default_config
+    try:
+        with open(MODEL_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {
+            "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
+            "window_size": 5,
+            "horizon": 5
+        }
+
+def save_model_config(config_data):
+    os.makedirs("model", exist_ok=True)
+    with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=2)
+
+def simulate_training_task():
+    global _model_status
+    _model_status["status"] = "Training..."
+    time.sleep(15)
+    _model_status["status"] = "Idle"
+    _model_status["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def generate_prediction_data(ts_now: datetime, targets: list) -> dict:
+    random.seed(int(ts_now.timestamp()) // 60)
+    prediction = {
+        "issued_at": ts_now.strftime("%Y-%m-%d %H:%M:%S"),
+        "input_timestamp": (ts_now - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S"),
+        "forecast_timestamp": (ts_now + timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+    }
+    for i, target in enumerate(targets):
+        base_temp = 35.0 + (i * 2.5) % 15.0
+        pred_val = base_temp + random.uniform(-1.5, 2.5) + (math.sin(ts_now.minute / 5.0) * 1.5)
+        prediction[f"{target}_pred"] = round(pred_val, 1)
+    return prediction
+
+
+# ── POST /api/thermal-data — Nhận dữ liệu thực tế từ camera nhiệt ────────────────
+
+from pydantic import BaseModel as _BaseModel
+from typing import List as _List
+
+class _ThermalPoint(_BaseModel):
+    id: str
+    temperature: float
+
+class ThermalDataPayload(_BaseModel):
+    timestamp: str = ""
+    points: _List[_ThermalPoint] = []
+
+@router.post("/api/thermal-data")
+async def receive_thermal_data(body: ThermalDataPayload):
+    """
+    Nhận dữ liệu nhiệt độ từ camera (Jetson hoặc server đẩy dữ liệu).
+    Pipeline:
+      1. Lưu raw JSON → received_data/<ts>.json
+      2. Trích xuất hàng dữ liệu (kiểm tra đủ điểm)
+      3. Ghi vào live_thermal_history.csv
+      4. Chạy dự báo tuyến tính (sliding window)
+      5. Lưu kết quả vào live_predictions.csv
+    """
+    from services.thermal.thermal_forecaster import process_thermal_payload
+    payload_dict = body.model_dump()
+    payload_dict["points"] = [p.model_dump() for p in body.points]
+    
+    # 1. Chạy pipeline địa phương
+    result = process_thermal_payload(payload_dict)
+    if not result["success"]:
+        raise HTTPException(status_code=422, detail=result.get("error", "Validation failed"))
+        
+    # 2. Ingest measurements to .NET Gateway (port 5000) so frontend overlays render temperatures
+    try:
+        import httpx
+        from config import get_settings
+        cfg_settings = get_settings()
+        
+        # Xác định device_id
+        device_id = None
+        if _thermal_analyzers:
+            device_id = list(_thermal_analyzers.values())[0].device_id
+        else:
+            try:
+                resp = httpx.get(f"{cfg_settings.backend_url}/api/v1/devices", timeout=2.0)
+                if resp.status_code == 200:
+                    for d in resp.json():
+                        if d.get("type") in ["camera_thermal", "camera_dual"]:
+                            device_id = d.get("id")
+                            break
+            except Exception:
+                pass
+        if not device_id:
+            device_id = "cam_192_168_10_152"
+            
+        # Xây dựng payload để gửi tới cổng .NET
+        ingest_payload = []
+        for p in payload_dict["points"]:
+            ingest_payload.append({
+                "deviceId": device_id,
+                "pointId": p["id"],
+                "value": p["temperature"],
+                "unit": "°C"
+            })
+            
+        if ingest_payload:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                await client.post(
+                    f"{cfg_settings.backend_url}/api/v1/measurements/ingest",
+                    json=ingest_payload,
+                    headers={"Content-Type": "application/json"}
+                )
+    except Exception as e:
+        logger.warning("[Routes] Failed to ingest physical temperatures to gateway: %s", e)
+        
+    return result
+
+# Endpoints cho AI Forecast & Config
+@router.get("/api/config")
+async def get_model_config():
+    config = load_or_create_model_config()
+    return config
+
+@router.post("/api/config/update")
+async def update_model_config(body: dict, background_tasks: BackgroundTasks):
+    config = load_or_create_model_config()
+    if "targets" in body:
+        config["targets"] = body["targets"]
+    save_model_config(config)
+    background_tasks.add_task(simulate_training_task)
+    return {"success": True, "message": "Đã lưu cấu hình, đang bắt đầu huấn luyện lại...", "config": config}
+
+@router.get("/api/training-status")
+async def get_training_status():
+    return _model_status
+
+@router.post("/api/retrain")
+async def trigger_retrain(background_tasks: BackgroundTasks):
+    if _model_status["status"] == "Training...":
+        return {"success": False, "message": "Hệ thống đang trong quá trình huấn luyện."}
+    background_tasks.add_task(simulate_training_task)
+    return {"success": True, "message": "Đã kích hoạt huấn luyện lại thủ công."}
+
+@router.get("/api/latest-prediction")
+@router.get("/api/prediction")
+async def get_latest_prediction():
+    """
+    Trả về dự báo mới nhất.
+    - Nếu đã có dữ liệu thực (live_predictions.csv): đọc từ CSV.
+    - Fallback: sinh ngẫu nhiên (chế độ demo khi chưa có camera).
+    """
+    config  = load_or_create_model_config()
+    targets = config.get("targets", ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"])
+
+    from services.thermal.thermal_forecaster import load_latest_prediction
+    real_pred = load_latest_prediction(targets)
+    if real_pred:
+        return {"success": True, "prediction": real_pred, "source": "live"}
+
+    # Fallback demo
+    ts_now = datetime.now()
+    pred_data = generate_prediction_data(ts_now, targets)
+    return {"success": True, "prediction": pred_data, "source": "demo"}
+
+@router.get("/api/prediction/history")
+async def get_prediction_history():
+    """
+    Trả về chuỗi lịch sử + dự báo cho biểu đồ đường đôi.
+    - Nếu có dữ liệu thực (live_thermal_history.csv): đọc từ CSV.
+    - Fallback: sinh ngẫu nhiên (chế độ demo).
+    """
+    config      = load_or_create_model_config()
+    targets     = config.get("targets", ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"])
+    window_size = int(config.get("window_size", 5))
+    horizon     = int(config.get("horizon", 5))
+
+    from services.thermal.thermal_forecaster import load_history_for_chart, HISTORY_CSV
+    if HISTORY_CSV.exists():
+        history = load_history_for_chart(targets, window_minutes=30, horizon=horizon)
+        if history:
+            return {"success": True, "history": history, "targets": targets, "source": "live"}
+
+    # Fallback demo (dữ liệu ngẫu nhiên) — giữ lại để UI không bị trống
+    now = datetime.now()
+    history = []
+    for offset in range(-30, horizon + 1):
+        ts = now + timedelta(minutes=offset)
+        random.seed(int(ts.timestamp()) // 60)
+        point_data = {"timestamp": ts.strftime("%H:%M")}
+        for i, target in enumerate(targets):
+            base_temp = 35.0 + (i * 2.5) % 15.0
+            if offset <= 0:
+                actual_val = base_temp + random.uniform(-1.0, 2.0) + (math.sin(ts.minute / 5.0) * 1.2)
+                point_data[f"{target}_actual"] = round(actual_val, 1)
+            else:
+                point_data[f"{target}_actual"] = None
+            ts_pred_gen = ts - timedelta(minutes=horizon)
+            random.seed(int(ts_pred_gen.timestamp()) // 60)
+            pred_val = base_temp + random.uniform(-1.5, 2.5) + (math.sin(ts_pred_gen.minute / 5.0) * 1.5)
+            point_data[f"{target}_pred"] = round(pred_val, 1)
+        history.append(point_data)
+    return {"success": True, "history": history, "targets": targets, "source": "demo"}

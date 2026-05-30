@@ -30,9 +30,17 @@ export const API_BASE_URL: string = (() => {
   return rawApi;
 })();
 
-// URL gốc của AI Engine (FastAPI) — dùng để xem luồng camera AI đã được vẽ sẵn
-const rawAi = (import.meta.env.VITE_AI_URL as string | undefined) ?? 'http://localhost:8100';
+// URL gốc của AI Engine (FastAPI trên Jetson)
+const rawAi = (import.meta.env.VITE_AI_ENGINE_URL as string | undefined) ?? 
+              (import.meta.env.VITE_AI_URL as string | undefined) ?? 
+              'http://192.168.10.104:8080';
+
 export const AI_ENGINE_URL: string = (() => {
+  // Nếu là địa chỉ IP cụ thể (không phải localhost), giữ nguyên
+  if (!rawAi.includes('localhost') && !rawAi.includes('127.0.0.1')) {
+    return rawAi;
+  }
+  // Nếu là localhost, tự động trỏ về IP của Dashboard (nếu truy cập từ xa)
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
     if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {

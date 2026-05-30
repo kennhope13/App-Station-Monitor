@@ -93,12 +93,26 @@ public class PersonDetectionController : ControllerBase
         var device = await FindCameraAsync(camIp);
         var stationId = device?.StationId ?? await FirstStationIdAsync();
 
+        if (stationId == Guid.Empty)
+        {
+            _logger.LogError("[PersonDetection] Hệ thống chưa có Station nào. Không thể lưu sự kiện.");
+            return StatusCode(500, new { error = "Hệ thống chưa được cấu hình Station" });
+        }
+
         if (device == null)
         {
-            _logger.LogWarning("[PersonDetection] Không tìm thấy camera khớp với IP: {ip}. Sẽ lưu sự kiện với camera rỗng.", camIp);
+            _logger.LogWarning("[PersonDetection] Không tìm thấy camera khớp với IP: {ip}. Tìm camera bất kỳ của trạm để gán tạm.", camIp);
+            device = await _db.Devices.FirstOrDefaultAsync(d => d.StationId == stationId && d.Type.StartsWith("camera"));
+        }
+
+        if (device == null)
+        {
+            _logger.LogError("[PersonDetection] Không tìm thấy bất kỳ camera nào trong hệ thống để gán sự kiện.");
+            return StatusCode(500, new { error = "Không tìm thấy camera hợp lệ để lưu sự kiện" });
         }
 
         // 3. Đảm bảo thư mục lưu trữ tồn tại và lưu ảnh
+        // ... (phần lưu ảnh giữ nguyên)
         string mediaRootDir = Path.Combine(_rootPath, "media");
         string detDir = Path.Combine(mediaRootDir, "detections");
         if (!Directory.Exists(detDir))

@@ -64,6 +64,10 @@ class ThermalAnalyzer:
     _consecutive_auth_failures: int = field(default=0, init=False, repr=False)
     _auth_cooldown_until:       float = field(default=0.0, init=False, repr=False)
 
+    last_point_temps:           dict[str, float]  = field(default_factory=dict, init=False, repr=False)
+    last_zone_results:          dict[str, dict]   = field(default_factory=dict, init=False, repr=False)
+    _last_history_save:         float             = field(default=0.0, init=False, repr=False)
+
     def start(self) -> None:
         rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
         self._reader = RtspReader(rtsp_url, self.stream_id)
@@ -125,8 +129,59 @@ class ThermalAnalyzer:
         if zone_results:
             logger.info("[Thermal] Processed %d zones for device %s", len(zone_results), self.device_id)
 
+        # Lưu cache nhiệt độ thời gian thực để các module khác (ví dụ: ExternalPusher) có thể sử dụng
+        self.last_point_temps = point_temps
+        self.last_zone_results = zone_results
+
         # 4. Gửi nhiệt độ thực tế về backend
         await self._ingest_measurements(point_temps, zone_results)
+
+        # 4.5 Tự động đẩy dữ liệu sang pipeline dự báo AI cục bộ (mỗi 5 phút = 300 giây)
+        import time
+        now = time.time()
+        if now - self._last_history_save >= 300.0:
+            self._last_history_save = now
+            try:
+                from services.thermal.thermal_forecaster import process_thermal_payload
+                from datetime import datetime
+                
+                points_payload = []
+                # Points
+                for pt in self.points:
+                    temp = point_temps.get(pt.id)
+                    if temp is not None:
+                        points_payload.append({
+                            "id": pt.label or pt.id,
+                            "temperature": temp
+                        })
+                # Zones
+                for zn in self.zones:
+                    res = zone_results.get(zn.id)
+                    if res is not None:
+                        points_payload.append({
+                            "id": zn.label or zn.id,
+                            "temperature": res["max"]
+                        })
+                
+                if points_payload:
+                    payload = {
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "points": points_payload
+                    }
+                    process_thermal_payload(payload)
+                    logger.info("[ThermalAnalyzer] Tự động đồng bộ dữ liệu vào pipeline Dự báo AI cục bộ (Mỗi 5 phút).")
+                    
+                    # Tự động đẩy trực tiếp sang Jetson đối tác (192.168.10.11) để dự phòng
+                    import os
+                    import requests
+                    EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL", "http://192.168.10.11:8080/api/thermal-data")
+                    try:
+                        requests.post(EXTERNAL_API_URL, json=payload, timeout=3.0)
+                        logger.info("[ThermalAnalyzer] Đã đẩy dữ liệu ảnh nhiệt sang Jetson đối tác (%s) thành công.", EXTERNAL_API_URL)
+                    except Exception as ex_partner:
+                        logger.warning("[ThermalAnalyzer] Không thể đẩy dữ liệu sang Jetson đối tác (%s): %s", EXTERNAL_API_URL, ex_partner)
+            except Exception as ex:
+                logger.error("[ThermalAnalyzer] Lỗi tự động đồng bộ Dự báo AI cục bộ: %s", ex)
 
         # 5. Annotate và Serve MJPEG
         frame = self._reader.latest_frame if self._reader else None

@@ -38,6 +38,7 @@ class AcousticAnalyzer:
     _listener:      threading.Thread | None = field(default=None, init=False, repr=False)
     _running:       bool = field(default=False, init=False, repr=False)
     _pd_analyzer:   PdRegionAnalyzer | None = field(default=None, init=False, repr=False)
+    _pusher:        threading.Thread | None = field(default=None, init=False, repr=False)
 
     # Biến trạng thái thời gian thực
     live_db:     float = field(default=0.0, init=False)
@@ -67,6 +68,20 @@ class AcousticAnalyzer:
         self._listener = threading.Thread(target=self._listen_alert_stream, daemon=True)
         self._listener.start()
 
+        # 4. Khởi động ExternalApiPusher để đẩy dữ liệu nhiệt sang Jetson đối tác mỗi 5 phút
+        try:
+            from services.acoustic.external_api_pusher import ExternalApiPusher
+            self._pusher = ExternalApiPusher(
+                camera_ip=self.camera_ip,
+                backend_url=cfg.backend_url,
+                data_dir=self.data_dir,
+                device_id=self.device_id
+            )
+            self._pusher.start()
+            logger.info("[Acoustic] Started ExternalApiPusher for partner Jetson")
+        except Exception as e:
+            logger.error("[Acoustic] Failed to start ExternalApiPusher: %s", e)
+
         logger.info("[Acoustic] Started AcousticAnalyzer for device %s (IP %s)", self.device_id, self.camera_ip)
 
     def stop(self) -> None:
@@ -74,6 +89,8 @@ class AcousticAnalyzer:
         self._running = False
         if self._reader:
             self._reader.stop()
+        if self._pusher:
+            self._pusher.stop()
         logger.info("[Acoustic] Stopped AcousticAnalyzer for device %s", self.device_id)
 
     def reload_regions(self) -> None:

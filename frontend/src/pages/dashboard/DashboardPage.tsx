@@ -17,6 +17,7 @@ import SldCanvas, { SldCanvasRef } from '@/components/dashboard/sld/SldCanvas';
 import SldEditPanel from '@/components/dashboard/sld/SldEditPanel';
 import KpiCards from '@/components/dashboard/kpi/KpiCards';
 import CameraGrid, { CameraSensor } from '@/components/dashboard/camera/CameraGrid';
+import AiForecastPanel from '@/components/dashboard/ai/AiForecastPanel';
 import DashboardToolbar from '@/components/dashboard/toolbar/DashboardToolbar';
 import CameraLiveViewer from '@/components/dashboard/camera/CameraLiveViewer';
 
@@ -217,6 +218,7 @@ export default function DashboardPage() {
       <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: '20%', minWidth: 220, maxWidth: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
         <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
         <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
+        <AiForecastPanel />
       </div>
 
       {isEditMode ? (

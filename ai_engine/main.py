@@ -53,18 +53,18 @@ async def _process_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("=== StationOS AI Engine starting ===")
+    logger.info("=== StationOS AI Aggregator starting ===")
     logger.info("Backend : %s", cfg.backend_url)
-    logger.info("go2rtc  : %s", cfg.go2rtc_rtsp)
-    logger.info("Interval: %.1fs", cfg.process_interval)
-
-    # Tự động load cấu hình từ backend khi khởi động
-    await _load_config_from_backend()
-
-    task = asyncio.create_task(_process_loop())
+    logger.info("Port    : 8100")
+    
+    # Ở chế độ Server Trung Tâm (Host 22), chúng ta không cần tự chạy loop xử lý camera.
+    # Thay vào đó, chúng ta đợi Jetson đẩy dữ liệu lên qua API.
+    # await _load_config_from_backend()
+    # task = asyncio.create_task(_process_loop())
+    
     yield
-    task.cancel()
-    logger.info("=== AI Engine stopped ===")
+    # task.cancel()
+    logger.info("=== AI Aggregator stopped ===")
 
 
 async def _load_config_from_backend() -> None:
@@ -230,7 +230,18 @@ async def _load_config_from_backend() -> None:
 
 # ── App ───────────────────────────────────────────────────────
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="StationOS AI Engine", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(routes.router)
 app.include_router(routes.router, prefix="/api/v1")
 

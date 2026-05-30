@@ -417,6 +417,8 @@ public class DeviceService
             using var client = _http.CreateClient();
             var json = JsonSerializer.Serialize(payload);
             var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            
+            // 1. Đồng bộ sang AI Engine cục bộ trên PC (cổng 8100) để huấn luyện dự báo
             var resp = await client.PostAsync("http://localhost:8100/api/v1/config/thermal", content);
             if (!resp.IsSuccessStatusCode)
             {
@@ -425,6 +427,24 @@ public class DeviceService
             else
             {
                 _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully synchronized {points.Count} points and {boundaries.Count} zones for device {deviceId}");
+            }
+
+            // 2. Tự động đồng bộ trực tiếp sang Jetson Orin Nano (cổng 8080) qua mạng
+            try
+            {
+                var jetsonResp = await client.PostAsync("http://192.168.10.104:8080/config/thermal", content);
+                if (jetsonResp.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully forwarded configuration to Jetson at 192.168.10.104:8080");
+                }
+                else
+                {
+                    _logger.LogWarning($"[SyncThermalConfigToAIEngineAsync] Jetson returned status {jetsonResp.StatusCode} for config forwarding.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[SyncThermalConfigToAIEngineAsync] Error forwarding configuration to Jetson: {ex.Message}");
             }
         }
         catch (Exception ex)
