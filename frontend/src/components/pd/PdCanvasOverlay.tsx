@@ -1,6 +1,5 @@
 // src/components/pd/PdCanvasOverlay.tsx
 import React, { useRef, useEffect } from 'react';
-import { Boundary } from '@/types/api.types';
 
 type Props = {
   streamUrl: string;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCcw, Save, Trash2, Crosshair, Map, Maximize, Edit2, X } from 'lucide-react';
+import { Save, Trash2, Edit2, X } from 'lucide-react';
 import { stationApi } from '../../../services/StationApiService';
-import { CameraDevice, RoiPoint, Boundary } from '../../../types/api.types';
+import { CameraDevice } from '../../../types/api.types';
 import { authService } from '../../../services/AuthService';
 import { GO2RTC_URL } from '../../../utils/env';
 import { createRealtimeHub } from '../../../services/realtime.service';
@@ -19,9 +19,8 @@ const EMPTY_FORM = {
 const pct = (v:number) => `${(v*100).toFixed(2)}%`;
 const clr = (t:number|null, w:number, a:number) => t==null?'#9ca3af':t>=a?'#ef4444':t>=w?'#f59e0b':'#10b981';
 
-export default function ThermalConfigTab({ device: dev, onBack, onConfigChange, loading:parentLoading }: { device:CameraDevice, onBack:()=>void, onConfigChange?:()=>void, loading?:boolean }) {
+export default function ThermalConfigTab({ device: dev, onBack }: { device:CameraDevice, onBack:()=>void, onConfigChange?:()=>void, loading?:boolean }) {
   const did = dev.id;
-  const [loading, setLoading] = useState(true);
   const [markers, setMarkers] = useState<any[]>([]);
   const [rois, setRois] = useState<any[]>([]);
   const mksRef = useRef(markers); mksRef.current = markers;
@@ -75,7 +74,7 @@ export default function ThermalConfigTab({ device: dev, onBack, onConfigChange, 
           };
         }).filter(Boolean);
       });
-    } catch(e) {} finally { setLoading(false); }
+    } catch(e) {}
   }, [did]);
 
   useEffect(() => { load(); }, [load]);

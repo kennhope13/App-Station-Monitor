@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { LayoutList, Trash2, Settings, Zap, Thermometer, Target, Play, Plus } from 'lucide-react';
+import { LayoutList, Trash2, Settings, Zap, Thermometer, Target, Play } from 'lucide-react';
 import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
@@ -15,12 +15,6 @@ import BoundaryTab from './components/BoundaryTab';
 import LiveViewTab from './components/LiveViewTab';
 import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
-// PD Refactor imports
-import { usePdRegion } from '@/hooks/usePdRegion';
-import { PdCanvasOverlay } from '@/components/pd/PdCanvasOverlay';
-import { PdList } from '@/components/pd/PdList';
-import { PdModal } from '@/components/pd/PdModal';
-import { GO2RTC_URL } from '@/utils/env';
 
 // Nhãn hiển thị theo loại thiết bị — import từ constants để dùng chung
 const TYPE_LABELS = DEVICE_TYPE_LABELS;

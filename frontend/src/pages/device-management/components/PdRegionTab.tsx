@@ -8,7 +8,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { CameraDevice, Boundary, stationApi } from '@/services/StationApiService';
 import { Plus, Trash2, Save, X, Zap, Edit3 } from 'lucide-react';
 import { authService } from '@/services/AuthService';
-import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
+import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
 import { confirmDialog } from '@/utils/confirm';
 
 type Props = { cameras: CameraDevice[]; initialCamera?: CameraDevice | null };

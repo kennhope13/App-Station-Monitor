@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import Chart from 'chart.js/auto';
 import { stationApi, type PredictionHistoryPoint, type TrainingStatus } from '@/services/StationApiService';
 import { getCSSColor } from '@/utils/theme-colors';
-import { Cpu, TrendingUp, TrendingDown, AlertCircle, RotateCw } from 'lucide-react';
+import { Cpu, AlertCircle, RotateCw } from 'lucide-react';
 
 // Cấu hình màu sắc cho 6 vùng đo mặc định
 const TARGET_COLORS = [
@@ -60,7 +60,7 @@ export default function AiForecastPanel() {
   const targets = useMemo(() => {
     if (history.length === 0) return [];
     // Lấy các key kết thúc bằng _actual
-    return Object.keys(history[0])
+    return Object.keys(history[0] || {})
       .filter(k => k.endsWith('_actual'))
       .map(k => k.replace('_actual', ''))
       .sort();
@@ -71,7 +71,8 @@ export default function AiForecastPanel() {
     if (history.length === 0 || targets.length === 0) return 0;
     const mainTarget = targets[0];
     for (let i = history.length - 1; i >= 0; i--) {
-      const val = history[i][`${mainTarget}_actual`];
+      const pt = history[i];
+      const val = pt ? pt[`${mainTarget}_actual`] : undefined;
       if (val !== null && val !== undefined) return i;
     }
     return 0;
@@ -84,8 +85,8 @@ export default function AiForecastPanel() {
     const lastPoint = history[history.length - 1];
     
     return targets.map(t => {
-      const actual = Number(currentPoint[`${t}_actual`] || 0);
-      const pred = Number(lastPoint[`${t}_pred`] || 0);
+      const actual = Number(currentPoint ? currentPoint[`${t}_actual`] : 0);
+      const pred = Number(lastPoint ? lastPoint[`${t}_pred`] : 0);
       const diff = pred - actual;
       const isRising = diff > 0.2;
       const isFalling = diff < -0.2;
@@ -111,7 +112,7 @@ export default function AiForecastPanel() {
     const datasets: any[] = [];
 
     targets.forEach((target, i) => {
-      const colors = TARGET_COLORS[i % TARGET_COLORS.length];
+      const colors = TARGET_COLORS[i % TARGET_COLORS.length] || { actual: '#888888', pred: '#cccccc' };
       
       // Đường thực tế (Solid)
       const filledActuals = forwardFill(history, `${target}_actual`);
@@ -272,7 +273,7 @@ export default function AiForecastPanel() {
             gap: 2
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 1 }}>
-              <span style={{ fontSize: 7, fontWeight: 800, color: i < TARGET_COLORS.length ? TARGET_COLORS[i].actual : 'var(--admin-text-muted)' }}>{m.id}</span>
+              <span style={{ fontSize: 7, fontWeight: 800, color: (TARGET_COLORS[i] || TARGET_COLORS[0] || { actual: 'var(--admin-text-muted)' }).actual }}>{m.id}</span>
               {m.isAlert && <AlertCircle size={8} color="#EF4444" />}
             </div>
             
