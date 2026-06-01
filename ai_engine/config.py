@@ -3,6 +3,8 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    """Cấu hình toàn hệ thống AI Engine, đọc từ biến môi trường hoặc file .env."""
+
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True)
 
     # Backend StationOS API
@@ -18,8 +20,8 @@ class Settings(BaseSettings):
     yolo_confidence: float = 0.45
 
     # Khoảng thời gian giữa hai lần xử lý frame (giây)
-    # 0 = xử lý mọi frame (tốn CPU), 1.0 = mỗi giây 1 frame
-    process_interval: float = 0.5
+    # 0 = xử lý mọi frame (tốn CPU), 0.04 = 25 FPS, 1.0 = mỗi giây 1 frame
+    process_interval: float = 0.04
 
     # Khoảng cooldown tối thiểu giữa hai lần gửi alert cùng loại (giây)
     alert_cooldown: float = 30.0

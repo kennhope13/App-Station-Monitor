@@ -10,7 +10,13 @@ import { useAuthStore } from '@/store/authStore';
 // Tự tính API_BASE để tránh circular import với BaseApiService
 const API_BASE = `${API_BASE_URL}/api/v1`;
 
+/**
+ * Dịch vụ xác thực người dùng — xử lý đăng nhập, đăng xuất và quản lý phiên JWT.
+ */
 class AuthService {
+    /**
+     * Đăng nhập bằng tên đăng nhập và mật khẩu, lưu JWT token vào store và localStorage.
+     */
     public async login(username: string, password: string): Promise<{ success: boolean; error?: string; licenseReason?: string }> {
         try {
             const res = await fetch(`${API_BASE}/auth/login`, {
@@ -47,6 +53,9 @@ class AuthService {
             // Cập nhật Zustand Store
             useAuthStore.getState().setSession(user, token, refreshToken);
             
+            // Mirror token to localStorage for backward compatibility with other tabs/components
+            localStorage.setItem('station_token', token);
+            
             return { success: true, licenseReason: data.licenseReason ?? '' };
 
         } catch (err) {
@@ -54,22 +63,28 @@ class AuthService {
         }
     }
 
+    /** Đăng xuất — xóa phiên khỏi store và localStorage. */
     public logout(): void {
         useAuthStore.getState().clearSession();
+        localStorage.removeItem('station_token');
     }
 
+    /** Trả về JWT token hiện tại từ store, hoặc null nếu chưa đăng nhập. */
     public getToken(): string | null {
         return useAuthStore.getState().token;
     }
 
+    /** Trả về thông tin người dùng hiện tại từ store, hoặc null nếu chưa đăng nhập. */
     public getUser(): User | null {
         return useAuthStore.getState().user;
     }
 
+    /** Kiểm tra người dùng hiện tại đã xác thực hay chưa. */
     public isAuthenticated(): boolean {
         return useAuthStore.getState().isAuthenticated;
     }
 
+    /** Kiểm tra người dùng hiện tại có thuộc ít nhất một trong các vai trò cho trước. */
     public hasRole(...roles: UserRole[]): boolean {
         const user = this.getUser();
         return user ? roles.includes(user.role) : false;

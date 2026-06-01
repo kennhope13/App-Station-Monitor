@@ -54,6 +54,10 @@ public class DetectionEvent
     [ForeignKey("AlertId")]
     public virtual Alert? Alert { get; set; }
 
+    public Guid? BoundaryId { get; set; }
+    [ForeignKey("BoundaryId")]
+    public virtual Boundary? Boundary { get; set; }
+
     public Guid? MediaFileId { get; set; }
     [ForeignKey("MediaFileId")]
     public virtual MediaFile? MediaFile { get; set; }

@@ -47,6 +47,10 @@ const ADMIN_NAV: NavItem[] = [
   { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt' },
 ];
 
+/**
+ * Khung bố cục chính của ứng dụng — gồm header, sidebar thu gọn/mở rộng và vùng nội dung trang.
+ * Quản lý SignalR toàn cục, xử lý cảnh báo mới, đồng bộ cảm biến và điều hướng theo vai trò.
+ */
 export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -87,6 +91,7 @@ export default function AppShell() {
     hub.on('CameraEvent', (evt: any) => {
       // Chúng ta không gọi setActiveAlert ở đây nữa vì AlertNew sẽ hiển thị Popup 
       // với đầy đủ ảnh và thông tin chi tiết (do backend đã thống nhất gửi chung vào AlertNew)
+      if (!evt || !evt.detectionType) return;
       const isCritical = ['fire', 'thermal_hotspot', 'intrusion'].includes(evt.detectionType);
       if (!isCritical) {
         showToast(`Camera: ${evt.detectionType.toUpperCase()}`, 'info');
@@ -120,6 +125,7 @@ export default function AppShell() {
     };
   }, [fetchAlerts, invalidateAlerts]);
 
+  /** Chuyển mã vai trò (admin/manager/operator) thành nhãn tiếng Việt hiển thị trong sidebar. */
   const getRoleLabel = (role?: string) => {
     const r = (role || '').toLowerCase();
     if (r === 'admin') return 'QUẢN TRỊ';
@@ -130,7 +136,9 @@ export default function AppShell() {
   const [time, setTime] = useState(new Date().toLocaleTimeString('vi-VN'));
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [popupPos, setPopupPos] = useState({ bottom: 0, left: 0 });
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
 
   // Sidebar mở rộng mặc định; lưu preference vào localStorage
   const [expanded, setExpanded] = useState(
@@ -140,6 +148,7 @@ export default function AppShell() {
     () => localStorage.getItem('station-theme') || 'dark'
   );
 
+  /** Áp dụng theme mới và lưu vào localStorage, hiển thị toast xác nhận. */
   const handleSelectTheme = (newTheme: string) => {
     setThemeState(newTheme);
     setGlobalTheme(newTheme as any);
@@ -191,19 +200,21 @@ export default function AppShell() {
     };
   }, []);
 
+  /** Chuyển đổi trạng thái sidebar (mở rộng/thu gọn) và lưu vào localStorage. */
   const toggle = () => {
     const next = !expanded;
     setExpanded(next);
     localStorage.setItem('sidebar-expanded', String(next));
   };
 
+  /** Đăng xuất người dùng, xóa phiên và reload toàn bộ state app. */
   const handleLogout = () => {
     authService.logout();
     navigate('/login');
     window.location.reload(); // reset toàn bộ state app
   };
 
-  // Lọc menu theo role rồi render NavLink có hỗ trợ sub-menu khi active
+  /** Lọc và render danh sách NavLink theo vai trò người dùng, hỗ trợ sub-menu khi active. */
   const renderNav = (items: NavItem[]) =>
     items
       .filter(i => !i.roles || i.roles.includes(user.role))
@@ -298,9 +309,9 @@ export default function AppShell() {
               {/* Profile & User Menu Combined */}
               <div className="sb-user-action-wrap" style={{ position: 'relative' }} ref={userMenuRef}>
                 
-                {/* Popover Menu */}
+                {/* Popover Menu — position:fixed để thoát overflow:hidden của sidebar */}
                 {showUserMenu && (
-                  <div className="sb-user-popover">
+                  <div className="sb-user-popover" style={{ position: 'fixed', bottom: popupPos.bottom, left: popupPos.left, top: 'auto' }}>
                     <div style={{ display: 'flex', gap: 4, padding: '4px 8px 8px' }}>
                       <button 
                         onClick={() => handleSelectTheme('dark')}
@@ -334,9 +345,16 @@ export default function AppShell() {
                   </div>
                 )}
 
-                <div 
-                  className={`sb-user-action ${showUserMenu ? 'active' : ''}`} 
-                  onClick={() => setShowUserMenu(!showUserMenu)}
+                <div
+                  ref={triggerRef}
+                  className={`sb-user-action ${showUserMenu ? 'active' : ''}`}
+                  onClick={() => {
+                    if (!showUserMenu && triggerRef.current) {
+                      const r = triggerRef.current.getBoundingClientRect();
+                      setPopupPos({ bottom: window.innerHeight - r.top + 6, left: r.left });
+                    }
+                    setShowUserMenu(v => !v);
+                  }}
                   title={!expanded ? 'Tài khoản' : undefined}
                 >
                   <div className="sb-profile">

@@ -4,6 +4,10 @@ import { stationApi } from '@/services/StationApiService';
 
 const SC = { good: '#10B981', warning: '#F59E0B', danger: '#EF4444' } as const;
 
+/**
+ * Trả về màu hiển thị cho giá trị nhiệt độ (đỏ > 80°C, vàng > 60°C, mặc định bình thường).
+ * Trả về xám nếu không có dữ liệu.
+ */
 const getTempColor = (t: number | null) => {
   if (t === null) return '#9CA3AF';
   if (t > 80) return '#EF4444';
@@ -11,6 +15,10 @@ const getTempColor = (t: number | null) => {
   return 'var(--admin-text)';
 };
 
+/**
+ * Trả về màu hiển thị cho mức phóng điện PD (đỏ > 50dB, vàng > 20dB, xanh bình thường).
+ * Trả về xám khi thiết bị offline.
+ */
 const getPdColor = (pd: number, isOffline: boolean) => {
   if (isOffline) return '#9CA3AF';
   if (pd > 50) return '#EF4444';
@@ -24,6 +32,10 @@ interface KpiCardsProps {
   sensors: any[];
 }
 
+/**
+ * Widget giám sát tủ điện trên Dashboard: hiển thị nhiệt độ 3 pha và
+ * mức phóng điện PD cho từng tủ, kèm điểm sức khỏe tổng hợp từ backend.
+ */
 export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiCardsProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [healthScores, setHealthScores] = useState<Record<string, { score: number; risk: string }>>({});
@@ -38,6 +50,7 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
   useEffect(() => {
     stationApi.getHealthScores()
       .then(scores => {
+        // Chuẩn hóa key sang chữ thường để tránh lỗi so sánh ID
         const map: Record<string, { score: number; risk: string }> = {};
         scores.forEach(s => {
           map[s.deviceId.toLowerCase()] = {
@@ -50,7 +63,7 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
       .catch(err => console.warn('[KPI] Lỗi nạp điểm sức khỏe:', err));
   }, [devices]);
 
-  // Tổng hợp dữ liệu hiển thị từ API
+  /** Tổng hợp thông tin hiển thị cho từng tủ điện: nhiệt độ 3 pha, PD và trạng thái sức khỏe. */
   const cabinetList = useMemo(() => {
     return cabinetDevices.map(cab => {
       const hInfo = healthScores[cab.id.toLowerCase()] || { score: 100, risk: 'good' };

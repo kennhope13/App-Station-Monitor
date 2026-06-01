@@ -29,6 +29,11 @@ public class MaintenanceController : ControllerBase
     public MaintenanceController(AppDbContext db) => _db = db;
 
     // ── GET /api/v1/maintenance ──────────────────────────────
+    /// <summary>Lấy danh sách tất cả task bảo trì, hỗ trợ lọc theo trạm, trạng thái và thiết bị.</summary>
+    /// <param name="stationId">Lọc theo trạm (tùy chọn).</param>
+    /// <param name="status">Lọc theo trạng thái: pending, in_progress, completed, overdue (tùy chọn).</param>
+    /// <param name="deviceId">Lọc theo thiết bị (tùy chọn).</param>
+    /// <returns>Danh sách task bảo trì kèm tên thiết bị liên kết.</returns>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] Guid? stationId,
@@ -62,6 +67,9 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── POST /api/v1/maintenance ─────────────────────────────
+    /// <summary>Tạo task bảo trì mới.</summary>
+    /// <param name="req">Thông tin task bảo trì cần tạo.</param>
+    /// <returns>Task bảo trì vừa tạo.</returns>
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateMaintenanceRequest req)
     {
@@ -93,6 +101,10 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── PUT /api/v1/maintenance/{id} ─────────────────────────
+    /// <summary>Cập nhật thông tin task bảo trì. Chỉ cập nhật các trường được gửi lên (non-null).</summary>
+    /// <param name="id">ID của task bảo trì cần cập nhật.</param>
+    /// <param name="req">Các trường cần cập nhật.</param>
+    /// <returns>Task bảo trì đã được cập nhật hoặc 404 nếu không tìm thấy.</returns>
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateMaintenanceRequest req)
     {
@@ -120,6 +132,9 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── DELETE /api/v1/maintenance/{id} ──────────────────────
+    /// <summary>Xóa task bảo trì. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="id">ID của task bảo trì cần xóa.</param>
+    /// <returns>Thông báo xóa thành công hoặc 404 nếu không tìm thấy.</returns>
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> Delete(Guid id)
@@ -133,6 +148,9 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── POST /api/v1/maintenance/{id}/start ──────────────────
+    /// <summary>Bắt đầu thực hiện task bảo trì — chuyển trạng thái sang in_progress.</summary>
+    /// <param name="id">ID của task bảo trì.</param>
+    /// <returns>Task bảo trì đã cập nhật trạng thái hoặc 404 nếu không tìm thấy.</returns>
     [HttpPost("{id:guid}/start")]
     public async Task<IActionResult> Start(Guid id)
     {
@@ -153,6 +171,10 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── POST /api/v1/maintenance/{id}/complete ───────────────
+    /// <summary>Đánh dấu hoàn thành task bảo trì — chuyển trạng thái sang completed và đóng các alert reminder liên quan.</summary>
+    /// <param name="id">ID của task bảo trì.</param>
+    /// <param name="req">Ghi chú khi hoàn thành (tùy chọn).</param>
+    /// <returns>Task bảo trì đã cập nhật hoặc 404 nếu không tìm thấy.</returns>
     [HttpPost("{id:guid}/complete")]
     public async Task<IActionResult> Complete(Guid id, [FromBody] CompleteRequest? req = null)
     {
@@ -191,6 +213,9 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── POST /api/v1/maintenance/from-alert/{alertId} ────────
+    /// <summary>Tạo task bảo trì từ một cảnh báo (Alert) hiện có.</summary>
+    /// <param name="alertId">ID của Alert nguồn.</param>
+    /// <returns>Task bảo trì vừa tạo hoặc 404 nếu không tìm thấy alert.</returns>
     [HttpPost("from-alert/{alertId:guid}")]
     public async Task<IActionResult> CreateFromAlert(Guid alertId)
     {
@@ -224,6 +249,10 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── GET /api/v1/maintenance/upcoming ─────────────────────
+    /// <summary>Lấy danh sách task bảo trì sắp đến hạn trong N ngày tới.</summary>
+    /// <param name="stationId">Lọc theo trạm (tùy chọn).</param>
+    /// <param name="days">Số ngày tính từ hôm nay (mặc định 7).</param>
+    /// <returns>Danh sách task bảo trì sắp tới, sắp xếp theo ngày dự kiến.</returns>
     [HttpGet("upcoming")]
     public async Task<IActionResult> GetUpcoming(
         [FromQuery] Guid? stationId,
@@ -256,6 +285,9 @@ public class MaintenanceController : ControllerBase
     }
 
     // ── GET /api/v1/maintenance/suggestions ──────────────────
+    /// <summary>Lấy danh sách đề xuất bảo trì dựa trên: thiết bị nhiều cảnh báo, task quá hạn, và thiết bị chưa bảo trì trong 30 ngày.</summary>
+    /// <param name="stationId">Lọc theo trạm (tùy chọn).</param>
+    /// <returns>Danh sách gợi ý bảo trì kèm mức độ ưu tiên và ngày đề xuất.</returns>
     [HttpGet("suggestions")]
     public async Task<IActionResult> GetSuggestions([FromQuery] Guid? stationId)
     {

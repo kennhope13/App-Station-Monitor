@@ -37,6 +37,10 @@ const EVT_CFG: Record<string, { label: string; icon: string; color: string }> = 
   storage_error: { label: 'Lỗi lưu trữ', icon: '◈', color: 'var(--admin-warning)' },
 };
 
+/**
+ * Trang giám sát camera trực tiếp — hiển thị lưới stream WebRTC với overlay nhiệt/PD,
+ * bảng sự kiện AI theo thời gian thực và đồng hồ trạng thái thiết bị.
+ */
 export default function RealtimeMonitorPage() {
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [layout, setLayout] = useState<Layout>('l4');
@@ -55,6 +59,9 @@ export default function RealtimeMonitorPage() {
   const [roiBoundaries, setRoiBoundaries] = useState<Record<string, Boundary[]>>({});
   const [roiPoints, setRoiPoints] = useState<Record<string, RoiPoint[]>>({});
   const [roiReadings, setRoiReadings] = useState<Record<string, Record<string, number>>>({});
+  const [pdBoundaries, setPdBoundaries] = useState<Record<string, Boundary[]>>({});
+  // VVR mapping cache per device: deviceId → {x, y, width, height}
+  const [vvrCache, setVvrCache] = useState<Record<string, {x:number;y:number;width:number;height:number}>>({});
 
   // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
   const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
@@ -103,25 +110,38 @@ export default function RealtimeMonitorPage() {
       });
       setCameras(expandedCams);
 
-      // Fetch ROI boundaries and points for all unique base camera device IDs
+      // Fetch ROI boundaries, PD boundaries, points và VVR mapping cho tất cả camera
       const uniqueBaseIds = Array.from(new Set(cams.map(c => c.id)));
+      const thermalIds = cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id);
+
+      // Fetch VVR mapping 1 lần (không cần poll vì ít thay đổi)
+      thermalIds.forEach(id => {
+        stationApi.getThermalMapping(id).then(m => {
+          if (m) setVvrCache(prev => ({ ...prev, [id]: m }));
+        }).catch(() => {});
+      });
+
       const fetchRoiConfig = () => {
         Promise.all(
-          uniqueBaseIds.map(id => 
+          uniqueBaseIds.map(id =>
             Promise.all([
               stationApi.getBoundaries(id, 'roi').catch(() => []),
-              stationApi.getRoiPoints(id).catch(() => [])
-            ]).then(([boundaries, points]) => ({ id, boundaries, points }))
+              stationApi.getRoiPoints(id).catch(() => []),
+              stationApi.getBoundaries(id, 'pd').catch(() => []),
+            ]).then(([boundaries, points, pdBounds]) => ({ id, boundaries, points, pdBounds }))
           )
         ).then(results => {
           const boundMap: Record<string, Boundary[]> = {};
           const pointMap: Record<string, RoiPoint[]> = {};
+          const pdMap: Record<string, Boundary[]> = {};
           results.forEach(res => {
             boundMap[res.id] = res.boundaries;
             pointMap[res.id] = res.points;
+            pdMap[res.id] = res.pdBounds;
           });
           setRoiBoundaries(boundMap);
           setRoiPoints(pointMap);
+          setPdBoundaries(pdMap);
         }).catch(console.error);
       };
 
@@ -159,7 +179,7 @@ export default function RealtimeMonitorPage() {
     };
   }, []);
 
-  // Load detections
+  /** Tải danh sách sự kiện phát hiện từ backend theo bộ lọc camera, loại và ngày. */
   const loadDetections = useCallback(async () => {
     try {
       const params = new URLSearchParams({ limit: '80' });
@@ -228,6 +248,7 @@ export default function RealtimeMonitorPage() {
   const onlineCount = cameras.filter(c => deviceStatus[c.id.replace(/_(optical|thermal)$/, '')] === 'online').length;
   const displayCams = selectedCamFilter ? cameras.filter(c => c.id === selectedCamFilter) : cameras;
 
+  /** Render các polygon SVG vùng ROI nhiệt lên overlay của ô camera. */
   const renderOverlayBoundaries = (cam: CameraDevice) => {
     const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
     const boundaries = roiBoundaries[baseDeviceId] || [];
@@ -236,9 +257,8 @@ export default function RealtimeMonitorPage() {
 
     const cfg = cam.config || {};
     const vvrRaw = (cfg as any).visible_valid_rect;
-    const vvr = vvrRaw && typeof vvrRaw.x === 'number'
-      ? vvrRaw
-      : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 };
+    const vvr = vvrCache[baseDeviceId]
+      ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 });
 
     return boundaries.map((b, index) => {
       let poly: [number, number][] = [];
@@ -261,13 +281,13 @@ export default function RealtimeMonitorPage() {
       const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
 
       let color = '#3b82f6';
-      let warningTemp = 50;
-      let alarmTemp = 70;
+      let warningTemp = 50, alarmTemp = 70, borderWidth = 0.5;
       if (b.thresholds) {
         try {
           const t = JSON.parse(b.thresholds);
           warningTemp = t.warning || 50;
           alarmTemp = t.alarm || 70;
+          if (t.borderWidth) borderWidth = parseFloat(t.borderWidth) || 0.5;
         } catch {}
       }
 
@@ -280,9 +300,10 @@ export default function RealtimeMonitorPage() {
         <polygon
           key={b.id}
           points={pointsStr}
-          fill="none"
+          fill={color + '12'}
           stroke={color}
-          strokeWidth={1.5}
+          strokeWidth={borderWidth}
+          strokeDasharray="4 3"
           vectorEffect="non-scaling-stroke"
           opacity={0.9}
         />
@@ -290,6 +311,7 @@ export default function RealtimeMonitorPage() {
     });
   };
 
+  /** Render nhãn tên vùng và nhiệt độ lên overlay dạng HTML div (hỗ trợ blur backdrop). */
   const renderOverlayLabels = (cam: CameraDevice) => {
     const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
     const points = roiPoints[baseDeviceId] || [];
@@ -298,7 +320,8 @@ export default function RealtimeMonitorPage() {
     const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
     const cfg = cam.config || {};
     const vvrRaw = (cfg as any).visible_valid_rect;
-    const vvr = vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 };
+    const vvr = vvrCache[baseDeviceId]
+      ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 });
 
     const labels: React.ReactNode[] = [];
 
@@ -322,10 +345,14 @@ export default function RealtimeMonitorPage() {
       
       let color = '#3b82f6';
       let warningTemp = 50, alarmTemp = 70;
+      let fontSize = 14;
+      let labelPos = 'top';
       if (b.thresholds) {
         try {
           const t = JSON.parse(b.thresholds);
           warningTemp = t.warning || 50; alarmTemp = t.alarm || 70;
+          if (t.fontSize) fontSize = parseInt(t.fontSize) || 14;
+          if (t.namePosition || t.labelPos) labelPos = t.namePosition || t.labelPos || 'top';
         } catch {}
       }
       if (temp !== undefined) {
@@ -333,6 +360,11 @@ export default function RealtimeMonitorPage() {
         else if (temp >= warningTemp) color = '#fbbf24';
       }
 
+      const labelTransform =
+        labelPos === 'bottom' ? 'translate(-50%, 0)'    :
+        labelPos === 'left'   ? 'translate(-100%, -50%)':
+        labelPos === 'right'  ? 'translate(0, -50%)'    :
+        /* top */               'translate(-50%, -100%)';
       labels.push(
         <div
           key={`label-b-${b.id}`}
@@ -340,10 +372,9 @@ export default function RealtimeMonitorPage() {
             position: 'absolute',
             left: `${rx * 100}%`,
             top: `${ry * 100}%`,
-            transform: 'translate(-50%, -100%)',
+            transform: labelTransform,
             pointerEvents: 'none',
             zIndex: 10,
-            marginBottom: 4
           }}
         >
           <div
@@ -353,7 +384,7 @@ export default function RealtimeMonitorPage() {
               border: `1.5px solid ${color}`,
               borderRadius: 4,
               padding: '2px 8px',
-              fontSize: '0.75rem',
+              fontSize: `${fontSize}px`,
               color: '#fff',
               whiteSpace: 'nowrap',
               display: 'flex',
@@ -373,85 +404,61 @@ export default function RealtimeMonitorPage() {
       );
     });
 
-    // 2. Point Labels
-    points.forEach((pt, index) => {
-      const txVal = pt.tx !== undefined && pt.tx !== null ? pt.tx : (pt.x !== undefined && pt.x !== null ? pt.x / 100 : 0);
-      const tyVal = pt.ty !== undefined && pt.ty !== null ? pt.ty : (pt.y !== undefined && pt.y !== null ? pt.y / 100 : 0);
-      
-      let rx = txVal;
-      let ry = tyVal;
-
-      if (!isThermal) {
-        const oxVal = pt.ox !== undefined && pt.ox !== null ? pt.ox : txVal;
-        const oyVal = pt.oy !== undefined && pt.oy !== null ? pt.oy : tyVal;
-        if (Math.abs(oxVal - txVal) < 0.0001 && Math.abs(oyVal - tyVal) < 0.0001) {
-          rx = Math.max(0, Math.min(1, txVal * vvr.width + vvr.x));
-          ry = Math.max(0, Math.min(1, tyVal * vvr.height + vvr.y));
-        } else {
-          rx = oxVal;
-          ry = oyVal;
-        }
+    // 2. Điểm đo nhiệt — CSS crosshair y hệt ThermalConfigTab
+    points.forEach(pt => {
+      // Chọn tọa độ theo loại camera: thermal dùng tx/ty, optical dùng ox/oy
+      const txv = pt.tx ?? (pt.x !== undefined ? pt.x / 100 : 0);
+      const tyv = pt.ty ?? (pt.y !== undefined ? pt.y / 100 : 0);
+      let rx = txv, ry = tyv;
+      if (!isThermal && pt.ox != null && pt.oy != null) {
+        rx = pt.ox; ry = pt.oy;
+      } else if (!isThermal) {
+        rx = txv * vvr.width + vvr.x;
+        ry = tyv * vvr.height + vvr.y;
       }
-
       if (rx === 0 && ry === 0) return;
 
-      // Fallback lookup strategy for point readings (support P1, p1, 1, UUID etc.)
-      const ptIdLower = pt.pointId ? pt.pointId.toLowerCase() : '';
-      const nameLower = pt.name ? pt.name.toLowerCase() : '';
-      const temp = 
-        (pt.pointId ? (readings[pt.pointId] ?? readings[ptIdLower]) : undefined) ??
-        (pt.name ? (readings[pt.name] ?? readings[`P${pt.name}`] ?? readings[`p${pt.name}`] ?? readings[`P${nameLower}`] ?? readings[`p${nameLower}`]) : undefined) ??
-        readings[pt.id] ??
-        readings[pt.id.toLowerCase()] ??
-        readings[`P${index + 1}`] ??
-        readings[`p${index + 1}`];
-      
-      let color = pt.color || '#10b981';
-      if (temp !== undefined) {
-        if (pt.alarmThreshold && temp >= pt.alarmThreshold) color = '#ef4444';
-        else if (pt.preAlarmThreshold && temp >= pt.preAlarmThreshold) color = '#fbbf24';
-      }
+      // Tra nhiệt độ từ SignalR readings
+      const pid = pt.pointId || '';
+      const nm  = pt.name || pt.label || '';
+      const temp =
+        (pid ? readings[pid] ?? readings[pid.toLowerCase()] : undefined) ??
+        (nm  ? readings[nm]  ?? readings[nm.toLowerCase()]  : undefined) ??
+        readings[pt.id] ?? readings[pt.id.toLowerCase()];
+
+      const preAlarm = pt.preAlarmThreshold ?? 50;
+      const alarmTh  = pt.alarmThreshold   ?? 70;
+      const color = temp != null
+        ? (temp >= alarmTh ? '#ef4444' : temp >= preAlarm ? '#f59e0b' : '#10b981')
+        : '#10b981';
+
+      const sz  = pt.sortOrder || 28;
+      const lp  = (pt as any).description || 'top';
+      const labelStyle: React.CSSProperties =
+        lp === 'bottom' ? { top: '100%',  left: '50%', transform: 'translateX(-50%)', marginTop: 4 } :
+        lp === 'left'   ? { right: '100%', top: '50%',  transform: 'translateY(-50%)', marginRight: 6 } :
+        lp === 'right'  ? { left: '100%',  top: '50%',  transform: 'translateY(-50%)', marginLeft: 6  } :
+        /* top */         { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 4 };
 
       labels.push(
-        <div
-          key={`label-p-${pt.id}`}
-          style={{
-            position: 'absolute',
-            left: `${rx * 100}%`,
-            top: `${ry * 100}%`,
-            transform: 'translate(-50%, -50%)',
-            pointerEvents: 'none',
-            zIndex: 11,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5
-          }}
-        >
-          <div style={{ width: 10, height: 10, borderRadius: '50%', border: `1.5px solid ${color}`, background: 'rgba(0, 0, 0, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 8px ${color}44`, flexShrink: 0 }}>
-            <div style={{ width: 2, height: 2, borderRadius: '50%', background: color }} />
+        <div key={`pt-${pt.id}`} style={{
+          position: 'absolute',
+          left: `${rx * 100}%`,
+          top:  `${ry * 100}%`,
+          transform: 'translate(-50%, -50%)',
+          pointerEvents: 'none',
+          zIndex: 11,
+        }}>
+          {/* CSS crosshair — y hệt ThermalConfigTab */}
+          <div style={{ position: 'relative', width: sz, height: sz }}>
+            <div style={{ position: 'absolute', top: '50%', left: 0, width: '100%', height: 1.5, background: color, transform: 'translateY(-50%)', boxShadow: '0 0 3px rgba(0,0,0,.9)' }} />
+            <div style={{ position: 'absolute', left: '50%', top: 0, width: 1.5, height: '100%', background: color, transform: 'translateX(-50%)', boxShadow: '0 0 3px rgba(0,0,0,.9)' }} />
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 4, height: 4, borderRadius: '50%', background: '#fff', boxShadow: `0 0 4px ${color}` }} />
           </div>
-          
-          <div
-            style={{
-              background: 'rgba(13, 17, 23, 0.9)',
-              backdropFilter: 'blur(4px)',
-              border: `1.5px solid ${color}`,
-              borderRadius: 4,
-              padding: '2px 8px',
-              fontSize: '0.75rem',
-              color: '#fff',
-              whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              boxShadow: `0 4px 12px rgba(0,0,0,0.6), 0 0 10px ${color}33`,
-              fontFamily: 'var(--font-mono)',
-              animation: temp !== undefined ? 'pulse-subtle 2s infinite' : 'none'
-            }}
-          >
-            <span style={{ fontWeight: 600, color: '#e2e8f0', marginRight: 6 }}>{pt.name}</span>
-            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
-              {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
-            </span>
+          {/* Label badge — y hệt ThermalConfigTab */}
+          <div style={{ position: 'absolute', ...labelStyle, background: 'rgba(8,8,8,.88)', border: `1px solid ${color}55`, borderRadius: 3, padding: '1px 6px', fontSize: 9, fontFamily: 'monospace', whiteSpace: 'nowrap', color: '#fff' }}>
+            <span style={{ color: '#ccc' }}>{pid || nm}</span>
+            {temp != null && <span style={{ fontWeight: 800, color, marginLeft: 4 }}>{temp.toFixed(1)}°C</span>}
           </div>
         </div>
       );
@@ -460,7 +467,69 @@ export default function RealtimeMonitorPage() {
     return labels;
   };
 
-  // Render Grid Cells
+  /** Render các polygon SVG vùng PD (phóng điện) với nhãn tên lên overlay. */
+  const renderOverlayPdBoundaries = (cam: CameraDevice) => {
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const boundaries = pdBoundaries[baseDeviceId] || [];
+
+    return boundaries.map(b => {
+      let poly: [number, number][] = [];
+      try { poly = JSON.parse(b.polygon); } catch { return null; }
+      if (poly.length < 3) return null;
+
+      const pointsStr = poly.map(([x, y]) => `${x * 100},${y * 100}`).join(' ');
+      const color = b.severityLevel === 'alarm' ? '#ef4444' : '#10b981';
+
+      let labelPos = 'bottom';
+      let fontSize = 12;
+      try {
+        if (b.thresholds) {
+          const t = JSON.parse(b.thresholds);
+          if (t.labelPos) labelPos = t.labelPos;
+          if (t.fontSize) fontSize = parseInt(t.fontSize) || 12;
+        }
+      } catch {}
+
+      const minX = Math.min(...poly.map(p => p[0])) * 100;
+      const maxX = Math.max(...poly.map(p => p[0])) * 100;
+      const minY = Math.min(...poly.map(p => p[1])) * 100;
+      const maxY = Math.max(...poly.map(p => p[1])) * 100;
+      const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length * 100;
+      const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length * 100;
+
+      let textX = cx, textY = cy;
+      let anchor = 'middle', baseline = 'middle';
+      const svgFontSize = (fontSize / 4.0).toFixed(1);
+      if (labelPos === 'top')    { textY = minY - 2; baseline = 'auto'; }
+      else if (labelPos === 'bottom') { textY = maxY + 2; baseline = 'hanging'; }
+      else if (labelPos === 'left')   { textX = minX - 2; anchor = 'end'; }
+      else if (labelPos === 'right')  { textX = maxX + 2; anchor = 'start'; }
+
+      return (
+        <g key={b.id}>
+          <polygon
+            points={pointsStr}
+            fill={`${color}12`}
+            stroke={color}
+            strokeWidth={2}
+            strokeDasharray="4 2"
+            vectorEffect="non-scaling-stroke"
+            opacity={0.9}
+          />
+          <text
+            x={textX} y={textY}
+            textAnchor={anchor as any} dominantBaseline={baseline as any}
+            fill="#fff" fontSize={svgFontSize} fontWeight="700"
+            style={{ pointerEvents: 'none', fontFamily: "'Inter','Segoe UI',sans-serif" } as any}
+          >
+            {b.name}
+          </text>
+        </g>
+      );
+    });
+  };
+
+  /** Render một ô camera trong lưới NVR — bao gồm stream, overlay và HUD. */
   const renderCell = (cam: CameraDevice | undefined, idx: number) => {
     const ch = String(idx + 1).padStart(2, '0');
     if (!cam) {
@@ -556,6 +625,7 @@ export default function RealtimeMonitorPage() {
                 }}
               >
                 {renderOverlayBoundaries(cam)}
+                {renderOverlayPdBoundaries(cam)}
               </svg>
               {renderOverlayLabels(cam)}
             </div>
@@ -629,6 +699,7 @@ export default function RealtimeMonitorPage() {
     );
   };
 
+  /** Phóng to/thu nhỏ ô camera — khi thu nhỏ sẽ reset bộ lọc camera. */
   const toggleExpand = (camId: string) => {
     if (expandedCamId === camId) {
       setExpandedCamId(null);
@@ -639,6 +710,7 @@ export default function RealtimeMonitorPage() {
     }
   };
 
+  /** Tải ảnh chụp tức thời từ go2rtc về máy người dùng. */
   const takeSnapshot = (srcId: string) => {
     const url = `${GO2RTC_URL}/api/frame.jpeg?src=${encodeURIComponent(srcId)}`;
     Object.assign(document.createElement('a'), { href: url, download: `snap_${Date.now()}.jpg`, target: '_blank' }).click();
@@ -740,7 +812,6 @@ export default function RealtimeMonitorPage() {
                   const cfg = EVT_CFG[evt.detectionType] || { label: evt.detectionType, icon: '◈', color: 'var(--admin-text-muted)' };
                   const meta = evt.metadata ? JSON.parse(evt.metadata) : {};
                   const snap = meta.snapshotUrl ? `${API_BASE_URL}${meta.snapshotUrl}` : '';
-                  const vidUrl = meta.videoUrl ? `${API_BASE_URL}${meta.videoUrl}` : '';
                   const time = new Date(evt.detectedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' });
 
                   return (
@@ -748,13 +819,17 @@ export default function RealtimeMonitorPage() {
                       key={evt.id} 
                       className="nvr-evt" 
                       onClick={() => {
-                        if (vidUrl) setLightbox({ url: vidUrl, isVideo: true });
-                        else if (snap) setLightbox({ url: snap, isVideo: false });
+                        if (evt.detectionType === 'partial_discharge' || evt.detectionType === 'thermal_hotspot') {
+                          setLightbox({ url: `${API_BASE_URL}/api/v1/events/${evt.id}/snapshot`, isVideo: false });
+                        } else if (meta.videoUrl) {
+                          setLightbox({ url: `${API_BASE_URL}${meta.videoUrl}`, isVideo: true });
+                        } else if (snap) {
+                          setLightbox({ url: snap, isVideo: false });
+                        }
                       }}
                     >
                       <div className="nvr-evt-thumb">
                         {snap ? <img src={snap} alt="" loading="lazy" /> : cfg.icon}
-                        {vidUrl && <div style={{ position: 'absolute', bottom: 2, right: 2, background: 'rgba(0,0,0,0.6)', borderRadius: 2, padding: '1px 3px', fontSize: 8 }}></div>}
                       </div>
                       <div className="nvr-evt-body">
                         <span className="nvr-evt-badge" style={{ color: cfg.color }}>{cfg.icon} {cfg.label}</span>

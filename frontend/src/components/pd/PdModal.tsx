@@ -1,12 +1,11 @@
 // src/components/pd/PdModal.tsx
 import React, { useState, useEffect } from 'react';
-import { Boundary } from '@/services/pdApi';
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: { name: string; warning: string; alarm: string }) => void;
-  initial?: Boundary;
+  initial?: any;
 };
 
 export const PdModal: React.FC<Props> = ({ isOpen, onClose, onSubmit, initial }) => {

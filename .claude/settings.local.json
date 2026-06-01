@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -E '\\\\.\\(cs|py\\)$')"
+      "Bash(grep -E '\\\\.\\(cs|py\\)$')",
+      "Bash(npx tsc *)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/api/person-detection -X POST -F 'metadata={\"timestamp\":\"2026-05-30 10:00:00\",\"camera_ip\":\"192.168.1.100\",\"person_count\":1,\"boxes\":[]}')",
+      "Bash(python3 *)",
+      "Bash(dotnet build *)",
+      "Bash(curl -s http://localhost:8100/health)",
+      "Bash(timeout 5 npx *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/api/v1/stations)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(lsof -ti:5173,5000,5432)",
+      "Bash(curl -s http://localhost:5000/api/v1/devices/c0c5eadf-81d5-4936-b211-dcb62bdbd45f/roi-points)",
+      "Bash(curl -s -X POST http://localhost:5000/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"Admin@123\"}')"
     ]
   }
 }

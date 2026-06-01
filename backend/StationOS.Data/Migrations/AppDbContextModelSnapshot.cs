@@ -68,6 +68,9 @@ namespace StationOS.Data.Migrations
                     b.Property<Guid?>("AckedBy")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("BoundaryId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime?>("ClosedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -251,6 +254,9 @@ namespace StationOS.Data.Migrations
                     b.Property<float?>("BboxY")
                         .HasColumnType("real");
 
+                    b.Property<Guid?>("BoundaryId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("BoundingBoxes")
                         .HasColumnType("jsonb");
 
@@ -296,6 +302,8 @@ namespace StationOS.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AlertId");
+
+                    b.HasIndex("BoundaryId");
 
                     b.HasIndex("CameraId");
 
@@ -1007,6 +1015,10 @@ namespace StationOS.Data.Migrations
                         .WithMany()
                         .HasForeignKey("AlertId");
 
+                    b.HasOne("StationOS.Data.Entities.Boundary", "Boundary")
+                        .WithMany()
+                        .HasForeignKey("BoundaryId");
+
                     b.HasOne("StationOS.Data.Entities.Device", "Camera")
                         .WithMany()
                         .HasForeignKey("CameraId")
@@ -1024,6 +1036,8 @@ namespace StationOS.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Alert");
+
+                    b.Navigation("Boundary");
 
                     b.Navigation("Camera");
 

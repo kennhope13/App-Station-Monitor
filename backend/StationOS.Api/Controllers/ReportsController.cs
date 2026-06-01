@@ -31,6 +31,9 @@ public class ReportsController : ControllerBase
     }
 
     // ── Tạo báo cáo ─────────────────────────────────────────
+    /// <summary>Tạo báo cáo PDF ngay lập tức theo loại (daily, monthly, event) và khoảng thời gian.</summary>
+    /// <param name="req">Tham số báo cáo: stationId, type, from, to.</param>
+    /// <returns>Thông tin báo cáo vừa tạo kèm đường dẫn file PDF.</returns>
     [HttpPost("generate")]
     public async Task<IActionResult> Generate([FromBody] GenerateRequest req)
     {
@@ -52,6 +55,10 @@ public class ReportsController : ControllerBase
     }
 
     // ── Danh sách báo cáo ───────────────────────────────────
+    /// <summary>Lấy danh sách báo cáo đã tạo, sắp xếp theo thời gian mới nhất.</summary>
+    /// <param name="stationId">Lọc theo trạm (tùy chọn).</param>
+    /// <param name="limit">Số lượng tối đa trả về (mặc định 50).</param>
+    /// <returns>Danh sách báo cáo.</returns>
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] Guid? stationId, [FromQuery] int limit = 50)
     {
@@ -67,6 +74,9 @@ public class ReportsController : ControllerBase
     }
 
     // ── Tải file PDF ────────────────────────────────────────
+    /// <summary>Tải xuống file PDF của báo cáo.</summary>
+    /// <param name="id">ID của báo cáo.</param>
+    /// <returns>File PDF với tên theo loại và kỳ báo cáo, hoặc 404 nếu không tìm thấy.</returns>
     [HttpGet("{id:guid}/download")]
     public async Task<IActionResult> Download(Guid id)
     {
@@ -95,6 +105,9 @@ public class ReportsController : ControllerBase
     }
 
     // ── Xóa báo cáo ─────────────────────────────────────────
+    /// <summary>Xóa báo cáo và file PDF tương ứng. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="id">ID của báo cáo cần xóa.</param>
+    /// <returns>204 NoContent nếu thành công hoặc 404 nếu không tìm thấy.</returns>
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> Delete(Guid id)

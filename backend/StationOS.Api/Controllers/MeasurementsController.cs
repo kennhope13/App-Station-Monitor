@@ -209,6 +209,11 @@ public class MeasurementsController : ControllerBase
         return Ok(data);
     }
 
+    /// <summary>
+    /// Xuất dữ liệu lịch sử dạng file CSV để tải về.
+    /// Hỗ trợ lọc theo deviceId, pointId, stationId và khoảng thời gian.
+    /// Tối đa 50.000 bản ghi mỗi lần xuất.
+    /// </summary>
     // GET /api/v1/history/export?deviceId=&pointId=&from=&to= → CSV
     [HttpGet("history/export")]
     public async Task<IActionResult> ExportHistory(

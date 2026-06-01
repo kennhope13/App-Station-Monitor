@@ -5,11 +5,16 @@ interface ActionDropdownProps {
   children: React.ReactNode;
 }
 
+/**
+ * Dropdown hành động: nhấn nút bút chì để mở menu nổi chứa các ActionDropdownItem.
+ * Tự đóng khi click ra ngoài vùng menu nhờ event listener mousedown trên document.
+ */
 export default function ActionDropdown({ children }: ActionDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Đóng menu khi người dùng click ra ngoài vùng dropdown
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -81,6 +86,10 @@ interface ActionDropdownItemProps {
   danger?: boolean;
 }
 
+/**
+ * Một mục trong ActionDropdown: hiển thị icon (tuỳ chọn) và nhãn,
+ * đổi màu đỏ khi là thao tác nguy hiểm (danger=true).
+ */
 export function ActionDropdownItem({ icon, label, onClick, danger }: ActionDropdownItemProps) {
   return (
     <button 

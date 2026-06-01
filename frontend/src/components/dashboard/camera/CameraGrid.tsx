@@ -29,6 +29,10 @@ function getThresholdsFromRules(pid: string, rules: Rule[]): { warn: number | nu
   return { warn: null, alarm: null };
 }
 
+/**
+ * Xác định màu hiển thị nhiệt độ dựa trên ngưỡng cảnh báo và nguy hiểm.
+ * Trả về màu muted nếu chưa có Rule nào cấu hình cho điểm đo.
+ */
 function getTempColor(val: number, warn: number | null, alarm: number | null) {
   if (alarm !== null && val >= alarm) return 'var(--admin-danger)';
   if (warn !== null && val >= warn) return 'var(--admin-warning)';
@@ -37,6 +41,10 @@ function getTempColor(val: number, warn: number | null, alarm: number | null) {
   return 'var(--admin-success)';
 }
 
+/**
+ * Panel điểm đo nhiệt trên Dashboard: hiển thị danh sách điểm đo nhiệt
+ * sắp xếp từ cao đến thấp, có badge nguy hiểm/cảnh báo và tag MAX cho điểm nóng nhất.
+ */
 export default function CameraGrid({ sensors, alertsCount, rules = [] }: CameraGridProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 

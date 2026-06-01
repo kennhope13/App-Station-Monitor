@@ -16,6 +16,9 @@ public class AuditMiddleware
 
     public AuditMiddleware(RequestDelegate next) => _next = next;
 
+    /// <summary>Xử lý request và tự động ghi AuditLog cho mọi thao tác thay đổi dữ liệu (POST/PUT/PATCH/DELETE) trên /api/v1/** sau khi response thành công.</summary>
+    /// <param name="ctx">HttpContext của request hiện tại.</param>
+    /// <param name="db">AppDbContext để ghi audit log vào database.</param>
     public async Task InvokeAsync(HttpContext ctx, AppDbContext db)
     {
         await _next(ctx);

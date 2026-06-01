@@ -21,6 +21,7 @@ class UnifiedStreamListener(threading.Thread):
     qua giao thức Hikvision ISAPI Alert Stream.
     """
     def __init__(self, camera_ip, username, password, backend_url):
+        """Khởi tạo listener với thông tin kết nối camera và URL backend."""
         super().__init__(daemon=True)
         self.camera_ip = camera_ip
         self.username = username
@@ -33,6 +34,7 @@ class UnifiedStreamListener(threading.Thread):
         self.last_update_time = 0
 
     def run(self):
+        """Kết nối và xử lý luồng Alert Stream liên tục, tự động thử lại khi mất kết nối."""
         logger.info("[UnifiedStream] Bắt đầu kết nối tới luồng Alert Stream: %s", self.url)
         session = requests.Session()
         session.auth = self.auth
@@ -74,6 +76,7 @@ class UnifiedStreamListener(threading.Thread):
                 time.sleep(10)
 
     def _process_json(self, json_str):
+        """Phân tích gói tin JSON và chuyển tiếp đến _process_packet."""
         try:
             data = json.loads(json_str)
             packet = {}
@@ -90,6 +93,7 @@ class UnifiedStreamListener(threading.Thread):
             logger.debug("[UnifiedStream] JSON processing error: %s", e)
 
     def _process_xml(self, xml_data):
+        """Phân tích gói tin XML và chuyển tiếp đến _process_packet."""
         try:
             root = ET.fromstring(xml_data)
             packet = {}
@@ -103,6 +107,7 @@ class UnifiedStreamListener(threading.Thread):
             logger.debug("[UnifiedStream] XML processing error: %s", e)
 
     def _process_packet(self, new_packet):
+        """Gộp gói tin mới vào pending, cập nhật trạng thái toàn cục khi đủ bộ dB + Hz."""
         global LIVE_DB, LIVE_FREQ, LIVE_EVENTS
         try:
             now = time.time()
@@ -146,6 +151,7 @@ class UnifiedStreamListener(threading.Thread):
             logger.debug("[UnifiedStream] Error processing packet: %s", e)
 
     def _categorize(self, etype, ai_type):
+        """Phân loại loại sự kiện thành 'fire', 'smoke', 'motion' hoặc None nếu không xác định."""
         t = (etype + ai_type).lower()
         if "fire" in t:
             return "fire"

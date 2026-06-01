@@ -44,6 +44,10 @@ public class PersonDetectionController : ControllerBase
         _rootPath = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     }
 
+    /// <summary>Nhận webhook sự kiện phát hiện người từ thiết bị Jetson Orin Nano. Lưu ảnh, tạo Alert, DetectionEvent và đẩy thông báo realtime qua SignalR.</summary>
+    /// <param name="image">Ảnh chụp màn hình từ camera tại thời điểm phát hiện (multipart/form-data, tùy chọn).</param>
+    /// <param name="metadata">JSON metadata: timestamp, camera_ip, person_count, boxes (multipart/form-data).</param>
+    /// <returns>Thông báo thành công kèm alertId, hoặc lỗi nếu metadata không hợp lệ.</returns>
     [HttpPost]
     [AllowAnonymous]
     public async Task<IActionResult> Receive([FromForm] IFormFile? image, [FromForm] string? metadata)

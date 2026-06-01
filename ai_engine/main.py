@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from api import routes
@@ -31,7 +32,7 @@ cfg = get_settings()
 # ── Scheduler: xử lý định kỳ ─────────────────────────────────
 
 async def _process_loop() -> None:
-    """Vòng lặp chính: gọi process() cho tất cả analyzer theo interval."""
+    """Gọi process() tuần tự cho tất cả analyzer nhiệt, line detector và acoustic theo chu kỳ."""
     while True:
         try:
             for analyzer in list(routes._thermal_analyzers.values()):
@@ -53,6 +54,7 @@ async def _process_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Quản lý vòng đời ứng dụng: khởi tạo analyzer và scheduler khi bật, dọn dẹp khi tắt."""
     logger.info("=== StationOS AI Aggregator starting ===")
     logger.info("Backend : %s", cfg.backend_url)
     logger.info("Port    : 8100")
@@ -143,11 +145,36 @@ async def _load_config_from_backend() -> None:
                         roi_resp = await client.get(f"{cfg.backend_url}/api/v1/devices/{d['id']}/roi-points")
                         if roi_resp.status_code == 200:
                             for r in roi_resp.json():
+                                tx = r.get("tx")
+                                ty = r.get("ty")
+                                ox = r.get("ox")
+                                oy = r.get("oy")
+                                
+                                # Fallback & Mapping logic from Optical to Thermal
+                                if tx is None or ty is None:
+                                    if ox is not None and oy is not None:
+                                        # Map from optical to thermal
+                                        vvr_raw = cfg_raw.get("visible_valid_rect", {})
+                                        vvr_x = float(vvr_raw.get("x", 0.20))
+                                        vvr_y = float(vvr_raw.get("y", 0.084))
+                                        vvr_w = float(vvr_raw.get("width", 0.63))
+                                        vvr_h = float(vvr_raw.get("height", 0.841))
+                                        
+                                        # Inverse mapping: from full optical frame to thermal valid rect
+                                        tx = (ox - vvr_x) / vvr_w
+                                        ty = (oy - vvr_y) / vvr_h
+                                    else:
+                                        tx, ty = 0.5, 0.5
+                                        
+                                # Đảm bảo nằm trong dải 0.0 - 1.0
+                                tx = max(0.0, min(1.0, float(tx)))
+                                ty = max(0.0, min(1.0, float(ty)))
+
                                 points.append(ThermalPoint(
                                     id=r.get("pointId") or f"P{r.get('sortOrder') or len(points)+1}",
-                                    x=r.get("tx", 0.5), y=r.get("ty", 0.5),
-                                    pre_alarm=r.get("preAlarmThreshold", 50.0),
-                                    alarm=r.get("alarmThreshold", 70.0),
+                                    x=tx, y=ty,
+                                    pre_alarm=float(r.get("preAlarmThreshold") or 50.0),
+                                    alarm=float(r.get("alarmThreshold") or 70.0),
                                     label=r.get("name", ""),
                                 ))
 
@@ -237,7 +264,7 @@ app = FastAPI(title="StationOS AI Engine", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

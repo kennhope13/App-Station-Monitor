@@ -3,6 +3,10 @@ import './AnalyticsLayout.css';
 import CabinetAnalyticsTab from './tabs/CabinetAnalyticsTab';
 import ThermalForecastTab from './tabs/ThermalForecastTab';
 
+/**
+ * Layout trang Phân tích: bao bọc nội dung phân tích tủ điện,
+ * hiển thị tiêu đề toolbar và render tab CabinetAnalyticsTab bên dưới.
+ */
 export default function AnalyticsLayout() {
   const [activeTab, setActiveTab] = useState<'cabinet' | 'thermal'>('cabinet');
 

@@ -21,6 +21,11 @@ type SortDir = 'asc' | 'desc';
 // AlertDetail = AlertItem + lịch sử thay đổi trạng thái
 type AlertDetail = AlertItem & { history: AlertHistoryEntry[] };
 
+/**
+ * Trang lịch sử cảnh báo: hiển thị danh sách cảnh báo bên trái,
+ * chi tiết cảnh báo bên phải. Hỗ trợ lọc, sắp xếp, lọc theo ngày,
+ * xác nhận (ack), đóng alert và nhận cảnh báo mới qua SignalR.
+ */
 export default function AlertsHistoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // Hỗ trợ deep link: /alerts-history?alertId=xxx tự động mở detail
@@ -108,9 +113,11 @@ export default function AlertsHistoryPage() {
   const [ackTargetId, setAckTargetId] = useState('');
   const [ackNote, setAckNote] = useState('');
 
+  /** Tải danh sách cảnh báo từ API theo khoảng thời gian và trạng thái đang lọc. */
   const loadAlerts = useCallback(async () => {
     setLoading(true);
     try {
+      // Chuyển ngày text sang ISO để gửi API
       const from = startDate ? new Date(startDate + 'T00:00:00').toISOString() : undefined;
       const to = endDate ? new Date(endDate + 'T23:59:59').toISOString() : undefined;
       const data = await stationApi.getAlerts(filterStatus || undefined, from, to);
@@ -181,6 +188,7 @@ export default function AlertsHistoryPage() {
     }
   }, [initialAlertId, alerts.length]);
 
+  /** Tải chi tiết + lịch sử xử lý của một cảnh báo theo id. */
   const loadDetail = async (id: string) => {
     setSelectedId(id);
     setDetailLoading(true);
@@ -195,11 +203,13 @@ export default function AlertsHistoryPage() {
     }
   };
 
+  /** Xử lý click vào dòng alert — bỏ qua nếu người dùng nhấn nút hành động. */
   const handleRowClick = (e: React.MouseEvent, id: string) => {
     if ((e.target as HTMLElement).closest('button')) return; // Ignore if clicking action buttons
     loadDetail(id);
   };
 
+  /** Mở modal xác nhận (ACK) cho cảnh báo được chọn. */
   const handleAckClick = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setAckTargetId(id);
@@ -207,6 +217,7 @@ export default function AlertsHistoryPage() {
     setAckModalOpen(true);
   };
 
+  /** Gửi xác nhận ACK kèm ghi chú lên store/API rồi làm mới danh sách. */
   const submitAck = async () => {
     if (ackTargetId) {
       await ackAlertInStore(ackTargetId, ackNote);
@@ -216,6 +227,7 @@ export default function AlertsHistoryPage() {
     }
   };
 
+  /** Đóng cảnh báo sau khi người dùng xác nhận qua hộp thoại. */
   const handleCloseAlert = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     if (!await confirmDialog({ title: 'Đóng cảnh báo', message: 'Xác nhận đóng alert này?', confirmText: 'Đóng alert' })) return;
@@ -224,6 +236,7 @@ export default function AlertsHistoryPage() {
     if (selectedId === id) loadDetail(selectedId);
   };
 
+  /** Xuất danh sách cảnh báo hiện tại ra file CSV và kích hoạt tải về. */
   const exportCsv = () => {
     const opts = {
       status: filterStatus || undefined,
@@ -238,12 +251,17 @@ export default function AlertsHistoryPage() {
     }).catch(err => console.warn('[AlertsHistory] Export lỗi:', err));
   };
 
+  /**
+   * Lọc và sắp xếp danh sách alert theo thiết bị, loại sự kiện,
+   * mức độ và cột sắp xếp hiện tại. Tính toán lại khi filter/sort thay đổi.
+   */
   const sortedAlerts = useMemo(() => {
     let result = [...alerts];
     if (filterDevice) {
       result = result.filter(a => a.deviceId === filterDevice);
     }
     if (filterType) {
+      // Lọc theo từ khóa trong nội dung message
       if (filterType === 'nguoi') {
         result = result.filter(a => a.message?.toLowerCase().includes('người') || a.message?.toLowerCase().includes('xâm nhập'));
       } else if (filterType === 'chay') {
@@ -256,6 +274,7 @@ export default function AlertsHistoryPage() {
       result = result.filter(a => a.level?.toLowerCase() === filterLevel.toLowerCase());
     }
 
+    // Thứ tự ưu tiên mức độ: alarm > warning > info
     const levelOrder: Record<string, number> = { [ALERT_LEVEL.ALARM]: 0, [ALERT_LEVEL.WARNING]: 1, [ALERT_LEVEL.INFO]: 2 };
     return result.sort((a, b) => {
       let cmp = 0;
@@ -268,6 +287,7 @@ export default function AlertsHistoryPage() {
     });
   }, [alerts, filterDevice, filterType, filterLevel, sortBy, sortDir]);
 
+  /** Đổi cột sắp xếp hoặc đảo chiều nếu đang sắp xếp theo cột đó. */
   const handleSort = (col: SortCol) => {
     if (sortBy === col) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -494,6 +514,10 @@ export default function AlertsHistoryPage() {
   );
 }
 
+/**
+ * Panel chi tiết một cảnh báo: hiển thị ảnh/video bằng chứng,
+ * thông tin cảnh báo và timeline lịch sử xử lý.
+ */
 function AlertDetailView({ data, onClose, onAck, onCloseAlert }: { data: AlertDetail, onClose: () => void, onAck: () => void, onCloseAlert: () => void }) {
   const isAlarm = data.level === 'alarm';
   const color = isAlarm ? 'var(--admin-danger)' : 'var(--admin-warning)';
@@ -579,6 +603,14 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert }: { data: AlertDe
   );
 }
 
+/**
+ * Mục đơn trong timeline lịch sử xử lý cảnh báo.
+ * @param icon - Ký tự biểu tượng hiển thị trong vòng tròn
+ * @param color - Màu CSS cho vòng tròn và đường nối
+ * @param time - Thời điểm sự kiện (chuỗi đã định dạng)
+ * @param actor - Người/hệ thống thực hiện hành động
+ * @param hasLine - Có vẽ đường nối xuống mục tiếp theo không
+ */
 function TimelineItem({ icon, color, time, actor, hasLine, children }: any) {
   return (
     <div className="ah-timeline-item">

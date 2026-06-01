@@ -20,7 +20,12 @@ import CameraGrid, { CameraSensor } from '@/components/dashboard/camera/CameraGr
 import AiForecastPanel from '@/components/dashboard/ai/AiForecastPanel';
 import DashboardToolbar from '@/components/dashboard/toolbar/DashboardToolbar';
 import CameraLiveViewer from '@/components/dashboard/camera/CameraLiveViewer';
+import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
 
+/**
+ * Trang tổng quan chính — hiển thị SLD, KPI, camera live và cảnh báo.
+ * Nhận cập nhật realtime qua SignalR và tự động resolve stationId từ URL hoặc API.
+ */
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
   // Ưu tiên stationId từ URL (?stationId=...), nếu không có thì tự fetch trạm đầu tiên
@@ -36,6 +41,7 @@ export default function DashboardPage() {
   });
   
   const sldRef = useRef<SldCanvasRef>(null);
+  const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [sldColorMatrix, setSldColorMatrix] = useState<string | undefined>(undefined);
   const [sldRefreshTick, setSldRefreshTick] = useState(0);
 
@@ -95,6 +101,7 @@ export default function DashboardPage() {
     getFirstStationId().then(id => { if (id) setStationId(id); }).catch(() => {});
   }, [stationId, getFirstStationId]);
 
+  /** Lưu camera đang chọn vào state và localStorage để giữ lại sau khi tải lại trang. */
   const handleCamChange = (srcId: string) => {
     setDashboardCam(srcId);
     localStorage.setItem('dashboard_selected_cam', srcId);
@@ -139,9 +146,12 @@ export default function DashboardPage() {
     onAlertUpdated: () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
   }, [stationId]);
 
+  // Fit sơ đồ SLD vừa khung nhìn
   const handleFit = () => sldRef.current?.fitView();
+  // Xoay sơ đồ SLD 90 độ
   const handleRotate = () => sldRef.current?.rotateView();
   
+  /** Chuyển mã màu hex thành feColorMatrix SVG để tô màu lại sơ đồ SLD. */
   const handleColorChange = (hex: string) => {
     const R = parseInt(hex.slice(1, 3), 16) / 255;
     const G = parseInt(hex.slice(3, 5), 16) / 255;
@@ -183,16 +193,21 @@ export default function DashboardPage() {
         ref={sldRef}
         stationId={stationId}
         editMode={isEditMode}
+        showLabels={showLabels}
         colorMatrix={sldColorMatrix}
-        onNodeDropped={async (x, y, deviceId, deviceName, pointId) => {
+        sensors={sensors}
+        selectedNodeId={selectedNode?.id}
+        onNodeSelect={setSelectedNode}
+        onNodeDropped={async (x, y, deviceId, _deviceName, pointId) => {
           try {
-            await stationApi.addSldPoint(stationId, {
+            const newNode = await stationApi.addSldPoint(stationId, {
               x, y, r: 8,
-              label: deviceName,
+              label: '', // Để trống để user tự nhập tên theo ý muốn
               deviceId: deviceId,
               pointId: pointId
             });
             sldRef.current?.reloadData();
+            setSelectedNode(newNode); // Tự động chọn để user có thể nhập tên ngay
             setSldRefreshTick(t => t + 1); // Trigger SldEditPanel refresh
           } catch (e: any) {
             console.error('Lỗi khi thả node:', e);
@@ -214,45 +229,53 @@ export default function DashboardPage() {
         onFilterChange={setFilters}
       />
 
-      {/* Left column: KPI + thermal points stacked */}
-      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: '20%', minWidth: 220, maxWidth: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
-        <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
-        <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
-        <AiForecastPanel />
-      </div>
+      {/* Left column: KPI + camera grid — ẩn khi đang chỉnh sơ đồ */}
+      {!isEditMode && (
+        <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: '20%', minWidth: 220, maxWidth: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
+          <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
+          <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
+          <AiForecastPanel />
+        </div>
+      )}
 
       {isEditMode ? (
         <SldEditPanel
           stationId={stationId}
           sldRef={sldRef}
           refreshTick={sldRefreshTick}
+          selectedNode={selectedNode}
+          onClearSelection={() => setSelectedNode(null)}
         />
       ) : (
         <div
           id="floatRightCol"
           style={{
-            position: 'absolute', bottom: 40, right: 10, zIndex: 30, width: '18%', minWidth: 210, maxWidth: 250,
-            display: 'flex', flexDirection: 'column', gap: 8
+            position: 'absolute', top: 10, right: 10, bottom: 40, zIndex: 30,
+            width: '18%', minWidth: 210, maxWidth: 250,
+            display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden',
           }}
         >
-          <CameraLiveViewer 
-            cameraSrc={activeCameraSrc} 
-            headerAddon={
-              <select 
-                style={{ fontSize: '0.55rem', padding: '1px 4px', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', borderRadius: 3, maxWidth: 100, cursor: 'pointer', outline: 'none' }}
-                value={activeCameraSrc}
-                onChange={e => handleCamChange(e.target.value)}
-              >
-                {Object.entries(camOptionsGroups).map(([zone, opts]) => (
-                  opts.length > 0 ? (
-                    <optgroup key={zone} label={zone}>
-                      {opts.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
-                    </optgroup>
-                  ) : null
-                ))}
-              </select>
-            }
-          />
+          <AlertPanel alerts={alerts} />
+          <div style={{ flex: '0 0 auto' }}>
+            <CameraLiveViewer
+              cameraSrc={activeCameraSrc}
+              headerAddon={
+                <select
+                  style={{ fontSize: '0.55rem', padding: '1px 4px', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', borderRadius: 3, maxWidth: 100, cursor: 'pointer', outline: 'none' }}
+                  value={activeCameraSrc}
+                  onChange={e => handleCamChange(e.target.value)}
+                >
+                  {Object.entries(camOptionsGroups).map(([zone, opts]) => (
+                    opts.length > 0 ? (
+                      <optgroup key={zone} label={zone}>
+                        {opts.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+                      </optgroup>
+                    ) : null
+                  ))}
+                </select>
+              }
+            />
+          </div>
         </div>
       )}
 

@@ -32,6 +32,9 @@ public class SldController : ControllerBase
 
     // ── GET /api/v1/sld/{stationId} ──────────────────────────
     // Trả về: svgUrl, points (đã đặt), unpinned (chưa đặt)
+    /// <summary>Lấy thông tin sơ đồ một sợi của trạm: file SVG, danh sách điểm đã đặt và thiết bị chưa đặt.</summary>
+    /// <param name="stationId">ID của trạm.</param>
+    /// <returns>svgUrl, version, danh sách points đã gắn thiết bị, và unpinned (chưa đặt lên sơ đồ).</returns>
     [HttpGet("{stationId:guid}")]
     public async Task<IActionResult> Get(Guid stationId)
     {
@@ -121,6 +124,10 @@ public class SldController : ControllerBase
     // ── POST /api/v1/sld/{stationId}/upload ──────────────────
     // Nhận: multipart/form-data field "file" (.svg)
     // Lưu vào wwwroot/sld/{stationId}.svg, trả về svgUrl
+    /// <summary>Upload file SVG sơ đồ một sợi cho trạm. Tự động tạo phiên bản mới và sao chép các điểm từ bản cũ. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="stationId">ID của trạm.</param>
+    /// <param name="file">File SVG cần upload.</param>
+    /// <returns>sldFileId, svgUrl có version cache-busting, và số version mới.</returns>
     [HttpPost("{stationId:guid}/upload")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> Upload(Guid stationId, IFormFile file)
@@ -195,6 +202,10 @@ public class SldController : ControllerBase
 
     // ── POST /api/v1/sld/{stationId}/points ──────────────────
     // Đặt thiết bị lên sơ đồ: tạo SldPoint mới
+    /// <summary>Đặt thiết bị lên sơ đồ một sợi — tạo SldPoint mới. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="stationId">ID của trạm.</param>
+    /// <param name="req">Thông tin điểm: DeviceId, tọa độ X/Y, bán kính R, label và PointId tùy chọn.</param>
+    /// <returns>Điểm vừa tạo kèm thông tin thiết bị liên kết.</returns>
     [HttpPost("{stationId:guid}/points")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> AddPoint(Guid stationId, [FromBody] AddPointRequest req)
@@ -257,6 +268,10 @@ public class SldController : ControllerBase
 
     // ── PUT /api/v1/sld/points/{id} ──────────────────────────
     // Di chuyển điểm hoặc đổi label / radius
+    /// <summary>Cập nhật vị trí, bán kính hoặc nhãn của điểm trên sơ đồ. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="id">ID của SldPoint.</param>
+    /// <param name="req">Các trường cần cập nhật: X, Y, R, Label (tất cả tùy chọn).</param>
+    /// <returns>Điểm đã cập nhật hoặc 404 nếu không tìm thấy.</returns>
     [HttpPut("points/{id:guid}")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> UpdatePoint(Guid id, [FromBody] UpdatePointRequest req)
@@ -275,6 +290,9 @@ public class SldController : ControllerBase
 
     // ── DELETE /api/v1/sld/points/{id} ───────────────────────
     // Xóa điểm → thiết bị quay lại danh sách unpinned
+    /// <summary>Xóa điểm khỏi sơ đồ — thiết bị liên kết sẽ quay lại danh sách unpinned. Yêu cầu quyền admin hoặc manager.</summary>
+    /// <param name="id">ID của SldPoint cần xóa.</param>
+    /// <returns>Thông báo xóa thành công hoặc 404 nếu không tìm thấy.</returns>
     [HttpDelete("points/{id:guid}")]
     [Authorize(Roles = "admin,manager")]
     public async Task<IActionResult> DeletePoint(Guid id)

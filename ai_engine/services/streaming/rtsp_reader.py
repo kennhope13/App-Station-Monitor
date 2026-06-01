@@ -15,6 +15,7 @@ class RtspReader:
     """Thread-safe RTSP frame reader. Luôn giữ frame mới nhất, bỏ frame cũ."""
 
     def __init__(self, stream_url: str, stream_id: str, reconnect_delay: float = 3.0):
+        """Khởi tạo reader với URL stream và thời gian chờ giữa các lần kết nối lại."""
         self.stream_url     = stream_url
         self.stream_id      = stream_id
         self.reconnect_delay = reconnect_delay
@@ -28,6 +29,7 @@ class RtspReader:
     # ── Public API ────────────────────────────────────────────
 
     def start(self) -> None:
+        """Khởi động thread đọc RTSP nếu chưa chạy."""
         if self._running:
             return
         self._running = True
@@ -49,11 +51,13 @@ class RtspReader:
 
     @property
     def is_alive(self) -> bool:
+        """Trả về True nếu thread đọc frame đang hoạt động."""
         return self._running and self._thread is not None and self._thread.is_alive()
 
     # ── Internal loop ─────────────────────────────────────────
 
     def _loop(self) -> None:
+        """Vòng lặp nội bộ: mở kết nối RTSP, đọc frame liên tục và tự kết nối lại khi lỗi."""
         while self._running:
             try:
                 self._cap = cv2.VideoCapture(self.stream_url)

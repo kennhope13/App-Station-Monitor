@@ -31,6 +31,10 @@ public class AlertsController : ControllerBase
         _notifier = notifier;
     }
 
+    /// <summary>
+    /// Gửi một cảnh báo test qua SignalR để kiểm tra kết nối realtime.
+    /// Endpoint công khai — không yêu cầu xác thực.
+    /// </summary>
     // GET /api/v1/alerts/test
     [HttpGet("test")]
     [AllowAnonymous] // Cho phép test nhanh không cần token
@@ -48,6 +52,10 @@ public class AlertsController : ControllerBase
         return Ok(new { success = true, message = "Đã gửi thông báo test tới SignalR", alert = testAlert });
     }
 
+    /// <summary>
+    /// Lấy danh sách cảnh báo. Operator chỉ thấy cảnh báo thuộc trạm được phân quyền.
+    /// Hỗ trợ lọc theo trạng thái (open/acked/closed) và khoảng thời gian.
+    /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? status,
@@ -82,6 +90,9 @@ public class AlertsController : ControllerBase
         return Ok(alerts);
     }
 
+    /// <summary>
+    /// Lấy chi tiết 1 cảnh báo kèm lịch sử thay đổi trạng thái (AlertHistory).
+    /// </summary>
     // GET /api/v1/alerts/{id}
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
@@ -105,6 +116,10 @@ public class AlertsController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Xác nhận đã nhận (ACK) cảnh báo. Chỉ áp dụng cho cảnh báo đang ở trạng thái "open".
+    /// Body: { note: string } — ghi chú tùy chọn.
+    /// </summary>
     // POST /api/v1/alerts/{id}/ack
     [HttpPost("{id:guid}/ack")]
     public async Task<IActionResult> Ack(Guid id, [FromBody] AckRequest? req)
@@ -135,6 +150,10 @@ public class AlertsController : ControllerBase
         return Ok(new { alert.Id, alert.Status, alert.AckedAt });
     }
 
+    /// <summary>
+    /// Đóng cảnh báo — chuyển trạng thái sang "closed" và ghi AlertHistory.
+    /// Broadcast trạng thái mới qua SignalR.
+    /// </summary>
     // POST /api/v1/alerts/{id}/close
     [HttpPost("{id:guid}/close")]
     public async Task<IActionResult> Close(Guid id)
@@ -161,6 +180,10 @@ public class AlertsController : ControllerBase
         return Ok(new { alert.Id, alert.Status, alert.ClosedAt });
     }
 
+    /// <summary>
+    /// Xuất danh sách cảnh báo ra file CSV để tải về.
+    /// Hỗ trợ lọc theo trạng thái và khoảng thời gian.
+    /// </summary>
     // GET /api/v1/alerts/export?status=&from=&to= → CSV
     [HttpGet("export")]
     public async Task<IActionResult> Export(

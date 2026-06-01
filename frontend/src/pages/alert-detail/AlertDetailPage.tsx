@@ -11,10 +11,16 @@ import { stationApi, type AlertItem, type AlertHistoryEntry } from '@/services/S
 import { useDeviceStore } from '@/store';
 import { fmtDateTime } from '@/utils/format';
 import { showToast } from '@/utils/toast';
+import { API_BASE_URL } from '@/utils/env';
 
 // AlertDetail = dữ liệu cảnh báo + mảng lịch sử thay đổi trạng thái
 type AlertDetail = AlertItem & { history: AlertHistoryEntry[] };
 
+/**
+ * Trang chi tiết cảnh báo độc lập, truy cập qua query param ?id=<alertId>.
+ * Hiển thị đầy đủ: thông tin, ảnh/video bằng chứng, biểu đồ cảm biến và
+ * timeline lịch sử xử lý. Cho phép ACK và đóng cảnh báo ngay trên trang.
+ */
 export default function AlertDetailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -23,9 +29,11 @@ export default function AlertDetailPage() {
   const [alert, setAlert] = useState<AlertDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [context, setContext] = useState<any>(null);
   const findDevice = useDeviceStore(s => s.findById);
   const device = alert?.deviceId ? findDevice(alert.deviceId) : undefined;
 
+  /** Tải chi tiết cảnh báo và dữ liệu ngữ cảnh cảm biến ±30s quanh sự kiện. */
   const loadAlertDetail = async () => {
     if (!id) {
       setErrorMsg('Không tìm thấy ID cảnh báo.');
@@ -35,8 +43,14 @@ export default function AlertDetailPage() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const data = await stationApi.getAlertDetail(id);
+      const data = await stationApi.getAlertDetail(id) as any;
       setAlert(data);
+
+      // Tải thêm dữ liệu cảm biến 30 giây quanh thời điểm sự kiện
+      if (data.detectionId || data.id) {
+        const ctx = await stationApi.getEventContext(data.detectionId || data.id).catch(() => null);
+        setContext(ctx);
+      }
     } catch (e: any) {
       setErrorMsg(`Không thể tải chi tiết cảnh báo: ${e.message || e}`);
     } finally {
@@ -48,11 +62,12 @@ export default function AlertDetailPage() {
     loadAlertDetail();
   }, [id]);
 
+  /** Gửi xác nhận ACK kèm ghi chú người dùng nhập qua prompt. */
   const handleAck = async () => {
     if (!alert) return;
     const note = prompt('Ghi chú ACK (tùy chọn):');
-    if (note === null) return; // user cancelled prompt
-    
+    if (note === null) return; // người dùng huỷ prompt
+
     try {
       await stationApi.ackAlert(alert.id, note);
       showToast('Đã xác nhận cảnh báo (ACK)', 'success');
@@ -62,6 +77,7 @@ export default function AlertDetailPage() {
     }
   };
 
+  /** Đóng cảnh báo sau khi người dùng xác nhận qua confirm dialog. */
   const handleClose = async () => {
     if (!alert) return;
     if (!window.confirm('Xác nhận đóng cảnh báo này?')) return;
@@ -110,8 +126,13 @@ export default function AlertDetailPage() {
     maintenance: 'Bảo trì',
   };
 
+  // Hàm trợ giúp: định dạng timestamp hoặc trả về '—' nếu không có giá trị
   const fmt = (ts?: string) => (ts ? fmtDateTime(ts) : '—');
 
+  /**
+   * Render một dòng thông tin dạng label — value theo chiều ngang.
+   * Dùng để hiển thị các trường như trạng thái, nguồn, giá trị...
+   */
   const infoRow = (label: string, value: ReactNode) => (
     <div 
       style={{
@@ -124,6 +145,11 @@ export default function AlertDetailPage() {
     </div>
   );
 
+  /**
+   * Render một mục trong timeline lịch sử xử lý cảnh báo.
+   * @param o - Thông tin mục: icon, màu, thời gian, người thực hiện, mô tả
+   * @param idx - Chỉ số dùng làm key React
+   */
   const timelineItem = (o: { icon: string; color: string; time: string; actor: string; desc: string; isFirst: boolean }, idx: number) => (
     <div key={idx} style={{ display: 'flex', gap: 14, position: 'relative', paddingBottom: 16 }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
@@ -244,6 +270,66 @@ export default function AlertDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Evidence Section (Image/Video) */}
+      <div style={{ display: 'grid', gridTemplateColumns: alert.videoUrl ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 20 }}>
+        {alert.imageUrl && (
+          <div className="admin-card" style={{ padding: 16 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>ẢNH CHỤP BẰNG CHỨNG</div>
+            <img 
+              src={alert.imageUrl.startsWith('http') ? alert.imageUrl : `${API_BASE_URL}${alert.imageUrl}`} 
+              alt="Evidence" 
+              style={{ width: '100%', height: 'auto', border: '1px solid var(--admin-border)' }}
+            />
+          </div>
+        )}
+        {alert.videoUrl && (
+          <div className="admin-card" style={{ padding: 16 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>VIDEO GHI HÌNH SỰ KIỆN</div>
+            <video 
+              src={alert.videoUrl.startsWith('http') ? alert.videoUrl : `${API_BASE_URL}/api/v1/events/${(alert as any).detectionId || alert.id}/video`} 
+              controls 
+              style={{ width: '100%', height: 'auto', background: '#000' }}
+            />
+            <div style={{ marginTop: 10, textAlign: 'right' }}>
+              <a 
+                href={`${API_BASE_URL}/api/v1/events/${(alert as any).detectionId || alert.id}/bundle`}
+                className="btn-industrial" 
+                style={{ fontSize: '.75rem' }}
+                target="_blank" rel="noreferrer"
+              >
+                📥 Tải xuống gói dữ liệu (.zip)
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sensor Readings Timeline Context */}
+      {context?.sensorReadings && context.sensorReadings.length > 0 && (
+        <div className="admin-card" style={{ padding: 20, marginBottom: 20 }}>
+          <div className="card-title" style={{ marginBottom: 16 }}>BIỂU ĐỒ CẢM BIẾN (±30s XUNG QUANH EVENT)</div>
+          <div style={{ height: 200, display: 'flex', alignItems: 'flex-end', gap: 2, paddingBottom: 20, borderBottom: '1px solid var(--admin-border)' }}>
+             {/* Mock visual timeline if no chart lib integrated yet */}
+             {context.sensorReadings.map((r: any, idx: number) => {
+               const max = Math.max(...context.sensorReadings.map((x: any) => x.value || 0));
+               const height = ((r.value || 0) / (max || 1)) * 100;
+               const isNearEvent = Math.abs(new Date(r.time).getTime() - new Date(alert.triggeredAt).getTime()) < 5000;
+               return (
+                 <div key={idx} title={`${r.pointId}: ${r.value}${r.unit} at ${new Date(r.time).toLocaleTimeString()}`} style={{ 
+                   flex: 1, height: `${height}%`, background: isNearEvent ? 'var(--admin-danger)' : 'var(--admin-info-text)',
+                   opacity: .6, minWidth: 2
+                 }}></div>
+               );
+             })}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 8 }}>
+            <span>{new Date(context.sensorReadings[0].time).toLocaleTimeString()}</span>
+            <span>THỜI ĐIỂM PHÁT HIỆN ({new Date(alert.triggeredAt).toLocaleTimeString()})</span>
+            <span>{new Date(context.sensorReadings[context.sensorReadings.length - 1].time).toLocaleTimeString()}</span>
+          </div>
+        </div>
+      )}
 
       {/* Timeline history */}
       <div className="admin-card" style={{ padding: 20 }}>

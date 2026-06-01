@@ -216,6 +216,11 @@ export class DeviceService {
       console.warn('[AI Engine] Sync failed:', err);
     }
   }
+
+  async getRelated(deviceId: string): Promise<any> {
+    const { apiFetch } = await import('./BaseApiService');
+    return apiFetch(`/devices/${deviceId}/related`);
+  }
 }
 
 export const deviceService = new DeviceService();

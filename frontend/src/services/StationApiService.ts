@@ -15,6 +15,7 @@ import { ruleService } from './api/RuleService';
 import { logService } from './api/LogService';
 import { boundaryService } from './api/BoundaryService';
 import { aiService, type PredictionHistoryPoint, type TrainingStatus } from './api/AiService';
+import { eventService } from './api/EventService';
 
 import type {
   Station, Device, CameraDevice, RoiPoint, CameraType, SensorPoint, Rule, AlertItem,
@@ -32,6 +33,10 @@ export type {
   PredictionHistoryPoint, TrainingStatus
 };
 
+/**
+ * Facade tổng hợp toàn bộ API của hệ thống.
+ * Mọi component chỉ cần import từ đây thay vì từ các service con trong api/.
+ */
 class StationApiService {
   // ── AI Engine ──────────────────────────────────────────────
   getAiPredictionHistory = aiService.getPredictionHistory.bind(aiService);
@@ -55,6 +60,7 @@ class StationApiService {
   testProtocolConnection = deviceService.testProtocolConnection.bind(deviceService);
   discoverHikvision = deviceService.discoverHikvision.bind(deviceService);
   autoConfigure = deviceService.autoConfigure.bind(deviceService);
+  getRelated = deviceService.getRelated.bind(deviceService);
 
   // ── ROI Points ────────────────────────────────────────────
   getRoiPoints = deviceService.getRoiPoints.bind(deviceService);
@@ -105,7 +111,13 @@ class StationApiService {
   getNotifyLogs = logService.getNotifyLogs.bind(logService);
   getRuleTriggerLogs = logService.getRuleTriggerLogs.bind(logService);
 
-  // ── Users ─────────────────────────────────────────────────
+  // ── Events ────────────────────────────────────────────────
+  getEvents = eventService.getEvents.bind(eventService);
+  getEventContext = eventService.getEventContext.bind(eventService);
+  getEventVideoUrl = eventService.getEventVideoUrl.bind(eventService);
+  getEventBundleUrl = eventService.getEventBundleUrl.bind(eventService);
+
+  // ── Systems ───────────────────────────────────────────────
   getUsers = systemService.getUsers.bind(systemService);
   createUser = systemService.createUser.bind(systemService);
   updateUser = systemService.updateUser.bind(systemService);
