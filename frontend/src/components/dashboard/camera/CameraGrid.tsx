@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CAM_POINT_LABELS, PT_CAM_IDS } from '@/constants/points';
+import { CAM_POINT_LABELS } from '@/constants/points';
 import type { Rule } from '@/types/api.types';
 
 export interface CameraSensor {
@@ -49,12 +49,13 @@ export default function CameraGrid({ sensors, alertsCount, rules = [] }: CameraG
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Xây danh sách điểm đo, sắp xếp theo nhiệt độ giảm dần
-  const rows = [...PT_CAM_IDS].map(pid => {
+  const rows = sensors.map(s => {
+    const pid = s.pid.toUpperCase();
     const thresholds = getThresholdsFromRules(pid, rules);
     return {
       pid,
       label: CAM_POINT_LABELS[pid] ?? pid,
-      sensor: sensors.find(s => s.pid.toUpperCase() === pid),
+      sensor: s,
       warn: thresholds.warn,
       alarm: thresholds.alarm,
     };
@@ -153,9 +154,9 @@ export default function CameraGrid({ sensors, alertsCount, rules = [] }: CameraG
       )}
 
       {/* Footer summary */}
-      {!isCollapsed && hottest?.sensor && (
+      {!isCollapsed && rows.length > 0 && (
         <div style={{ padding: '5px 10px', borderTop: '1px solid var(--admin-border-light)', background: 'var(--admin-hover)', fontSize: '0.6rem', color: 'var(--admin-text-muted)', display: 'flex', gap: 12 }}>
-          <span>{PT_CAM_IDS.length} điểm đo</span>
+          <span>{rows.length} điểm đo</span>
           {alertsCount > 0 && <span style={{ color: 'var(--admin-warning)' }}>{alertsCount} cảnh báo camera</span>}
         </div>
       )}

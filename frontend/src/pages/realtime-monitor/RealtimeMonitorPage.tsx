@@ -50,7 +50,6 @@ export default function RealtimeMonitorPage() {
   
   // Realtime
   const [deviceStatus, setDeviceStatus] = useState<Record<string, string>>({});
-  const [clock, setClock] = useState('00:00:00');
 
   // Lightbox
   const [lightbox, setLightbox] = useState<{ url: string, isVideo: boolean } | null>(null);
@@ -68,7 +67,7 @@ export default function RealtimeMonitorPage() {
 
   // Warning Log / Detection Events Panel states
   const [detections, setDetections] = useState<DetectionEvent[]>([]);
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
   const [typeFilter, setTypeFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
 
@@ -77,7 +76,7 @@ export default function RealtimeMonitorPage() {
     let roiSyncTimer: any = null;
     stationApi.getCamerasFromFirstStation().then(cams => {
       const initialStatus: Record<string, string> = {};
-      cams.forEach(c => initialStatus[c.id] = c.status || 'unknown');
+      cams.forEach(c => initialStatus[c.id.toLowerCase()] = c.status || 'unknown');
       setDeviceStatus(initialStatus);
 
       const expandedCams: CameraDevice[] = [];
@@ -117,7 +116,7 @@ export default function RealtimeMonitorPage() {
       // Fetch VVR mapping 1 lần (không cần poll vì ít thay đổi)
       thermalIds.forEach(id => {
         stationApi.getThermalMapping(id).then(m => {
-          if (m) setVvrCache(prev => ({ ...prev, [id]: m }));
+          if (m) setVvrCache(prev => ({ ...prev, [id.toLowerCase()]: m }));
         }).catch(() => {});
       });
 
@@ -135,9 +134,10 @@ export default function RealtimeMonitorPage() {
           const pointMap: Record<string, RoiPoint[]> = {};
           const pdMap: Record<string, Boundary[]> = {};
           results.forEach(res => {
-            boundMap[res.id] = res.boundaries;
-            pointMap[res.id] = res.points;
-            pdMap[res.id] = res.pdBounds;
+            const lowId = res.id.toLowerCase();
+            boundMap[lowId] = res.boundaries;
+            pointMap[lowId] = res.points;
+            pdMap[lowId] = res.pdBounds;
           });
           setRoiBoundaries(boundMap);
           setRoiPoints(pointMap);
@@ -153,8 +153,8 @@ export default function RealtimeMonitorPage() {
         setRoiReadings(prev => {
           const next = { ...prev };
           readings.forEach(r => {
-            const devId = r.deviceId;
-            const ptId = r.pointId;
+            const devId = r.deviceId?.toLowerCase();
+            const ptId = r.pointId?.toLowerCase();
             if (!devId || !ptId) return;
             if (!next[devId]) {
               next[devId] = {};
@@ -169,12 +169,7 @@ export default function RealtimeMonitorPage() {
       }).catch(console.error);
     }).catch(console.error);
 
-    const timer = setInterval(() => {
-      const d = new Date();
-      setClock(`${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`);
-    }, 1000);
     return () => {
-      clearInterval(timer);
       clearInterval(roiSyncTimer);
     };
   }, []);
@@ -207,13 +202,13 @@ export default function RealtimeMonitorPage() {
   useEffect(() => {
     const hubConnection = createRealtimeHub();
     hubConnection.on('DeviceStatus', (data: { deviceId: string; status: string }) => {
-      setDeviceStatus(prev => ({ ...prev, [data.deviceId]: data.status }));
+      setDeviceStatus(prev => ({ ...prev, [data.deviceId.toLowerCase()]: data.status }));
     });
     
     hubConnection.on('CameraEvent', (evt: DetectionEvent) => {
       setDetections(prev => {
-        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '');
-        if (selectedCamFilter && evt.cameraId !== baseFilterId) return prev;
+        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '').toLowerCase();
+        if (selectedCamFilter && evt.cameraId?.toLowerCase() !== baseFilterId) return prev;
         if (typeFilter && evt.detectionType !== typeFilter) return prev;
         return [evt, ...prev];
       });
@@ -224,8 +219,8 @@ export default function RealtimeMonitorPage() {
       setRoiReadings(prev => {
         const next = { ...prev };
         data.forEach(item => {
-          const devId = item.deviceId;
-          const ptId = item.pointId;
+          const devId = item.deviceId?.toLowerCase();
+          const ptId = item.pointId?.toLowerCase();
           if (!devId || !ptId) return;
           if (!next[devId]) {
             next[devId] = {};
@@ -250,7 +245,7 @@ export default function RealtimeMonitorPage() {
 
   /** Render các polygon SVG vùng ROI nhiệt lên overlay của ô camera. */
   const renderOverlayBoundaries = (cam: CameraDevice) => {
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const boundaries = roiBoundaries[baseDeviceId] || [];
     const readings = roiReadings[baseDeviceId] || {};
     const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
@@ -278,7 +273,9 @@ export default function RealtimeMonitorPage() {
       const pointsStr = mappedPoly.map(p => `${p[0] * 100},${p[1] * 100}`).join(' ');
 
       const lookupId = b.id.toLowerCase();
-      const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
+      const temp = readings[lookupId] ?? 
+                   (b.name ? readings[b.name.toLowerCase()] : undefined) ?? 
+                   readings[`r${index + 1}`];
 
       let color = '#3b82f6';
       let warningTemp = 50, alarmTemp = 70, borderWidth = 0.5;
@@ -313,7 +310,7 @@ export default function RealtimeMonitorPage() {
 
   /** Render nhãn tên vùng và nhiệt độ lên overlay dạng HTML div (hỗ trợ blur backdrop). */
   const renderOverlayLabels = (cam: CameraDevice) => {
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const points = roiPoints[baseDeviceId] || [];
     const boundaries = roiBoundaries[baseDeviceId] || [];
     const readings = roiReadings[baseDeviceId] || {};
@@ -341,7 +338,9 @@ export default function RealtimeMonitorPage() {
       }
 
       const lookupId = b.id.toLowerCase();
-      const temp = readings[lookupId] ?? readings[b.id] ?? readings[b.name] ?? readings[`R${index + 1}`];
+      const temp = readings[lookupId] ?? 
+                   (b.name ? readings[b.name.toLowerCase()] : undefined) ?? 
+                   readings[`r${index + 1}`];
       
       let color = '#3b82f6';
       let warningTemp = 50, alarmTemp = 70;
@@ -405,7 +404,7 @@ export default function RealtimeMonitorPage() {
     });
 
     // 2. Điểm đo nhiệt — CSS crosshair y hệt ThermalConfigTab
-    points.forEach(pt => {
+    points.forEach((pt, index) => {
       // Chọn tọa độ theo loại camera: thermal dùng tx/ty, optical dùng ox/oy
       const txv = pt.tx ?? (pt.x !== undefined ? pt.x / 100 : 0);
       const tyv = pt.ty ?? (pt.y !== undefined ? pt.y / 100 : 0);
@@ -421,10 +420,12 @@ export default function RealtimeMonitorPage() {
       // Tra nhiệt độ từ SignalR readings
       const pid = pt.pointId || '';
       const nm  = pt.name || pt.label || '';
+      const fallbackP1 = `p${pt.sortOrder || (index + 1)}`;
       const temp =
         (pid ? readings[pid] ?? readings[pid.toLowerCase()] : undefined) ??
         (nm  ? readings[nm]  ?? readings[nm.toLowerCase()]  : undefined) ??
-        readings[pt.id] ?? readings[pt.id.toLowerCase()];
+        readings[pt.id] ?? readings[pt.id.toLowerCase()] ??
+        readings[fallbackP1];
 
       const preAlarm = pt.preAlarmThreshold ?? 50;
       const alarmTh  = pt.alarmThreshold   ?? 70;
@@ -469,7 +470,7 @@ export default function RealtimeMonitorPage() {
 
   /** Render các polygon SVG vùng PD (phóng điện) với nhãn tên lên overlay. */
   const renderOverlayPdBoundaries = (cam: CameraDevice) => {
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const boundaries = pdBoundaries[baseDeviceId] || [];
 
     return boundaries.map(b => {
@@ -561,7 +562,7 @@ export default function RealtimeMonitorPage() {
     const isExpanded = expandedCamId === cam.id;
     const subId = cfg.go2rtc_sub_id || go2rtcId;
     const mainId = cfg.go2rtc_main_id || go2rtcId;
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '');
+    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const cellBoundaries = roiBoundaries[baseDeviceId] || [];
     const cellPoints = roiPoints[baseDeviceId] || [];
     const activeId = isExpanded ? mainId : subId;
@@ -669,7 +670,6 @@ export default function RealtimeMonitorPage() {
         </div>
 
         <div className="nvr-hud-b">
-          <span className="nvr-ts">{clock}</span>
           <div className="nvr-acts">
             <button 
               className={`nvr-abtn ${isAI ? 'active' : ''}`} 
@@ -768,7 +768,6 @@ export default function RealtimeMonitorPage() {
             <span className={`nvr-dot ${onlineCount > 0 ? 'online' : 'offline'}`} />
             Online: <b style={{ color: onlineCount > 0 ? 'var(--admin-success)' : 'var(--admin-danger)' }}>{onlineCount}/{cameras.length}</b>
           </div>
-          <span className="nvr-clock-txt">{clock}</span>
         </div>
       </div>
 
@@ -781,69 +780,7 @@ export default function RealtimeMonitorPage() {
           </div>
         </div>
 
-        {/* Events Panel */}
-        <div className={`nvr-ep ${isPanelCollapsed ? 'collapsed' : ''}`}>
-          <button className="nvr-ep-tab" onClick={() => setIsPanelCollapsed(!isPanelCollapsed)}>
-            <span className="nvr-ep-tab-arrow">◀</span>
-            <span className="nvr-ep-tab-label">NHẬT KÝ</span>
-          </button>
-          
-          <div className="nvr-ep-body">
-            <div className="nvr-ep-hdr">
-              <div className="nvr-ep-hdr-row">
-                <span className="nvr-ep-title">{selectedCamFilter ? cameras.find(c => c.id === selectedCamFilter)?.name || 'SỰ KIỆN CAM' : 'SỰ KIỆN CAM'}</span>
-                <span className="nvr-ep-cnt">{detections.length}</span>
-              </div>
-              <div className="nvr-ep-filters">
-                <select className="nvr-ep-fsel" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
-                  <option value="">Tất cả loại</option>
-                  {Object.entries(EVT_CFG).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
-                </select>
-                <input type="date" className="nvr-ep-fdate" value={dateFilter} onChange={e => setDateFilter(e.target.value)} />
-                <button className="nvr-ep-rbtn" onClick={() => { setTypeFilter(''); setDateFilter(''); loadDetections(); }}>↻</button>
-              </div>
-            </div>
-
-            <div className="nvr-ep-list">
-              {detections.length === 0 ? (
-                <div className="nvr-ep-empty">Chưa có sự kiện nào</div>
-              ) : (
-                detections.map(evt => {
-                  const cfg = EVT_CFG[evt.detectionType] || { label: evt.detectionType, icon: '◈', color: 'var(--admin-text-muted)' };
-                  const meta = evt.metadata ? JSON.parse(evt.metadata) : {};
-                  const snap = meta.snapshotUrl ? `${API_BASE_URL}${meta.snapshotUrl}` : '';
-                  const time = new Date(evt.detectedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' });
-
-                  return (
-                    <div 
-                      key={evt.id} 
-                      className="nvr-evt" 
-                      onClick={() => {
-                        if (evt.detectionType === 'partial_discharge' || evt.detectionType === 'thermal_hotspot') {
-                          setLightbox({ url: `${API_BASE_URL}/api/v1/events/${evt.id}/snapshot`, isVideo: false });
-                        } else if (meta.videoUrl) {
-                          setLightbox({ url: `${API_BASE_URL}${meta.videoUrl}`, isVideo: true });
-                        } else if (snap) {
-                          setLightbox({ url: snap, isVideo: false });
-                        }
-                      }}
-                    >
-                      <div className="nvr-evt-thumb">
-                        {snap ? <img src={snap} alt="" loading="lazy" /> : cfg.icon}
-                      </div>
-                      <div className="nvr-evt-body">
-                        <span className="nvr-evt-badge" style={{ color: cfg.color }}>{cfg.icon} {cfg.label}</span>
-                        <span className="nvr-evt-cam">{evt.cameraName || 'Camera'}</span>
-                        {evt.maxTemp != null && <span className="nvr-evt-temp">{evt.maxTemp.toFixed(1)}°C</span>}
-                        <span className="nvr-evt-time">{time}</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
+        {/* Events Panel — tạm ẩn */}
       </div>
 
       {/* Lightbox */}

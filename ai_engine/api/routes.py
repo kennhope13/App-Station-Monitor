@@ -136,29 +136,34 @@ async def configure_thermal(body: ThermalConfig):
 
     # 2. Chỉ khởi chạy analyzer nếu chúng ta đang ở chế độ xử lý trực tiếp (không phải aggregator thuần)
     # Ở đây chúng ta kiểm tra nếu process_loop đang chạy hoặc đơn giản là check biến môi trường
-    enable_analyzer = os.environ.get("AI_ENABLE_ANALYZER", "false").lower() == "true"
+    enable_analyzer = os.environ.get("AI_ENABLE_ANALYZER", "true").lower() == "true"
     
     if enable_analyzer:
         from services.thermal.thermal_analyzer import ThermalAnalyzer, ThermalPoint, ThermalZone
-        # Dừng analyzer cũ nếu đang chạy
-        if body.stream_id in _thermal_analyzers:
-            _thermal_analyzers[body.stream_id].stop()
-
+        # Retrieve previous configuration if analyzer exists
+        prev_analyzer = _thermal_analyzers.get(body.stream_id)
+        # Build new points and zones
         points = [ThermalPoint(**p.model_dump()) for p in body.points]
         zones = [ThermalZone(**z.model_dump()) for z in body.zones]
         
-        analyzer = ThermalAnalyzer(
-            device_id=body.device_id,
-            camera_ip=body.camera_ip,
-            username=body.username,
-            password=body.password,
-            stream_id=body.stream_id,
-            points=points,
-            zones=zones
-        )
-        analyzer.start()
-        _thermal_analyzers[body.stream_id] = analyzer
-        logger.info("[Routes] Thermal analyzer started locally for %s", body.stream_id)
+        if prev_analyzer:
+            # Hot-reload in-memory config for existing analyzer (always do this on update)
+            prev_analyzer.update_config(points, zones)
+            logger.info("[Routes] Thermal analyzer config updated/hot-reloaded for %s (points=%d, zones=%d)", body.stream_id, len(points), len(zones))
+        else:
+            # Create and start a new analyzer
+            analyzer = ThermalAnalyzer(
+                device_id=body.device_id,
+                camera_ip=body.camera_ip,
+                username=body.username,
+                password=body.password,
+                stream_id=body.stream_id,
+                points=points,
+                zones=zones
+            )
+            analyzer.start()
+            _thermal_analyzers[body.stream_id] = analyzer
+            logger.info("[Routes] Thermal analyzer started locally for %s (points=%d, zones=%d)", body.stream_id, len(points), len(zones))
 
     return {"ok": True, "stream_id": body.stream_id, "targets": new_targets}
 
@@ -447,7 +452,7 @@ def get_last_csv_records(filename: str, n: int = 100) -> list:
 @router.get("/api/prediction")
 async def receive_prediction(data: dict = None, request: Request = None):
     """Nhận dự đoán nhiệt độ từ mô hình AI và lưu vào CSV lịch sử."""
-    import os, csv, time
+    import os, csv, time, re
     from services.thermal.thermal_forecaster import save_prediction, append_prediction_history
     os.makedirs(DATA_DIR, exist_ok=True)
     
@@ -460,6 +465,15 @@ async def receive_prediction(data: dict = None, request: Request = None):
             
     prediction_payload = (data or {}).get("prediction", data or {})
     
+    # Flatten "points" array if present in the payload
+    if "points" in prediction_payload and isinstance(prediction_payload["points"], list):
+        for p in prediction_payload["points"]:
+            pid = p.get("id")
+            temp = p.get("temperature")
+            if pid and temp is not None:
+                prediction_payload[pid] = temp
+                prediction_payload[pid.replace(":", "_")] = temp
+
     # 2. Extract timestamps
     ts_now = time.strftime("%Y-%m-%d %H:%M:%S")
     issued_at = prediction_payload.get("issued_at") or ts_now
@@ -479,6 +493,23 @@ async def receive_prediction(data: dict = None, request: Request = None):
     config = load_or_create_model_config()
     targets = config.get("targets", ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"])
     
+    # Collect name-to-ID mapping from active analyzers
+    name_to_id = {}
+    try:
+        for analyzer in _thermal_analyzers.values():
+            for pt in getattr(analyzer, "points", []):
+                if pt.label:
+                    name_to_id[pt.label] = pt.id
+                if pt.id:
+                    name_to_id[pt.id] = pt.id
+            for zn in getattr(analyzer, "zones", []):
+                if zn.label:
+                    name_to_id[zn.label] = zn.id
+                if zn.id:
+                    name_to_id[zn.id] = zn.id
+    except Exception as map_err:
+        logger.warning("[Prediction] Failed to map names to IDs: %s", map_err)
+
     # 4. Extract target values and construct dynamic prediction dict
     pred_dict = {
         "issued_at": issued_at,
@@ -486,7 +517,7 @@ async def receive_prediction(data: dict = None, request: Request = None):
         "forecast_timestamp": forecast_ts,
     }
     
-    for t in targets:
+    for i, t in enumerate(targets):
         pred_val = None
         cleaned_t = t.replace(":", "_")
         
@@ -497,7 +528,39 @@ async def receive_prediction(data: dict = None, request: Request = None):
             t,
             cleaned_t,
         ]
-        for key in candidates:
+        
+        # Add mapped ID candidates from active analyzers
+        mapped_id = name_to_id.get(t)
+        if mapped_id:
+            cleaned_mapped = mapped_id.replace(":", "_")
+            candidates.extend([
+                f"{mapped_id}_pred",
+                f"{cleaned_mapped}_pred",
+                mapped_id,
+                cleaned_mapped
+            ])
+            
+        # Add index-based fallback candidates (e.g. "Điểm 1" -> ID_1, P1)
+        digits = re.findall(r'\d+', t)
+        idx = int(digits[0]) if digits else (i + 1)
+        
+        fallback_ids = [f"ID_{idx}", f"P{idx}"]
+        for fid in fallback_ids:
+            candidates.extend([
+                f"{fid}_pred",
+                fid
+            ])
+            
+        # De-duplicate candidates while preserving order
+        seen = set()
+        unique_candidates = []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                unique_candidates.append(c)
+                
+        # Look for the candidate keys in prediction_payload
+        for key in unique_candidates:
             if key in prediction_payload and prediction_payload[key] is not None:
                 try:
                     pred_val = float(prediction_payload[key])
@@ -986,24 +1049,47 @@ _model_status = {
 
 def load_or_create_model_config():
     os.makedirs("model", exist_ok=True)
-    if not os.path.exists(MODEL_CONFIG_FILE):
-        default_config = {
-            "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
-            "window_size": 5,
-            "horizon": 5
-        }
-        with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(default_config, f, indent=2)
-        return default_config
-    try:
-        with open(MODEL_CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {
-            "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
-            "window_size": 5,
-            "horizon": 5
-        }
+    config = {
+        "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
+        "window_size": 5,
+        "horizon": 5
+    }
+    
+    # Try to load existing settings for window_size/horizon
+    if os.path.exists(MODEL_CONFIG_FILE):
+        try:
+            with open(MODEL_CONFIG_FILE, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                config["window_size"] = loaded.get("window_size", 5)
+                config["horizon"] = loaded.get("horizon", 5)
+                if "targets" in loaded:
+                    config["targets"] = loaded["targets"]
+        except Exception:
+            pass
+
+    # Dynamically extract active points and zones from all registered thermal analyzers
+    active_targets = []
+    for analyzer in _thermal_analyzers.values():
+        for pt in getattr(analyzer, "points", []):
+            name = pt.label or pt.id
+            if name and name not in active_targets:
+                active_targets.append(name)
+        for zn in getattr(analyzer, "zones", []):
+            name = zn.label or zn.id
+            if name and name not in active_targets:
+                active_targets.append(name)
+
+    # If active targets exist from active devices, update the targets list dynamically!
+    if active_targets:
+        config["targets"] = active_targets
+        # Proactively persist the updated configuration to prevent drift
+        try:
+            with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    return config
 
 def save_model_config(config_data):
     os.makedirs("model", exist_ok=True)
@@ -1172,6 +1258,47 @@ async def get_prediction_history():
     if HISTORY_CSV.exists():
         history = load_history_for_chart(targets, window_minutes=30, horizon=horizon)
         if history:
+            # DYNAMIC INJECTION: Lấy nhiệt độ thực tế tức thời từ RAM để cập nhật ngay lập tức cho UI
+            live_temps = {}
+            for analyzer in _thermal_analyzers.values():
+                for pt in getattr(analyzer, "points", []):
+                    name = pt.label or pt.id
+                    temp = analyzer.last_point_temps.get(pt.id)
+                    if name and temp is not None:
+                        live_temps[name] = temp
+                for zn in getattr(analyzer, "zones", []):
+                    name = zn.label or zn.id
+                    res = analyzer.last_zone_results.get(zn.id)
+                    if name and res is not None and "max" in res:
+                        live_temps[name] = res["max"]
+
+            # Lấy dự báo tức thời mới nhất nếu có sẵn
+            from services.thermal.thermal_forecaster import load_latest_prediction
+            latest_pred = load_latest_prediction(targets) or {}
+
+            # Inject các giá trị tức thời này vào phần tử "Hiện tại" (boundary) trước thềm dự báo tương lai
+            boundary_idx = len(history) - horizon - 1
+            if 0 <= boundary_idx < len(history):
+                for t in targets:
+                    # Nếu thiếu hoặc là null trong CSV lịch sử, điền ngay nhiệt độ tức thời từ RAM
+                    if history[boundary_idx].get(f"{t}_actual") is None and t in live_temps:
+                        history[boundary_idx][f"{t}_actual"] = live_temps[t]
+                    # Điền dự báo dự phòng tức thời
+                    if history[boundary_idx].get(f"{t}_pred") is None:
+                        if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
+                            history[boundary_idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
+                        elif t in live_temps:
+                            history[boundary_idx][f"{t}_pred"] = live_temps[t]
+
+            # Điền dự phòng cho các mốc thời gian tương lai (forecast points) của các điểm đo mới thêm vào
+            for idx in range(len(history) - horizon, len(history)):
+                for t in targets:
+                    if history[idx].get(f"{t}_pred") is None:
+                        if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
+                            history[idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
+                        elif t in live_temps:
+                            history[idx][f"{t}_pred"] = live_temps[t]
+
             return {"success": True, "history": history, "targets": targets, "source": "live"}
 
     # Fallback demo (dữ liệu ngẫu nhiên) — giữ lại để UI không bị trống

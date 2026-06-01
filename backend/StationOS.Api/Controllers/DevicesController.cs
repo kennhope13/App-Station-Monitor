@@ -10,6 +10,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using StationOS.Data;
 using StationOS.Data.Entities;
 using StationOS.Services;
@@ -32,10 +33,11 @@ public class DevicesController : ControllerBase
     private readonly CredentialEncryptionService _crypto;
     private readonly AutoDiscoveryService _autoDiscovery;
     private readonly IHttpClientFactory _http;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public DevicesController(AppDbContext db, DeviceService deviceService, PermissionService permissions,
                              IConfiguration config, HikvisionIsapiService isapi, CredentialEncryptionService crypto,
-                             AutoDiscoveryService autoDiscovery, IHttpClientFactory http)
+                             AutoDiscoveryService autoDiscovery, IHttpClientFactory http, IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _deviceService = deviceService;
@@ -45,6 +47,28 @@ public class DevicesController : ControllerBase
         _crypto = crypto;
         _autoDiscovery = autoDiscovery;
         _http = http;
+        _scopeFactory = scopeFactory;
+    }
+
+    /// <summary>
+    /// Xóa toàn bộ điểm đo nhiệt độ (RoiPoints) và vùng nhiệt (Boundaries loại roi) trong database.
+    /// </summary>
+    [HttpPost("devices/clear-thermal-database")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ClearAllThermalData()
+    {
+        try
+        {
+            _db.RoiPoints.RemoveRange(_db.RoiPoints);
+            var rois = _db.Boundaries.Where(b => b.Type == "roi");
+            _db.Boundaries.RemoveRange(rois);
+            await _db.SaveChangesAsync();
+            return Ok(new { success = true, message = "Đã xóa toàn bộ điểm đo nhiệt độ và vùng nhiệt trong database thành công!" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, error = ex.Message });
+        }
     }
 
     private bool IsTrustedInternal(string? ip)
@@ -467,6 +491,36 @@ public class DevicesController : ControllerBase
     [HttpPost("devices/{deviceId}/roi-points")]
     public async Task<IActionResult> CreateRoiPoint(Guid deviceId, [FromBody] RoiPointRequest req)
     {
+        string? assignedPointId = req.PointId;
+        if (string.IsNullOrEmpty(assignedPointId))
+        {
+            // 1. Cố gắng trích xuất số từ tên điểm (ví dụ: "Điểm 4" -> 4 -> "P4")
+            var match = System.Text.RegularExpressions.Regex.Match(req.Name ?? "", @"\d+");
+            if (match.Success && int.TryParse(match.Value, out int num))
+            {
+                assignedPointId = $"P{num}";
+            }
+            else
+            {
+                // 2. Nếu không có số, tự động lấy chỉ số lớn nhất hiện tại trong DB + 1
+                var existingPoints = await _db.RoiPoints
+                    .Where(r => r.DeviceId == deviceId)
+                    .ToListAsync();
+                int maxNum = 0;
+                foreach (var ep in existingPoints)
+                {
+                    if (!string.IsNullOrEmpty(ep.PointId) && ep.PointId.StartsWith("P"))
+                    {
+                        if (int.TryParse(ep.PointId.Substring(1), out int val))
+                        {
+                            if (val > maxNum) maxNum = val;
+                        }
+                    }
+                }
+                assignedPointId = $"P{maxNum + 1}";
+            }
+        }
+
         var point = new RoiPoint
         {
             DeviceId = deviceId,
@@ -475,7 +529,7 @@ public class DevicesController : ControllerBase
             Ty = req.Ty,
             Ox = req.Ox ?? req.Tx,
             Oy = req.Oy ?? req.Ty,
-            PointId = req.PointId,
+            PointId = assignedPointId,
             Color = req.Color,
             SortOrder = req.SortOrder,
             PreAlarmThreshold = req.PreAlarmThreshold ?? 50.0f,
@@ -539,7 +593,16 @@ public class DevicesController : ControllerBase
 
     private async Task SyncThermalPointsToAIEngineAsync(Guid deviceId)
     {
-        await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var scopedService = scope.ServiceProvider.GetRequiredService<DeviceService>();
+            await scopedService.SyncThermalConfigToAIEngineAsync(deviceId);
+        }
+        catch (Exception ex)
+        {
+            // Fail silently or log if possible to prevent background thread crash
+        }
     }
 
     /// <summary>
@@ -584,7 +647,7 @@ public class DevicesController : ControllerBase
                     .Select(r => new { id = r.Id, x1 = r.X1, y1 = r.Y1, x2 = r.X2, y2 = r.Y2 }).ToList(),
             });
             var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-            var resp = await client.PostAsync("http://localhost:8100/thermal/query-temps", content);
+            var resp = await client.PostAsync("http://127.0.0.1:8100/thermal/query-temps", content);
             var body = await resp.Content.ReadAsStringAsync();
             return Content(body, "application/json");
         }

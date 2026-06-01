@@ -50,15 +50,15 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
     severity: 'warning' as 'warning' | 'alarm',
     strokeWidth: '2',
     labelPosition: 'top',
-    fontSize: '14'
+    fontSize: '14',
+    warnDb: '20',
+    alarmDb: '35',
   });
   const [dragVertex, setDragVertex] = useState<number | null>(null);
   const [dragPoly, setDragPoly] = useState<boolean>(false);
 
   // Trạng thái Realtime (polling từ AI Engine)
-  const [aiStats, setAiStats] = useState<{ db?: number | null, hz?: number | null, detection?: boolean, active_boundary?: string | null, events?: any[], raw?: any }>({});
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [debugUrl, setDebugUrl] = useState<string | null>(null);
+  const [aiStats, setAiStats] = useState<{ db?: number | null, hz?: number | null, detection?: boolean, active_boundary?: string | null, events?: any[] }>({});
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -89,7 +89,6 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
         const token = authService.getToken() || '';
         const backend = API_BASE_URL.replace('/api/v1', '');
         const fetchUrl = `/pd-monitor/${cam.id}/state?token=${token}&backend=${backend}`;
-        setDebugUrl(fetchUrl);
         const res = await fetch(fetchUrl);
         if (res.ok) {
           const data = await res.json();
@@ -99,14 +98,12 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
             detection: !!data.detection,
             active_boundary: data.active_boundary,
             events: data.events || [],
-            raw: data
           });
-          setFetchError(null);
         } else {
-          setFetchError(`HTTP Error: ${res.status}`);
+          console.warn('[PdRegionTab] HTTP Error:', res.status);
         }
       } catch (err: any) { 
-        setFetchError(err.message || 'Fetch failed');
+        console.error('[PdRegionTab] Polling error:', err.message);
       }
       timer = setTimeout(fetchStats, 500);
     };
@@ -191,7 +188,7 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
     if (draftVertices.length < 3) return;
     setIsDrawing(false);
     setEditingId('__new__');
-    setFormData({ code: `PD_${boundaries.length + 1}`, fullName: `Vùng PD ${boundaries.length + 1}`, severity: 'warning', strokeWidth: '2', labelPosition: 'bottom', fontSize: '14' });
+    setFormData({ code: `PD_${boundaries.length + 1}`, fullName: `Vùng PD ${boundaries.length + 1}`, severity: 'warning', strokeWidth: '2', labelPosition: 'bottom', fontSize: '14', warnDb: '20', alarmDb: '35' });
   };
 
   /** Hủy vẽ vùng và reset toàn bộ trạng thái draft. */
@@ -220,7 +217,14 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
         name: formData.code.trim(),
         type: 'pd',
         polygon: JSON.stringify(draftVertices),
-        thresholds: JSON.stringify({ fullName: formData.fullName.trim(), strokeWidth: formData.strokeWidth, labelPos: formData.labelPosition, fontSize: formData.fontSize }),
+        thresholds: JSON.stringify({
+          fullName: formData.fullName.trim(),
+          strokeWidth: formData.strokeWidth,
+          labelPos: formData.labelPosition,
+          fontSize: formData.fontSize,
+          warn: parseFloat(formData.warnDb) || 20,
+          alarm: parseFloat(formData.alarmDb) || 35,
+        }),
         severityLevel: formData.severity,
         enabled: true,
       };
@@ -268,19 +272,23 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
       let labelPosition = 'bottom';
       let fontSize = '14';
       let fullName = b.name;
+      let parsedThresholds: any = {};
       try {
         if (b.thresholds) {
-          const t = JSON.parse(b.thresholds);
-          if (t.strokeWidth) strokeWidth = t.strokeWidth;
-          if (t.labelPos) labelPosition = t.labelPos;
-          if (t.fontSize) fontSize = t.fontSize;
-          if (t.fullName) fullName = t.fullName;
+          parsedThresholds = JSON.parse(b.thresholds);
+          if (parsedThresholds.strokeWidth) strokeWidth = parsedThresholds.strokeWidth;
+          if (parsedThresholds.labelPos) labelPosition = parsedThresholds.labelPos;
+          if (parsedThresholds.fontSize) fontSize = parsedThresholds.fontSize;
+          if (parsedThresholds.fullName) fullName = parsedThresholds.fullName;
         }
       } catch {}
 
       setDraftVertices(poly);
       setEditingId(b.id);
-      setFormData({ code: b.name, fullName, severity: b.severityLevel as 'warning' | 'alarm', strokeWidth, labelPosition, fontSize });
+      setFormData({ code: b.name, fullName, severity: b.severityLevel as 'warning' | 'alarm', strokeWidth, labelPosition, fontSize,
+        warnDb: parsedThresholds.warn ? String(parsedThresholds.warn) : '20',
+        alarmDb: parsedThresholds.alarm ? String(parsedThresholds.alarm) : '35',
+      });
       setIsDrawing(false);
     } catch {
       console.error('[PdRegionTab] Failed to parse polygon for edit');
@@ -323,14 +331,7 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
                 {aiStats.hz != null ? Math.round(aiStats.hz) + ' Hz' : '— Hz'}
               </span>
             </div>
-            {/* DEBUG INFO */}
-            <div style={{ fontSize: '.6rem', color: '#666', marginTop: 4, wordBreak: 'break-all' }}>
-              Raw: {JSON.stringify(aiStats.raw || {})}
-              <br/>
-              URL: {debugUrl || 'none'}
-              <br/>
-              Err: {fetchError || 'none'}
-            </div>
+
           </div>
         )}
 
@@ -488,6 +489,41 @@ export default function PdRegionTab({ cameras: _cameras, initialCamera }: Props)
                   <option value="16">Lớn</option>
                   <option value="20">Rất lớn</option>
                 </select>
+              </div>
+            </div>
+            {/* Ngưỡng cảnh báo */}
+            <div style={{ marginBottom: 8, padding: '8px 10px', background: 'rgba(239,68,68,0.06)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.2)' }}>
+              <div style={{ fontSize:'.65rem', fontWeight:800, color:'#ef4444', marginBottom:6, letterSpacing:'.5px' }}>⚡ NGƯỠNG KÍCH HOẠT (dB)</div>
+              <div style={{ display:'flex', gap:8 }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ display:'block', fontSize:'.65rem', marginBottom:3, opacity:.7, fontWeight: 600, color:'#f59e0b' }}>⚠ CẢNH BÁO (dB)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    style={{ width:'100%', fontSize: '.85rem' }}
+                    value={formData.warnDb}
+                    onChange={e => setFormData({...formData, warnDb: e.target.value})}
+                    placeholder="20"
+                    min="0" max="100" step="1"
+                  />
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={{ display:'block', fontSize:'.65rem', marginBottom:3, opacity:.7, fontWeight: 600, color:'#ef4444' }}>🚨 BÁO ĐỘNG (dB)</label>
+                  <input
+                    className="form-input"
+                    type="number"
+                    style={{ width:'100%', fontSize: '.85rem' }}
+                    value={formData.alarmDb}
+                    onChange={e => setFormData({...formData, alarmDb: e.target.value})}
+                    placeholder="35"
+                    min="0" max="100" step="1"
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize:'.6rem', color:'var(--admin-text-muted)', marginTop:4 }}>
+                Hiện tại: <b style={{ color: aiStats.db != null && aiStats.db >= parseFloat(formData.alarmDb) ? '#ef4444' : aiStats.db != null && aiStats.db >= parseFloat(formData.warnDb) ? '#f59e0b' : 'var(--admin-text)' }}>
+                  {aiStats.db != null ? aiStats.db.toFixed(1) + ' dB' : '—'}
+                </b>
               </div>
             </div>
             <div style={{ display:'flex', gap:6 }}>

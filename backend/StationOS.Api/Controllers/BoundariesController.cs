@@ -114,7 +114,7 @@ public class BoundariesController : ControllerBase
 
         if (b.Type == "roi")
         {
-            await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
+            await _deviceService.SyncThermalConfigToAIEngineAsync(deviceId);
         }
 
         return CreatedAtAction(nameof(GetById), new { id = b.Id }, new {
@@ -152,7 +152,7 @@ public class BoundariesController : ControllerBase
 
         if (b.Type == "roi")
         {
-            await _deviceService.SyncThermalConfigToAIEngineAsync(_db, b.DeviceId);
+            await _deviceService.SyncThermalConfigToAIEngineAsync(b.DeviceId);
         }
 
         return Ok(new {
@@ -184,7 +184,7 @@ public class BoundariesController : ControllerBase
 
         if (wasRoi)
         {
-            await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
+            await _deviceService.SyncThermalConfigToAIEngineAsync(deviceId);
         }
 
         return NoContent();

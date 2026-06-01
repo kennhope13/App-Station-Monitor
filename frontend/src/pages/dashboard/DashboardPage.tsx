@@ -10,14 +10,13 @@ import { SensorPoint, stationApi } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore, useSensorStore } from '@/store';
 import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
 import { useRealtime } from '@/hooks/useRealtime';
-import { PT_CAM_IDS } from '@/constants/points';
+import { PT_PD } from '@/constants/points';
 import { DEV_PLC_S7, DEV_CAM_TYPES } from '@/constants/devices';
 
 import SldCanvas, { SldCanvasRef } from '@/components/dashboard/sld/SldCanvas';
 import SldEditPanel from '@/components/dashboard/sld/SldEditPanel';
 import KpiCards from '@/components/dashboard/kpi/KpiCards';
 import CameraGrid, { CameraSensor } from '@/components/dashboard/camera/CameraGrid';
-import AiForecastPanel from '@/components/dashboard/ai/AiForecastPanel';
 import DashboardToolbar from '@/components/dashboard/toolbar/DashboardToolbar';
 import CameraLiveViewer from '@/components/dashboard/camera/CameraLiveViewer';
 import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
@@ -71,22 +70,27 @@ export default function DashboardPage() {
   );
 
   const camAlertsCount = useMemo(() => {
-    const camDeviceIds = devices
+    const camDeviceIds = new Set(devices
       .filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)))
-      .map(d => d.id.toLowerCase());
+      .map(d => d.id.toLowerCase()));
+    
     return alerts.filter(a => {
       if (a.status !== ALERT_STATUS.OPEN && a.status !== ALERT_STATUS.ACKED) return false;
-      const pid = a.metadata?.pointId?.toUpperCase() || '';
       const did = (a.deviceId || '').toLowerCase();
-      return (PT_CAM_IDS as readonly string[]).includes(pid) || camDeviceIds.includes(did);
+      // Nếu alert thuộc về device là camera -> đếm vào camAlertsCount
+      return camDeviceIds.has(did);
     }).length;
   }, [alerts, devices]);
 
-  const cameraSensors: CameraSensor[] = useMemo(
-    () => sensors.filter(s => s.pointId.match(/^P\d+$/i))
-                 .map(s => ({ pid: s.pointId.toUpperCase(), value: s.value })),
-    [sensors]
-  );
+  const cameraSensors: CameraSensor[] = useMemo(() => {
+    const camDeviceIds = new Set(devices
+      .filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)))
+      .map(d => d.id.toLowerCase()));
+    
+    return sensors
+      .filter(s => camDeviceIds.has(s.deviceId.toLowerCase()) && s.pointId !== PT_PD)
+      .map(s => ({ pid: s.pointId.toUpperCase(), value: s.value }));
+  }, [sensors, devices]);
 
   const liveCameraSrc = useMemo(() => {
     const cam = devices.find(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)));
@@ -234,7 +238,6 @@ export default function DashboardPage() {
         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: '20%', minWidth: 220, maxWidth: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
           <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
           <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
-          <AiForecastPanel />
         </div>
       )}
 

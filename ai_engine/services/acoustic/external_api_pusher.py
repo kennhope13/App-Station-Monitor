@@ -9,7 +9,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL", "http://192.168.10.11:8080/api/thermal-data")
+EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL", "http://192.168.10.104:8080/config/thermal")
 
 class ExternalApiPusher(threading.Thread):
     """
@@ -53,25 +53,23 @@ class ExternalApiPusher(threading.Thread):
                     
                     # Gom dữ liệu nhiệt độ từ tất cả các analyzer đang chạy
                     for analyzer in list(_thermal_analyzers.values()):
-                        # Nhận diện đúng camera dựa trên IP hoặc DeviceId
-                        if analyzer.camera_ip == self.camera_ip or getattr(analyzer, "device_id", "") == self.device_id:
-                            last_temps = getattr(analyzer, "last_point_temps", {})
-                            for pt in analyzer.points:
-                                val = last_temps.get(pt.id)
-                                if val is not None:
-                                    points_list.append({
-                                        "id": pt.label or pt.id,
-                                        "temperature": val
-                                    })
-                            
-                            last_zones = getattr(analyzer, "last_zone_results", {})
-                            for zn in analyzer.zones:
-                                res = last_zones.get(zn.id)
-                                if res is not None:
-                                    points_list.append({
-                                        "id": zn.label or zn.id,
-                                        "temperature": res["max"]
-                                    })
+                        last_temps = getattr(analyzer, "last_point_temps", {})
+                        for pt in analyzer.points:
+                            val = last_temps.get(pt.id)
+                            if val is not None:
+                                points_list.append({
+                                    "id": pt.label or pt.id,
+                                    "temperature": val
+                                })
+                        
+                        last_zones = getattr(analyzer, "last_zone_results", {})
+                        for zn in analyzer.zones:
+                            res = last_zones.get(zn.id)
+                            if res is not None:
+                                points_list.append({
+                                    "id": zn.label or zn.id,
+                                    "temperature": res["max"]
+                                })
                     
                     if points_list:
                         payload = {

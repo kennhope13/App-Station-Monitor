@@ -335,23 +335,6 @@ export default function ThermalForecastTab() {
 
 
 
-  // Trigger manual retraining
-  const handleManualRetrain = async () => {
-    if (modelStatus.status === 'Training...') return;
-    setActionLoading(true);
-    try {
-      const resp = await fetch(`${AI_ENGINE_URL}/api/retrain`, { method: 'POST' });
-      const data = await resp.json();
-      if (data.success) {
-        await updateStatusAndHistory();
-      }
-    } catch (err) {
-      console.error('[AI Forecast] Error triggering retrain:', err);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   // Toggle filter checkbox
   const toggleFilter = (target: string) => {
     setActiveFilters(prev => ({
@@ -363,21 +346,36 @@ export default function ThermalForecastTab() {
   // Derive latest value of each point to overlay on Camera live stream
   const latestReadings = useMemo(() => {
     if (historyData.length === 0 || targets.length === 0) return {};
-    // Tìm điểm actual cuối cùng (không phải null) thay vì hardcode index 30
-    const firstTarget = targets[0];
-    let currentPoint = historyData[historyData.length - 1];
-    for (let i = historyData.length - 1; i >= 0; i--) {
-      const item = historyData[i];
-      if (item && item[`${firstTarget}_actual`] !== null && item[`${firstTarget}_actual`] !== undefined) {
-        currentPoint = item;
-        break;
-      }
-    }
-    const readings: Record<string, { actual: number; pred: number }> = {};
+
+    const readings: Record<string, { actual: number; hasActual: boolean; pred: number; hasPred: boolean }> = {};
     targets.forEach(t => {
+      // Find the absolute latest non-null actual value for this target
+      let actualVal: number | null = null;
+      for (let i = historyData.length - 1; i >= 0; i--) {
+        const item = historyData[i];
+        if (item && item[`${t}_actual`] !== null && item[`${t}_actual`] !== undefined && item[`${t}_actual`] !== '') {
+          actualVal = Number(item[`${t}_actual`]);
+          break;
+        }
+      }
+
+      // Find the absolute latest non-null predicted value for this target (usually at the future points at the end of the array)
+      let predVal = 30.0;
+      let hasPred = false;
+      for (let i = historyData.length - 1; i >= 0; i--) {
+        const item = historyData[i];
+        if (item && item[`${t}_pred`] !== null && item[`${t}_pred`] !== undefined && item[`${t}_pred`] !== '') {
+          predVal = Number(item[`${t}_pred`]);
+          hasPred = true;
+          break;
+        }
+      }
+
       readings[t] = {
-        actual: Number(currentPoint?.[`${t}_actual`] ?? 31.0),
-        pred:   Number(currentPoint?.[`${t}_pred`]   ?? 31.0)
+        actual: actualVal !== null ? actualVal : 0.0,
+        hasActual: actualVal !== null,
+        pred: predVal,
+        hasPred: hasPred
       };
     });
     return readings;
@@ -402,26 +400,26 @@ export default function ThermalForecastTab() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16, overflowY: 'auto', paddingRight: 4 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12, overflowY: 'auto', paddingRight: 4 }}>
       
       {/* HEADER BANNER: CAMERA INFO ONLY */}
-      <div style={{ display: 'flex', gap: 16, flexShrink: 0 }}>
+      <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
         {/* Camera Info Box */}
-        <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
+        <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 2, padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: 1 }}>
           <div>
-            <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace' }}>CAMERA NHIỆT GIÁM SÁT</div>
-            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--admin-text)', marginTop: 4 }}>
-              {selectedCamera ? selectedCamera.name : 'Đang tìm camera nhiệt...'}
+            <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px' }}>CAMERA NHIỆT GIÁM SÁT</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--admin-text)', marginTop: 4 }}>
+              {selectedCamera ? selectedCamera.name.toUpperCase() : 'ĐANG TÌM CAMERA NHIỆT...'}
             </div>
-            <div style={{ fontSize: '.62rem', color: 'var(--admin-text-muted)', marginTop: 4, fontFamily: 'Consolas, monospace' }}>
-              IP: {selectedCamera?.config?.ip || 'N/A'} | Luồng WebRTC: {selectedCamera?.config?.go2rtc_thermal || 'N/A'}
+            <div style={{ fontSize: '.62rem', color: 'var(--admin-text-muted)', marginTop: 4, fontFamily: 'var(--font-mono)', opacity: 0.8 }}>
+              IP: {selectedCamera?.config?.ip || 'N/A'} | LUỒNG WEBRTC: {selectedCamera?.config?.go2rtc_thermal || 'N/A'}
             </div>
           </div>
           {cameras.length > 1 && (
             <select 
               value={selectedCamera?.id || ''}
               onChange={(e) => setSelectedCamera(cameras.find(c => c.id === e.target.value))}
-              style={{ background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', padding: '6px 12px', borderRadius: 4, fontSize: '.7rem', cursor: 'pointer', fontFamily: 'Consolas,monospace' }}
+              style={{ background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', padding: '6px 12px', borderRadius: 2, fontSize: '.7rem', cursor: 'pointer', fontWeight: 700 }}
             >
               {cameras.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -431,35 +429,36 @@ export default function ThermalForecastTab() {
 
 
       {/* CORE CONTENT: DETAILED DUAL-LINE PLOTS & STATUS */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1, minHeight: 380 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 380 }}>
         
         {/* TOP ROW: AI STATUS & METRIC CARDS OVERLAY-LIKE VIEW */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
           {targets.map((target) => {
             const readings = latestReadings[target];
             if (!readings) return null;
 
-            const isWarning = readings.actual >= 50.0;
-            const isDanger  = readings.actual >= 60.0;
+            const isWarning = readings.hasActual && readings.actual >= 50.0;
+            const isDanger  = readings.hasActual && readings.actual >= 60.0;
             const pointColor = isDanger ? '#EF4444' : isWarning ? '#F59E0B' : '#10B981';
-            const bgColor = isDanger ? 'rgba(239,68,68,0.1)' : isWarning ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.05)';
+            const bgColor = isDanger ? 'rgba(239,68,68,0.08)' : isWarning ? 'rgba(245,158,11,0.06)' : 'rgba(16,185,129,0.04)';
 
             return (
               <div
                 key={target}
                 style={{ 
                   background: bgColor, 
-                  border: `1px solid ${pointColor}35`, 
+                  border: `1px solid ${pointColor}40`, 
+                  borderLeft: `3px solid ${pointColor}`,
                   padding: '10px 14px', 
-                  borderRadius: 8,
+                  borderRadius: 2,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 6,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  gap: 8,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 4 }}>
-                  <span style={{ fontSize: '.75rem', fontWeight: 800, color: 'var(--admin-text)', fontFamily: 'Consolas,monospace' }}>{target}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.03)', paddingBottom: 6 }}>
+                  <span style={{ fontSize: '.85rem', fontWeight: 800, color: 'var(--admin-text)' }}>{target}</span>
                   {(isWarning || isDanger) && (
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: pointColor, animation: 'pulseRing 1.4s infinite' }} />
                   )}
@@ -468,22 +467,22 @@ export default function ThermalForecastTab() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                    {/* Cột thực tế */}
                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '.52rem', fontWeight: 700, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.3px' }}>THỰC TẾ</span>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 900, color: pointColor, fontFamily: 'Consolas,monospace', marginTop: 2 }}>
-                        {readings.actual.toFixed(1)}°
+                      <span style={{ fontSize: '.55rem', fontWeight: 800, color: pointColor, textTransform: 'uppercase', letterSpacing: '.5px' }}>THỰC TẾ</span>
+                      <span style={{ fontSize: '1.4rem', fontWeight: 900, color: readings.hasActual ? pointColor : 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        {readings.hasActual ? `${readings.actual.toFixed(1)}°` : '—'}
                       </span>
                    </div>
                    
                    {/* Cột dự đoán */}
-                   <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 10 }}>
-                      <span style={{ fontSize: '.52rem', fontWeight: 700, color: '#93C5FD', textTransform: 'uppercase', letterSpacing: '.3px' }}>AI DỰ ĐOÁN</span>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#93C5FD', fontFamily: 'Consolas,monospace', marginTop: 2 }}>
-                        {readings.pred.toFixed(1)}°
+                   <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid var(--admin-border)', paddingLeft: 12 }}>
+                      <span style={{ fontSize: '.55rem', fontWeight: 800, color: '#93C5FD', textTransform: 'uppercase', letterSpacing: '.5px' }}>AI DỰ ĐOÁN</span>
+                      <span style={{ fontSize: '1.4rem', fontWeight: 900, color: readings.hasPred ? '#93C5FD' : 'var(--admin-text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                        {readings.hasPred ? `${readings.pred.toFixed(1)}°` : '—'}
                       </span>
                    </div>
                 </div>
                 
-                <div style={{ fontSize: '.5rem', color: 'var(--admin-text-muted)', fontStyle: 'italic', marginTop: 2 }}>
+                <div style={{ fontSize: '.52rem', color: 'var(--admin-text-muted)', fontStyle: 'italic', marginTop: 2, opacity: 0.7 }}>
                    * AI dự báo nhiệt độ cho 5 phút tới
                 </div>
               </div>
@@ -492,11 +491,11 @@ export default function ThermalForecastTab() {
         </div>
 
         {/* MAIN CHART PANEL */}
-        <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: '16px 20px', display: 'flex', flexDirection: 'column', flex: 1, position: 'relative' }}>
+        <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 2, padding: '16px 20px', display: 'flex', flexDirection: 'column', flex: 1, position: 'relative' }}>
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
-              <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace' }}>
+              <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px' }}>
                 BIỂU ĐỒ XU HƯỚNG NHIỆT ĐỘ & DỰ BÁO AI (THỜI GIAN THỰC)
               </div>
               <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', marginTop: 4 }}>
@@ -505,7 +504,7 @@ export default function ThermalForecastTab() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: '.58rem', fontWeight: 800, color: '#9CA3AF', fontFamily: 'Consolas,monospace' }}>HIỂN THỊ:</span>
+              <span style={{ fontSize: '.58rem', fontWeight: 800, color: '#9CA3AF' }}>HIỂN THỊ:</span>
               <div style={{ display: 'flex', gap: 6 }}>
                 {targets.map((target, i) => {
                   const targetColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
@@ -517,7 +516,7 @@ export default function ThermalForecastTab() {
                       key={target}
                       onClick={() => toggleFilter(target)}
                       style={{
-                        padding: '3px 8px', borderRadius: 4, fontSize: '.6rem', fontWeight: 800,
+                        padding: '3px 8px', borderRadius: 2, fontSize: '.6rem', fontWeight: 800,
                         background: isChecked ? `${color}18` : 'transparent',
                         border: `1px solid ${isChecked ? color + '40' : 'var(--admin-border)'}`,
                         color: isChecked ? color : 'var(--admin-text-muted)',
@@ -542,77 +541,6 @@ export default function ThermalForecastTab() {
           </div>
         </div>
       </div>
-
-      {/* LOWER SECTION: ACTIVE THERMAL POINT CONFIGURATION LIST */}
-      <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 6, padding: '14px 18px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <style>{`
-          @keyframes activePulse {
-            0% { transform: scale(0.9); opacity: 0.6; }
-            100% { transform: scale(1.15); opacity: 1; }
-          }
-        `}</style>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--admin-border)', paddingBottom: 10, marginBottom: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace' }}>
-                ĐIỂM NHIỆT ĐANG GIÁM SÁT & DỰ BÁO AI
-              </div>
-              {/* Synced Badge */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#34D399', padding: '2px 8px', borderRadius: 12, fontSize: '.58rem', fontWeight: 800 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', display: 'inline-block', boxShadow: '0 0 8px #10B981', animation: 'activePulse 1.2s infinite alternate' }} />
-                ĐỒNG BỘ TỰ ĐỘNG TỪ THIẾT BỊ
-              </div>
-            </div>
-            <div style={{ fontSize: '.58rem', color: 'var(--admin-text-muted)', marginTop: 2 }}>
-              Các điểm đo được đồng bộ trực tiếp từ cấu hình ROI của Camera ở trang Thiết Bị. Thay đổi điểm đo sẽ tự động kích hoạt huấn luyện lại mô hình AI chạy ngầm.
-            </div>
-          </div>
-
-          <button
-            onClick={handleManualRetrain}
-            disabled={actionLoading || modelStatus.status === 'Training...'}
-            style={{
-              background: modelStatus.status === 'Training...' ? 'var(--admin-layer-2)' : 'linear-gradient(135deg, #F59E0B, #D97706)',
-              border: 'none',
-              color: modelStatus.status === 'Training...' ? 'var(--admin-text-muted)' : '#090e1a',
-              padding: '7px 16px', borderRadius: 6, fontSize: '.7rem', fontWeight: 800,
-              cursor: modelStatus.status === 'Training...' ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-              transition: 'all 0.2s ease', boxShadow: modelStatus.status === 'Training...' ? 'none' : '0 2px 12px rgba(245,158,11,0.3)'
-            }}
-            onMouseEnter={e => { if (modelStatus.status !== 'Training...') e.currentTarget.style.background = 'linear-gradient(135deg, #D97706, #B45309)'; }}
-            onMouseLeave={e => { if (modelStatus.status !== 'Training...') e.currentTarget.style.background = 'linear-gradient(135deg, #F59E0B, #D97706)'; }}
-          >
-            <RotateCw size={13} className={modelStatus.status === 'Training...' ? 'animate-spin' : ''} />
-            {modelStatus.status === 'Training...' ? 'ĐANG HUẤN LUYỆN LẠI...' : 'KÍCH HOẠT HUẤN LUYỆN LẠI'}
-          </button>
-        </div>
-
-        {/* Dynamic points checklist layout */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          {targets.length === 0 ? (
-            <div style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)', padding: '6px 0' }}>
-              Chưa có điểm nhiệt nào được thiết lập. Hãy sang tab Thiết Bị vẽ điểm đo!
-            </div>
-          ) : (
-            targets.map((pt, idx) => (
-              <div
-                key={idx}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)',
-                  padding: '6px 12px', borderRadius: 6, minHeight: 32, transition: 'all 0.15s ease'
-                }}
-              >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3B82F6', marginRight: 2 }} />
-                <span style={{ fontSize: '.72rem', fontWeight: 700, color: '#D1D5DB', fontFamily: 'monospace' }}>
-                  {pt}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
 
       {/* Global CSS for subtle animations */}
       <style>{`

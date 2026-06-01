@@ -59,13 +59,19 @@ async def lifespan(app: FastAPI):
     logger.info("Backend : %s", cfg.backend_url)
     logger.info("Port    : 8100")
     
-    # Ở chế độ Server Trung Tâm (Host 22), chúng ta không cần tự chạy loop xử lý camera.
-    # Thay vào đó, chúng ta đợi Jetson đẩy dữ liệu lên qua API.
-    # await _load_config_from_backend()
-    # task = asyncio.create_task(_process_loop())
+    # Kích hoạt chế độ xử lý camera trực tiếp và tự động load config
+    await _load_config_from_backend()
+    # Immediately trigger a processing cycle so that predictions are available right after startup
+    for analyzer in list(routes._thermal_analyzers.values()):
+        await analyzer.process()
+    for detector in list(routes._line_detectors.values()):
+        await detector.process()
+    for acoustic in list(routes._acoustic_analyzers.values()):
+        await acoustic.process()
+    task = asyncio.create_task(_process_loop())
     
     yield
-    # task.cancel()
+    task.cancel()
     logger.info("=== AI Aggregator stopped ===")
 
 
@@ -200,12 +206,6 @@ async def _load_config_from_backend() -> None:
                 except Exception as ex:
                     logger.warning("[Startup] Failed to fetch ROI for device %s: %s", d["id"], ex)
 
-                if not points and not zones:
-                    points = [
-                        ThermalPoint(id=f"P{i}", x=0.1 + (i - 1) * 0.08, y=0.5)
-                        for i in range(1, 11)
-                    ]
-                    logger.info("[Startup] Using default fallback points for device %s", d["id"])
 
                 analyzer = ThermalAnalyzer(
                     device_id=d["id"],

@@ -35,8 +35,12 @@ export const API_BASE_URL: string = (() => {
 // URL gốc của AI Engine (FastAPI) — dùng để xem luồng camera AI đã được vẽ sẵn và các API AI
 const rawAi = (import.meta.env.VITE_AI_ENGINE_URL as string | undefined) ?? 
               (import.meta.env.VITE_AI_URL as string | undefined) ?? 
-              'http://localhost:8100';
+              '/ai-api';
 export const AI_ENGINE_URL: string = (() => {
+  // Nếu dùng proxy relative path (như /ai-api), giữ nguyên
+  if (rawAi.startsWith('/')) {
+    return rawAi;
+  }
   // Nếu là địa chỉ IP cụ thể (không phải localhost), giữ nguyên
   if (!rawAi.includes('localhost') && !rawAi.includes('127.0.0.1')) {
     return rawAi;

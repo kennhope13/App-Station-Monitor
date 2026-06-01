@@ -149,8 +149,8 @@ def append_history_row(row: dict, targets: list[str]) -> None:
 
 def _linear_predict(values: list[float], horizon: int = 5) -> float:
     """
-    Hồi quy tuyến tính trên chuỗi values, dự báo giá trị tại vị trí (len+horizon).
-    Trả về giá trị làm tròn 1 chữ số thập phân.
+    Hồi quy tuyến tính trên chuỗi values, dự báo giá trị tại vị trí (len-1 + horizon/5.0).
+    Mỗi bước index tương ứng với 5 phút thực tế.
     """
     n = len(values)
     if n == 0:
@@ -160,15 +160,19 @@ def _linear_predict(values: list[float], horizon: int = 5) -> float:
 
     x = np.arange(n, dtype=float)
     y = np.array(values, dtype=float)
-    # Hệ số tuyến tính qua lstsq
     A = np.vstack([x, np.ones(n)]).T
     try:
         slope, intercept = np.linalg.lstsq(A, y, rcond=None)[0]
     except Exception:
         slope, intercept = 0.0, float(np.mean(y))
 
-    pred = slope * (n - 1 + horizon) + intercept
-    # Clamp để tránh dự báo vô lý
+    # Mỗi bước index cách nhau 5 phút, do đó số bước cần tiến tới là horizon / 5.0
+    steps = horizon / 5.0
+    pred = slope * (n - 1 + steps) + intercept
+    
+    # Giới hạn dự báo không lệch quá 10 độ so với giá trị thực tế cuối cùng để tránh nhảy số vô lý
+    last_val = values[-1]
+    pred = max(last_val - 10.0, min(pred, last_val + 10.0))
     pred = max(0.0, min(pred, 999.0))
     return round(pred, 1)
 
@@ -465,7 +469,7 @@ def load_history_for_chart(targets: list[str], window_minutes: int = 30,
                     except ValueError:
                         point[f"{t}_pred"] = None
                 else:
-                    point[f"{t}_pred"] = _linear_predict(series_map[t], h)
+                    point[f"{t}_pred"] = _linear_predict(series_map[t], h) if series_map[t] else None
             result.append(point)
 
     return result

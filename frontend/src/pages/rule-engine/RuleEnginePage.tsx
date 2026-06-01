@@ -7,7 +7,7 @@
 import { useState, useEffect } from 'react';
 import { stationApi, Rule, Device } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
-import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS } from '@/constants/points';
+import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS, CAM_POINT_LABELS } from '@/constants/points';
 
 // Danh sách điểm đo mặc định dùng dự phòng
 const FALLBACK_POINTS = [
@@ -90,12 +90,11 @@ export default function RuleEnginePage() {
       const apiPoints = pts
         .filter(p => { const ok = !seen.has(p.pointId); seen.add(p.pointId); return ok; })
         .map(p => {
-          const name = TEMP_LABELS[p.pointId] ?? (p.pointId.startsWith('P') ? `Điểm camera ${p.pointId}` : p.pointId.replace(/_/g, ' '));
+          const name = TEMP_LABELS[p.pointId] ?? CAM_POINT_LABELS[p.pointId] ?? (p.pointId.toUpperCase().startsWith('P') ? `Điểm camera ${p.pointId}` : p.pointId.replace(/_/g, ' '));
           return { value: p.pointId, label: p.unit ? `${name} (${p.unit})` : name };
         });
 
-      const thermalPoints = (PT_CAM_IDS as readonly string[]).map(id => ({ value: id, label: `Điểm đo nhiệt ${id} (Camera)` }));
-      setPointOptions([...thermalPoints, ...apiPoints]);
+      setPointOptions(apiPoints);
 
       // Đồng bộ các rule nhiệt độ nếu cần
       const isSynced = localStorage.getItem('thermal_rules_sync_v3');

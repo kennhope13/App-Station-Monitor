@@ -162,7 +162,7 @@ class PdRegionAnalyzer:
             )
 
             # Phân loại mức độ cảnh báo dựa trên decibel thực tế đo được
-            is_alarm = current_db >= region.alarm_threshold or current_db >= 35.0
+            is_alarm = current_db >= region.alarm_threshold
             is_warning = current_db >= region.warning_threshold
 
             # CHỈ ĐỔI MÀU & BÁO ĐỘNG KHI CÓ HOTSPOT NẰM TRONG VÙNG
@@ -173,14 +173,11 @@ class PdRegionAnalyzer:
                 fill_alpha = 0.35 if self._flash_state else 0.15
                 border_thickness = region.border_thickness + 1
                 
-                # Chỉ gửi thông báo thực tế (còi báo động, popup) khi ở mức độ Đỏ (Alarm)
-                if is_alarm:
-                    self._maybe_send_alert(region, current_db, "alarm", annotated)
-                
                 # Luôn cập nhật UI state (chớp đỏ/cam) khi có đốm nằm trong vùng
                 self._update_ui_state(region.name, current_db, current_hz, level, hotspot)
             else:
                 # XANH LÁ — Trạng thái bình thường (không có hotspot)
+                level = "normal"
                 color = (0, 255, 0) # Xanh lá cây
                 fill_alpha = 0.0     # Hoàn toàn trong suốt
                 border_thickness = region.border_thickness
@@ -224,6 +221,11 @@ class PdRegionAnalyzer:
 
             cv2.putText(annotated, region.name, (text_x - 10, text_y),
                         cv2.FONT_HERSHEY_SIMPLEX, scale, color, max(1, int(scale*2)), cv2.LINE_AA)
+
+            # GỬI CẢNH BÁO SAU KHI ĐÃ VẼ POLYGON → ảnh chụp minh chứng có vùng màu rõ
+            # Gửi cả warning (cam) lẫn alarm (đỏ), cooldown 60s/vùng
+            if level in ("alarm", "warning"):
+                self._maybe_send_alert(region, current_db, level, annotated)
 
         _pd_annotated_frames[self.stream_id] = annotated
         return annotated

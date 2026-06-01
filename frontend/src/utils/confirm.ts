@@ -109,16 +109,20 @@ export function confirmDialog(opts: ConfirmOptions | string): Promise<boolean> {
     const confirmBtn = overlay.querySelector('#ccd-confirm') as HTMLElement;
     confirmBtn.textContent = confirmText;
     Object.assign(confirmBtn.style, {
-      background: danger ? 'var(--admin-danger)' : 'var(--admin-accent)',
+      background: danger ? '#ef4444' : 'var(--admin-accent, #3b82f6)',
       color: '#ffffff',
+      border: 'none',
+      boxShadow: danger ? '0 2px 8px rgba(239, 68, 68, 0.3)' : '0 2px 8px rgba(59, 130, 246, 0.3)',
     });
 
     // Hover effect cho confirm button
     confirmBtn.onmouseover = () => {
-      confirmBtn.style.opacity = '0.9';
+      confirmBtn.style.transform = 'translateY(-1px)';
+      confirmBtn.style.boxShadow = danger ? '0 4px 12px rgba(239, 68, 68, 0.4)' : '0 4px 12px rgba(59, 130, 246, 0.4)';
     };
     confirmBtn.onmouseout = () => {
-      confirmBtn.style.opacity = '1';
+      confirmBtn.style.transform = 'translateY(0)';
+      confirmBtn.style.boxShadow = danger ? '0 2px 8px rgba(239, 68, 68, 0.3)' : '0 2px 8px rgba(59, 130, 246, 0.3)';
     };
 
     // Animate in

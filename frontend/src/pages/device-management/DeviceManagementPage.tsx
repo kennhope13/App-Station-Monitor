@@ -5,14 +5,12 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { LayoutList, Trash2, Settings, Zap, Thermometer, Target, Play } from 'lucide-react';
+import { LayoutList, Trash2, Settings, Zap, Thermometer } from 'lucide-react';
 import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
 import ThermalConfigTab from './components/ThermalConfigTab';
 import PdRegionTab from './components/PdRegionTab';
-import BoundaryTab from './components/BoundaryTab';
-import LiveViewTab from './components/LiveViewTab';
 import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
 
@@ -321,42 +319,6 @@ export default function DeviceManagementPage() {
             </h3>
           </div>
         </div>
-      ) : roiTab === 4 ? (
-        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              className="btn-industrial"
-              onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
-            >
-              ← Quay lại danh sách
-            </button>
-            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
-              CẤU HÌNH VÙNG GIÁM SÁT AN NINH (AI)
-              <span style={{ fontSize: '.68rem', background: 'rgba(59,130,246,.08)', padding: '2px 8px', border: '1px solid rgba(59,130,246,.18)', color: 'var(--admin-accent)', borderRadius: 3 }}>
-                {selectedPdDevice?.name || 'Camera AI'}
-              </span>
-            </h3>
-          </div>
-        </div>
-      ) : roiTab === 5 ? (
-        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button
-              className="btn-industrial"
-              onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
-            >
-              ← Quay lại danh sách
-            </button>
-            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
-              XEM LIVE & METADATA OVERLAY
-              <span style={{ fontSize: '.68rem', background: 'rgba(59,130,246,.08)', padding: '2px 8px', border: '1px solid rgba(59,130,246,.18)', color: 'var(--admin-accent)', borderRadius: 3 }}>
-                {selectedPdDevice?.name || 'Camera Live'}
-              </span>
-            </h3>
-          </div>
-        </div>
       ) : (
         <div className="page-toolbar-row" style={{ display: 'flex', flexWrap: 'wrap', rowGap: 8 }}>
           <div className="page-title-cell">
@@ -424,12 +386,6 @@ export default function DeviceManagementPage() {
                         {d.type === 'camera_pd' && (
                           <ActionDropdownItem icon={<Zap size={14} />} label="Vẽ vùng PD" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(2); }} />
                         )}
-                        {d.type.startsWith('camera') && (
-                          <>
-                            <ActionDropdownItem icon={<Target size={14} />} label="Cấu hình Vùng" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(4); }} />
-                            <ActionDropdownItem icon={<Play size={14} />} label="Xem Live & Overlay" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(5); }} />
-                          </>
-                        )}
                         <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa thiết bị" danger onClick={() => handleDelete(d)} />
                       </ActionDropdown>
                     </td>
@@ -470,28 +426,6 @@ export default function DeviceManagementPage() {
           />
         </div>
       )}
-
-      {/* ═══ TAB 4: CẤU HÌNH VÙNG POLYGON ═══ */}
-      {roiTab === 4 && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-          <BoundaryTab
-            cameras={devices.filter(d => d.type.startsWith('camera')) as CameraDevice[]}
-            initialCamera={selectedPdDevice || null}
-          />
-        </div>
-      )}
-
-      {/* ═══ TAB 5: XEM LIVE & OVERLAY ═══ */}
-      {roiTab === 5 && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-          <LiveViewTab
-            cameras={devices.filter(d => d.type.startsWith('camera')) as CameraDevice[]}
-            initialCamera={selectedPdDevice || null}
-          />
-        </div>
-      )}
-
-
 
       {/* DEVICE MODAL */}
       {isDeviceModalOpen && (

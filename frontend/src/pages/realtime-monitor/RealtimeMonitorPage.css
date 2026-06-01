@@ -37,7 +37,6 @@
 .nvr-stats { margin-left:auto; display:flex; gap:16px; align-items:center; }
 .nvr-stat  { font-size:11px; color:var(--admin-text-muted); display:flex; gap:5px; align-items:center; }
 .nvr-stat b { font-weight:800; }
-.nvr-clock-txt { font-size:12px; font-weight:700; font-family:var(--font-mono); color:var(--admin-text); letter-spacing:1px; }
 
 /* ── Main area ── */
 .rtm-main { flex:1; display:flex; overflow:hidden; min-height:0; }
@@ -110,7 +109,6 @@
 /* HUD bottom (on hover) */
 .nvr-hud-b { position:absolute; bottom:0; left:0; right:0; padding:18px 10px 7px; background:linear-gradient(0deg,rgba(0,0,0,.74) 0%,transparent 100%); display:flex; justify-content:space-between; align-items:flex-end; z-index:5; opacity:0; transition:opacity .2s; pointer-events:none; }
 .nvr-cell:hover .nvr-hud-t, .nvr-cell:hover .nvr-hud-b { opacity:1; }
-.nvr-ts   { font-size:10px; font-weight:500; color:rgba(255,255,255,.45); font-family:var(--font-mono); }
 .nvr-acts { display:flex; gap:4px; pointer-events:all; }
 .nvr-abtn { background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.15); color:rgba(255,255,255,.7); width:26px; height:26px; border-radius:4px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; }
 .nvr-abtn:hover { background:rgba(59,130,246,.45); border-color:var(--admin-accent); color:#fff; }

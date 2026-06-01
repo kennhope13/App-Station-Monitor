@@ -67,6 +67,7 @@ class ThermalAnalyzer:
     last_point_temps:           dict[str, float]  = field(default_factory=dict, init=False, repr=False)
     last_zone_results:          dict[str, dict]   = field(default_factory=dict, init=False, repr=False)
     _last_history_save:         float             = field(default=0.0, init=False, repr=False)
+    _last_jetson_push:          float             = field(default=0.0, init=False, repr=False)
 
     def start(self) -> None:
         rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
@@ -76,6 +77,11 @@ class ThermalAnalyzer:
     def stop(self) -> None:
         if self._reader:
             self._reader.stop()
+
+    def update_config(self, points: list[ThermalPoint], zones: list[ThermalZone]) -> None:
+        """Cập nhật cấu hình các điểm và vùng đo nhiệt."""
+        self.points = points
+        self.zones = zones
 
     # ── Main process (gọi định kỳ từ scheduler) ──────────────
 
@@ -136,9 +142,39 @@ class ThermalAnalyzer:
         # 4. Gửi nhiệt độ thực tế về backend
         await self._ingest_measurements(point_temps, zone_results)
 
-        # 4.5 Tự động đẩy dữ liệu sang pipeline dự báo AI cục bộ (mỗi 5 phút = 300 giây)
+        # 4.3 Tự động gửi nhiệt độ thực tế sang Jetson đối tác mỗi 30 giây (Theo yêu cầu đồng bộ)
         import time
         now = time.time()
+        if now - self._last_jetson_push >= 30.0:
+            self._last_jetson_push = now
+            try:
+                from datetime import datetime
+                import requests
+                
+                jetson_points = []
+                for pt in self.points:
+                    temp = point_temps.get(pt.id)
+                    if temp is not None:
+                        jetson_points.append({
+                            "id": pt.id,  # Đúng ID gốc của điểm đo từ camera (ví dụ P1, P2...)
+                            "temperature": temp
+                        })
+                
+                if jetson_points:
+                    jetson_payload = {
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "points": jetson_points
+                    }
+                    JETSON_DATA_URL = "http://192.168.10.104:8080/api/thermal-data"
+                    try:
+                        requests.post(JETSON_DATA_URL, json=jetson_payload, timeout=3.0)
+                        logger.info("[ThermalAnalyzer] Đã đẩy nhiệt độ thực tế sang Jetson đối tác (%s) thành công (30s/lần).", JETSON_DATA_URL)
+                    except Exception as ex_partner:
+                        logger.warning("[ThermalAnalyzer] Không thể đẩy nhiệt độ sang Jetson đối tác (%s): %s", JETSON_DATA_URL, ex_partner)
+            except Exception as ex:
+                logger.error("[ThermalAnalyzer] Lỗi khi chuẩn bị dữ liệu gửi Jetson đối tác: %s", ex)
+
+        # 4.5 Tự động đẩy dữ liệu sang pipeline dự báo AI cục bộ (mỗi 5 phút = 300 giây)
         if now - self._last_history_save >= 300.0:
             self._last_history_save = now
             try:
@@ -171,10 +207,10 @@ class ThermalAnalyzer:
                     process_thermal_payload(payload)
                     logger.info("[ThermalAnalyzer] Tự động đồng bộ dữ liệu vào pipeline Dự báo AI cục bộ (Mỗi 5 phút).")
                     
-                    # Tự động đẩy trực tiếp sang Jetson đối tác (192.168.10.11) để dự phòng
+                    # Tự động đẩy trực tiếp sang Jetson đối tác (192.168.10.104) để dự phòng
                     import os
                     import requests
-                    EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL", "http://192.168.10.11:8080/api/thermal-data")
+                    EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL", "http://192.168.10.104:8080/config/thermal")
                     try:
                         requests.post(EXTERNAL_API_URL, json=payload, timeout=3.0)
                         logger.info("[ThermalAnalyzer] Đã đẩy dữ liệu ảnh nhiệt sang Jetson đối tác (%s) thành công.", EXTERNAL_API_URL)

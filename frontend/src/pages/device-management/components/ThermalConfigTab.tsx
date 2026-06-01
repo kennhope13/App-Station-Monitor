@@ -5,6 +5,7 @@ import { CameraDevice } from '../../../types/api.types';
 import { authService } from '../../../services/AuthService';
 import { GO2RTC_URL } from '../../../utils/env';
 import { createRealtimeHub } from '../../../services/realtime.service';
+import { confirmDialog } from '@/utils/confirm';
 
 type VVR = { x:number, y:number, width:number, height:number };
 
@@ -107,7 +108,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
     const poll = async () => {
       const mks = mksRef.current;
       const rs  = roisRef.current;
-      if(mks.length===0 && rs.length===0) { timer = setTimeout(poll, 600); return; }
+      if(mks.length===0 && rs.length===0 && !form.open) { timer = setTimeout(poll, 600); return; }
       try {
         const res = await fetch(`/api/v1/devices/${did}/thermal/live-temps`, {
           method:'POST',
@@ -187,6 +188,63 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
     }
   };
 
+  // Auto-tạo điểm ngay khi click — không cần form
+  const autoPlaceMarker = async (tx:number, ty:number) => {
+    const {ox,oy} = t2o(tx,ty,vvr);
+    
+    // Quét tìm chỉ số lớn nhất hiện tại để cộng thêm 1, tránh bị trùng lặp ID khi xóa
+    let maxIdx = 0;
+    mksRef.current.forEach(m => {
+      if (m.id.startsWith('__')) return;
+      const match = m.name?.match(/\d+/) || m.shortName?.match(/\d+/);
+      if (match) {
+        const val = parseInt(match[0]);
+        if (val > maxIdx) maxIdx = val;
+      }
+    });
+    const idx = maxIdx + 1;
+    
+    const tmpId = `__tmp_${Date.now()}`;
+    setMarkers(prev=>[...prev,{id:tmpId,name:`Điểm ${idx}`,shortName:`P${idx}`,tx,ty,ox,oy,preAlarm:50,alarm:70,markerSize:28,labelPos:'top',temp:null}]);
+    // Fetch nhiệt ngay lập tức
+    fetch(`/api/v1/devices/${did}/thermal/live-temps`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${authService.getToken()}`},body:JSON.stringify({points:[{id:tmpId,x:tx,y:ty}],rois:[]})})
+      .then(r=>r.json()).then(d=>{const t=d.temps?.[0];if(t?.temp!=null)setMarkers(prev=>prev.map(m=>m.id===tmpId?{...m,temp:t.temp}:m));}).catch(()=>{});
+    // Lưu DB, thay tempId bằng ID thật
+    try {
+      const saved:any = await stationApi.createRoiPoint(did,{label:`Điểm ${idx}`,name:`Điểm ${idx}`,pointId:`P${idx}`,tx,ty,ox,oy,x:tx*100,y:ty*100,sortOrder:28,warningThreshold:50,alarmThreshold:70} as any);
+      setMarkers(prev=>prev.map(m=>m.id===tmpId?{...m,id:saved.id}:m));
+      syncAI();
+    } catch { setMarkers(prev=>prev.filter(m=>m.id!==tmpId)); }
+  };
+
+  // Auto-tạo vùng ngay khi kéo xong — không cần form
+  const autoPlaceRoi = async (tx1:number,ty1:number,tx2:number,ty2:number) => {
+    // Quét tìm chỉ số lớn nhất hiện tại cho Vùng đo
+    let maxIdx = 0;
+    roisRef.current.forEach(r => {
+      if (r.id.startsWith('__')) return;
+      const match = r.name?.match(/\d+/);
+      if (match) {
+        const val = parseInt(match[0]);
+        if (val > maxIdx) maxIdx = val;
+      }
+    });
+    const idx = maxIdx + 1;
+    
+    const tmpId = `__roi_${Date.now()}`;
+    setRois(prev=>[...prev,{id:tmpId,name:`Vùng ${idx}`,tx1,ty1,tx2,ty2,preAlarm:50,alarm:70,maxTemp:null,labelPos:'top',fontSize:11,borderWidth:0.5}]);
+    // Fetch nhiệt ngay lập tức
+    fetch(`/api/v1/devices/${did}/thermal/live-temps`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${authService.getToken()}`},body:JSON.stringify({points:[],rois:[{id:tmpId,x1:tx1,y1:ty1,x2:tx2,y2:ty2}]})})
+      .then(r=>r.json()).then(d=>{const t=d.rois?.[0];if(t?.max!=null)setRois(prev=>prev.map(r=>r.id===tmpId?{...r,maxTemp:t.max}:r));}).catch(()=>{});
+    // Lưu DB, thay tempId bằng ID thật
+    try {
+      const poly=JSON.stringify([[tx1,ty1],[tx2,ty1],[tx2,ty2],[tx1,ty2]]);
+      const saved:any = await stationApi.createBoundary(did,{name:`Vùng ${idx}`,type:'roi',polygon:poly,thresholds:JSON.stringify({warning:50,alarm:70,labelPos:'top',fontSize:11,borderWidth:0.5}),enabled:true,severityLevel:'warning'} as any);
+      setRois(prev=>prev.map(r=>r.id===tmpId?{...r,id:saved.id}:r));
+      syncAI();
+    } catch { setRois(prev=>prev.filter(r=>r.id!==tmpId)); }
+  };
+
   const onUp = async (e:React.MouseEvent) => {
     if(dragMkRef.current) {
       const m = markers.find(x=>x.id===dragMkRef.current);
@@ -195,95 +253,67 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
       syncAI();
       return;
     }
-
     if(drawMode === 'point') {
       const [nx,ny] = getPos(e);
       const [tx,ty] = toThermal(nx,ny);
-      if (viewMode === 'op' && (nx < vvr.x || nx > vvr.x + vvr.width || ny < vvr.y || ny > vvr.y + vvr.height)) return;
-      const idx = mksRef.current.length+1;
-      
-      // Mở form Edit giống luồng Frontend -> AI -> Backend -> DB
-      setFormTemp(null);
+      if(viewMode==='op' && (nx<vvr.x||nx>vvr.x+vvr.width||ny<vvr.y||ny>vvr.y+vvr.height)) return;
       setHoverPos(null);
-      setForm({...EMPTY_FORM, open:true, isNew:true, type:'marker',
-        name:`Điểm ${idx}`, shortName:`P${idx}`,
-        tx:tx.toFixed(4), ty:ty.toFixed(4)});
-        
-      // Fetch temp cho cái form này ngay lập tức
-      fetch(`/api/v1/devices/${did}/thermal/live-temps`, {
-        method:'POST', headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${authService.getToken()}` },
-        body: JSON.stringify({ points:[{ id:'__form__', x:tx, y:ty }], rois:[] })
-      }).then(r=>r.json()).then(d=>{ const t=d.temps?.[0]; if(t?.temp!=null) setFormTemp(t.temp); }).catch(()=>{});
-
       setDrawMode('none');
+      autoPlaceMarker(tx, ty);
       return;
     }
-
     if(dragRoi) {
       const {sx,sy,ex,ey} = dragRoi;
       setDragRoi(null);
       if(Math.abs(ex-sx)<0.02 || Math.abs(ey-sy)<0.02) return;
       let tx1=sx,ty1=sy,tx2=ex,ty2=ey;
-      if(viewMode==='op') { const tl=o2t(sx,sy,vvr); const br=o2t(ex,ey,vvr); tx1=tl.tx;ty1=tl.ty;tx2=br.tx;ty2=br.ty; }
-      
-      const idx = roisRef.current.length+1;
-      setForm({...EMPTY_FORM, open:true, isNew:true, type:'roi', name:`Vùng ${idx}`,
-        tx1:tx1.toFixed(4), ty1:ty1.toFixed(4), tx2:tx2.toFixed(4), ty2:ty2.toFixed(4)});
+      if(viewMode==='op'){const tl=o2t(sx,sy,vvr);const br=o2t(ex,ey,vvr);tx1=tl.tx;ty1=tl.ty;tx2=br.tx;ty2=br.ty;}
       setDrawMode('none');
+      autoPlaceRoi(tx1,ty1,tx2,ty2);
     }
   };
 
+  // saveForm chỉ dùng để CẬP NHẬT (edit) — tạo mới dùng autoPlace
   const saveForm = async () => {
     try {
-      let fetchPoints: {id:string,x:number,y:number}[] = [];
-      let fetchRois:   {id:string,x1:number,y1:number,x2:number,y2:number}[] = [];
-
       if(form.type==='marker') {
-        const tx=parseFloat(form.tx), ty=parseFloat(form.ty);
-        const { ox:cox, oy:coy } = t2o(tx, ty, vvr);
-        const p = { label:form.name, name:form.name, pointId:form.shortName,
-          tx, ty, ox:cox, oy:coy, x:tx*100, y:ty*100,
-          sortOrder:parseInt(form.markerSize)||28, description:form.labelPos,
-          warningThreshold:parseFloat(form.preAlarm)||50, alarmThreshold:parseFloat(form.alarm)||70 };
-        const saved:any = form.isNew
-          ? await stationApi.createRoiPoint(did, p as any)
-          : await stationApi.updateRoiPoint(did, form.id, p as any);
-        // Dùng ID và tọa độ thực từ response — không phụ thuộc ref timing
-        const savedId = saved?.id || form.id;
-        fetchPoints = [{ id: savedId, x: tx, y: ty }];
+        const tx=parseFloat(form.tx),ty=parseFloat(form.ty);
+        const {ox:cox,oy:coy}=t2o(tx,ty,vvr);
+        await stationApi.updateRoiPoint(did,form.id,{label:form.name,name:form.name,pointId:form.shortName,tx,ty,ox:cox,oy:coy,x:tx*100,y:ty*100,sortOrder:parseInt(form.markerSize)||28,warningThreshold:parseFloat(form.preAlarm)||50,alarmThreshold:parseFloat(form.alarm)||70} as any);
+        setMarkers(prev=>prev.map(m=>m.id===form.id?{...m,name:form.name,shortName:form.shortName,preAlarm:parseFloat(form.preAlarm)||50,alarm:parseFloat(form.alarm)||70,markerSize:parseInt(form.markerSize)||28}:m));
       } else {
-        const tx1=parseFloat(form.tx1), ty1=parseFloat(form.ty1);
-        const tx2=parseFloat(form.tx2), ty2=parseFloat(form.ty2);
-        const poly = JSON.stringify([[tx1,ty1],[tx2,ty1],[tx2,ty2],[tx1,ty2]]);
-        const p = { name:form.name, type:'roi', polygon:poly,
-          thresholds:JSON.stringify({warning:parseFloat(form.preAlarm),alarm:parseFloat(form.alarm),labelPos:form.labelPos,fontSize:parseFloat(form.fontSize)||11,borderWidth:parseFloat(form.borderWidth)||0.5}),
-          enabled:true, severityLevel:'warning' };
-        const saved:any = form.isNew
-          ? await stationApi.createBoundary(did, p as any)
-          : await stationApi.updateBoundary(form.id, p as any);
-        const savedId = saved?.id || form.id;
-        fetchRois = [{ id: savedId, x1: tx1, y1: ty1, x2: tx2, y2: ty2 }];
+        await stationApi.updateBoundary(form.id,{name:form.name,thresholds:JSON.stringify({warning:parseFloat(form.preAlarm),alarm:parseFloat(form.alarm),labelPos:form.labelPos,fontSize:parseFloat(form.fontSize)||11,borderWidth:parseFloat(form.borderWidth)||0.5})} as any);
+        setRois(prev=>prev.map(r=>r.id===form.id?{...r,name:form.name,preAlarm:parseFloat(form.preAlarm)||50,alarm:parseFloat(form.alarm)||70,labelPos:form.labelPos,fontSize:parseFloat(form.fontSize)||11,borderWidth:parseFloat(form.borderWidth)||0.5}:r));
       }
-
-      await load();
       setForm(EMPTY_FORM); setFormTemp(null);
       syncAI();
-
-      // Fetch nhiệt ngay với ID + tọa độ chính xác từ item vừa lưu
-      if(fetchPoints.length || fetchRois.length) {
-        fetch(`/api/v1/devices/${did}/thermal/live-temps`, {
-          method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${authService.getToken()}`},
-          body: JSON.stringify({ points: fetchPoints, rois: fetchRois })
-        }).then(r=>r.json()).then(d=>{
-          if(d.temps) setMarkers(prev=>prev.map(m=>{ const t=d.temps.find((x:any)=>x.id===m.id); return t?.temp!=null?{...m,temp:t.temp}:m; }));
-          if(d.rois)  setRois(prev=>prev.map(r=>{ const t=d.rois.find((x:any)=>x.id===r.id);   return t?.max!=null?{...r,maxTemp:t.max}:r; }));
-        }).catch(()=>{});
-      }
     } catch(e) { alert("Lưu thất bại!"); }
   };
 
-  const delMarker = async (id:string) => { if(confirm('Xóa điểm đo này?')) { await stationApi.deleteRoiPoint(did, id); load(); syncAI(); } };
-  const delRoi = async (id:string) => { if(confirm('Xóa vùng đo này?')) { await stationApi.deleteBoundary(id); load(); syncAI(); } };
+  const delMarker = async (id:string) => {
+    try {
+      if (await confirmDialog({ title: 'Xóa điểm đo', message: 'Bạn có chắc chắn muốn xóa điểm đo nhiệt này?', danger: true })) {
+        await stationApi.deleteRoiPoint(did, id);
+        await load();
+        syncAI();
+      }
+    } catch (err: any) {
+      console.error("[ThermalConfigTab] Delete marker failed:", err);
+      alert("Xóa điểm đo thất bại: " + (err.message || err));
+    }
+  };
+  const delRoi = async (id:string) => {
+    try {
+      if (await confirmDialog({ title: 'Xóa vùng đo', message: 'Bạn có chắc chắn muốn xóa vùng đo nhiệt này?', danger: true })) {
+        await stationApi.deleteBoundary(id);
+        await load();
+        syncAI();
+      }
+    } catch (err: any) {
+      console.error("[ThermalConfigTab] Delete ROI failed:", err);
+      alert("Xóa vùng đo thất bại: " + (err.message || err));
+    }
+  };
 
   return (
     <div style={{ display:'flex', height:'100%', overflow:'hidden', background:'var(--admin-bg)' }}>
@@ -393,45 +423,6 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
               </div>
             )}
 
-            {/* Preview ROI khi form vùng đang mở */}
-            {form.open && form.type==='roi' && form.tx1 && (() => {
-              const ftx1=parseFloat(form.tx1), fty1=parseFloat(form.ty1);
-              const ftx2=parseFloat(form.tx2), fty2=parseFloat(form.ty2);
-              if(isNaN(ftx1)||isNaN(fty1)||isNaN(ftx2)||isNaN(fty2)) return null;
-              const nx1 = viewMode==='th' ? ftx1 : t2o(ftx1,fty1,vvr).ox;
-              const ny1 = viewMode==='th' ? fty1 : t2o(ftx1,fty1,vvr).oy;
-              const nx2 = viewMode==='th' ? ftx2 : t2o(ftx2,fty2,vvr).ox;
-              const ny2 = viewMode==='th' ? fty2 : t2o(ftx2,fty2,vvr).oy;
-              return (
-                <div key="__roi_preview__" style={{ position:'absolute', left:pct(Math.min(nx1,nx2)), top:pct(Math.min(ny1,ny2)), width:pct(Math.abs(nx2-nx1)), height:pct(Math.abs(ny2-ny1)), border:'1.5px dashed rgba(255,255,255,.75)', background:'rgba(255,255,255,.04)', pointerEvents:'none', zIndex:15 }} />
-              );
-            })()}
-
-            {/* Preview điểm đầy đủ khi form tạo điểm mới đang mở */}
-            {form.open && form.type==='marker' && form.tx && (() => {
-              const ftx = parseFloat(form.tx), fty = parseFloat(form.ty);
-              if(isNaN(ftx)||isNaN(fty)) return null;
-              const {ox:fox, oy:foy} = t2o(ftx, fty, vvr);
-              const nx = viewMode==='th' ? ftx : fox;
-              const ny = viewMode==='th' ? fty : foy;
-              const al = parseInt(form.markerSize)||28;
-              const lo = Math.round(al/2) + 5;
-              const pAlarm = parseFloat(form.preAlarm)||50;
-              const alarm  = parseFloat(form.alarm)||70;
-              const c = formTemp!=null
-                ? (formTemp>=alarm?'#ef4444':formTemp>=pAlarm?'#f59e0b':'#10b981')
-                : '#9ca3af';
-              return (
-                <div key="__preview__" style={{ position:'absolute', left:pct(nx), top:pct(ny), transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:15 }}>
-                  <div style={{ position:'absolute', top:0, left:0, width:al, height:1.5, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 4px rgba(0,0,0,.9)' }} />
-                  <div style={{ position:'absolute', top:0, left:0, width:1.5, height:al, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 4px rgba(0,0,0,.9)' }} />
-                  <div style={{ position:'absolute', top:0, left:lo, transform:'translateY(-50%)', background:'rgba(8,8,12,.9)', borderRadius:3, padding:'1px 6px', display:'flex', flexDirection:'column', alignItems:'flex-start', whiteSpace:'nowrap' }}>
-                    <span style={{fontSize:10, color:'#94a3b8', lineHeight:1.3}}>{form.shortName||form.name||'...'}</span>
-                    <span style={{fontSize:11, fontWeight:800, color:c, fontFamily:'monospace', lineHeight:1.3}}>{formTemp!=null?`${formTemp.toFixed(1)}°C`:'...'}</span>
-                  </div>
-                </div>
-              );
-            })()}
 
             {/* Dragging ROI */}
             {dragRoi && (() => {
@@ -457,7 +448,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
         {form.open ? (
           <div style={{ display:'flex', flexDirection:'column', height:'100%', animation:'fadeIn .2s ease' }}>
             <div style={{ padding:'12px', borderBottom:'1px solid var(--admin-border)', display:'flex', justifyContent:'space-between', alignItems:'center', fontWeight:800, fontSize:'.85rem' }}>
-              <span>{form.isNew?(form.type==='marker'?'+ Điểm mới':'+ Vùng mới'):'Chỉnh sửa'}</span>
+              <span>Chỉnh sửa {form.type==='marker'?'điểm':'vùng'}</span>
               <button className="btn-industrial btn-sm" style={{ padding:'0 8px', height:22 }} onClick={()=>setForm(EMPTY_FORM)}><X size={12}/></button>
             </div>
             <div style={{ padding:14, display:'flex', flexDirection:'column', gap:10 }}>
@@ -507,45 +498,63 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                   {formTemp != null ? <span style={{ fontWeight:800, fontSize:'.9rem', color: formTemp>=(parseFloat(form.alarm)||70)?'#ef4444':formTemp>=(parseFloat(form.preAlarm)||50)?'#f59e0b':'#10b981' }}>{formTemp.toFixed(1)}°C</span> : <span style={{ color:'var(--admin-text-muted)', fontSize:'.7rem' }}>đang đọc...</span>}
                 </div>
               )}
-              <div style={{ display:'flex', gap:8 }}>
-                <button className="btn-industrial" style={{flex:1}} onClick={()=>{ setForm(EMPTY_FORM); setFormTemp(null); }}><X size={12} style={{marginRight:4}}/>Hủy</button>
-                <button className="btn-industrial btn-primary" style={{flex:1}} onClick={saveForm}><Save size={12} style={{marginRight:4}}/>Lưu</button>
+              <div style={{ display:'flex', gap:10, marginTop:6 }}>
+                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:600 }} onClick={()=>{ setForm(EMPTY_FORM); setFormTemp(null); }}>
+                  <X size={14}/> Hủy
+                </button>
+                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-accent)', border:'none', borderRadius:6, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:700, boxShadow:'0 2px 4px rgba(0,0,0,0.1)' }} onClick={saveForm}>
+                  <Save size={14}/> Lưu
+                </button>
               </div>
             </div>
           </div>
         ) : (
           <>
-            <div style={{ padding:'8px 12px', borderBottom:'1px solid var(--admin-border)', fontSize:'.65rem', fontWeight:800, color:'var(--admin-text-muted)', textTransform:'uppercase', letterSpacing:'.8px' }}>Điểm đo ({markers.length})</div>
-            <div style={{ flex:1, overflowY:'auto', maxHeight:'48%' }}>
+            <div style={{ padding:'10px 12px', background:'var(--admin-layer-2)', borderBottom:'1px solid var(--admin-border)', fontSize:'.68rem', fontWeight:800, color:'var(--admin-text-muted)', textTransform:'uppercase', letterSpacing:'.8px' }}>Điểm đo ({markers.length})</div>
+            <div style={{ flex:1, overflowY:'auto', maxHeight:'50%' }}>
               {markers.map(m => {
                 const c = clr(m.temp, m.preAlarm, m.alarm);
                 return (
-                  <div key={m.id} style={{padding:'7px 12px',borderBottom:'1px solid var(--admin-border)',display:'flex',alignItems:'center',gap:6}}>
-                    <div style={{width:8,height:8,borderRadius:'50%',background:c,flexShrink:0}}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:'.78rem',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.shortName||m.name}</div>
-                      {m.temp!=null&&<div style={{fontSize:'.68rem',fontFamily:'monospace',color:c,fontWeight:800}}>{m.temp.toFixed(1)}°C</div>}
+                  <div key={m.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
+                    <div style={{width:8, height:8, borderRadius:'50%', background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.shortName||m.name}</div>
+                      <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
+                        <span style={{fontWeight:800, color:c}}>{m.temp!=null?`${m.temp.toFixed(1)}°C`:'--°C'}</span>
+                        <span style={{opacity:0.25, fontWeight:100}}>|</span>
+                        <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {m.preAlarm}°</span>
+                        <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {m.alarm}°</span>
+                      </div>
                     </div>
-                    <button className="btn-industrial btn-sm" style={{width:22,height:22,padding:0}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'marker',id:m.id,name:m.name,shortName:m.shortName,markerSize:String(m.markerSize||28),preAlarm:String(m.preAlarm),alarm:String(m.alarm),tx:m.tx.toFixed(4),ty:m.ty.toFixed(4)})}><Edit2 size={11}/></button>
-                    <button className="btn-industrial btn-sm btn-danger" style={{width:22,height:22,padding:0}} onClick={()=>delMarker(m.id)}><Trash2 size={11}/></button>
+                    <div style={{display:'flex', gap:6}}>
+                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:4}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'marker',id:m.id,name:m.name,shortName:m.shortName,markerSize:String(m.markerSize||28),preAlarm:String(m.preAlarm),alarm:String(m.alarm),tx:m.tx.toFixed(4),ty:m.ty.toFixed(4)})}><Edit2 size={13}/></button>
+                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'#fee2e2', border:'1px solid #fecaca', color:'#991b1b', borderRadius:4}} onClick={()=>delMarker(m.id)}><Trash2 size={13}/></button>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            <div style={{ padding:'8px 12px', borderBottom:'1px solid var(--admin-border)', borderTop:'1px solid var(--admin-border)', fontSize:'.65rem', fontWeight:800, color:'var(--admin-text-muted)', textTransform:'uppercase', letterSpacing:'.8px' }}>Vùng đo ({rois.length})</div>
-            <div style={{flex:1,overflowY:'auto'}}>
+            <div style={{ padding:'10px 12px', background:'var(--admin-layer-2)', borderBottom:'1px solid var(--admin-border)', borderTop:'1px solid var(--admin-border)', fontSize:'.68rem', fontWeight:800, color:'var(--admin-text-muted)', textTransform:'uppercase', letterSpacing:'.8px' }}>Vùng đo ({rois.length})</div>
+            <div style={{flex:1, overflowY:'auto'}}>
               {rois.map(r => {
                 const c = clr(r.maxTemp, r.preAlarm, r.alarm);
                 return (
-                  <div key={r.id} style={{padding:'7px 12px',borderBottom:'1px solid var(--admin-border)',display:'flex',alignItems:'center',gap:6}}>
-                    <div style={{width:8,height:8,background:c,flexShrink:0}}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:'.78rem',fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div>
-                      {r.maxTemp!=null&&<div style={{fontSize:'.68rem',fontFamily:'monospace',color:c,fontWeight:800}}>Max {r.maxTemp.toFixed(1)}°C</div>}
+                  <div key={r.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
+                    <div style={{width:8, height:8, background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.name}</div>
+                      <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
+                        <span style={{fontWeight:800, color:c}}>{r.maxTemp!=null?`Max ${r.maxTemp.toFixed(1)}°C`:'Max --°C'}</span>
+                        <span style={{opacity:0.25, fontWeight:100}}>|</span>
+                        <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {r.preAlarm}°</span>
+                        <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {r.alarm}°</span>
+                      </div>
                     </div>
-                    <button className="btn-industrial btn-sm" style={{width:22,height:22,padding:0}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'roi',id:r.id,name:r.name,labelPos:r.labelPos||'top',fontSize:String(r.fontSize||11),borderWidth:String(r.borderWidth||0.5),preAlarm:String(r.preAlarm),alarm:String(r.alarm),tx1:r.tx1.toFixed(4),ty1:r.ty1.toFixed(4),tx2:r.tx2.toFixed(4),ty2:r.ty2.toFixed(4)})}><Edit2 size={11}/></button>
-                    <button className="btn-industrial btn-sm btn-danger" style={{width:22,height:22,padding:0}} onClick={()=>delRoi(r.id)}><Trash2 size={11}/></button>
+                    <div style={{display:'flex', gap:6}}>
+                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:4}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'roi',id:r.id,name:r.name,labelPos:r.labelPos||'top',fontSize:String(r.fontSize||11),borderWidth:String(r.borderWidth||0.5),preAlarm:String(r.preAlarm),alarm:String(r.alarm),tx1:r.tx1.toFixed(4),ty1:r.ty1.toFixed(4),tx2:r.tx2.toFixed(4),ty2:r.ty2.toFixed(4)})}><Edit2 size={13}/></button>
+                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'#fee2e2', border:'1px solid #fecaca', color:'#991b1b', borderRadius:4}} onClick={()=>delRoi(r.id)}><Trash2 size={13}/></button>
+                    </div>
                   </div>
                 );
               })}

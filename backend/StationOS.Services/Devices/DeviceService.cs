@@ -14,6 +14,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StationOS.Data.Entities;
 using StationOS.Services.Security;
@@ -26,16 +27,18 @@ public class DeviceService
     private readonly IConfiguration _config;
     private readonly ILogger<DeviceService> _logger;
     private readonly CredentialEncryptionService _crypto;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     // go2rtc REST API mặc định chạy tại port 1984
     private string Go2RtcUrl => _config["Go2Rtc:ApiUrl"] ?? "http://localhost:1984";
 
-    public DeviceService(IHttpClientFactory http, IConfiguration config, ILogger<DeviceService> logger, CredentialEncryptionService crypto)
+    public DeviceService(IHttpClientFactory http, IConfiguration config, ILogger<DeviceService> logger, CredentialEncryptionService crypto, IServiceScopeFactory scopeFactory)
     {
         _http = http;
         _config = config;
         _logger = logger;
         _crypto = crypto;
+        _scopeFactory = scopeFactory;
     }
 
     /// <summary>
@@ -325,10 +328,13 @@ public class DeviceService
     /// <summary>
     /// Đồng bộ cả ROI points và boundaries (zones) sang AI Engine.
     /// </summary>
-    public async Task SyncThermalConfigToAIEngineAsync(Data.AppDbContext db, Guid deviceId)
+    public async Task SyncThermalConfigToAIEngineAsync(Guid deviceId)
     {
         try
         {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<Data.AppDbContext>();
+
             var device = await db.Devices.FindAsync(deviceId);
             if (device == null || (!device.Type.Equals("camera_dual", StringComparison.OrdinalIgnoreCase) && !device.Type.Equals("camera_thermal", StringComparison.OrdinalIgnoreCase)))
                 return;
@@ -404,7 +410,10 @@ public class DeviceService
                 password = password,
                 points = points.Select((p, idx) => new
                 {
-                    id = !string.IsNullOrEmpty(p.PointId) ? p.PointId : $"P{idx + 1}",
+                    id = !string.IsNullOrEmpty(p.PointId) ? p.PointId : 
+                         (System.Text.RegularExpressions.Regex.IsMatch(p.Name ?? "", @"\d+") ? 
+                          $"P{System.Text.RegularExpressions.Regex.Match(p.Name ?? "", @"\d+").Value}" : 
+                          $"P{idx + 1}"),
                     x = p.Tx,
                     y = p.Ty,
                     pre_alarm = (double)p.PreAlarmThreshold,
@@ -419,7 +428,7 @@ public class DeviceService
             var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
             
             // 1. Đồng bộ sang AI Engine cục bộ trên PC (cổng 8100) để huấn luyện dự báo
-            var resp = await client.PostAsync("http://localhost:8100/api/v1/config/thermal", content);
+            var resp = await client.PostAsync("http://127.0.0.1:8100/api/v1/config/thermal", content);
             if (!resp.IsSuccessStatusCode)
             {
                 _logger.LogWarning($"[SyncThermalConfigToAIEngineAsync] AI Engine returned status {resp.StatusCode} for device {deviceId}");
@@ -432,7 +441,8 @@ public class DeviceService
             // 2. Tự động đồng bộ trực tiếp sang Jetson Orin Nano (cổng 8080) qua mạng
             try
             {
-                var jetsonResp = await client.PostAsync("http://192.168.10.104:8080/config/thermal", content);
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var jetsonResp = await client.PostAsync("http://192.168.10.104:8080/config/thermal", content, cts.Token);
                 if (jetsonResp.IsSuccessStatusCode)
                 {
                     _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully forwarded configuration to Jetson at 192.168.10.104:8080");
