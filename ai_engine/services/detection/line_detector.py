@@ -33,10 +33,12 @@ class VirtualLine:
     color:     tuple = (0, 255, 255)  # BGR
 
     def __post_init__(self):
+        """Tự sinh nhãn hiển thị từ id nếu người dùng không cung cấp."""
         if not self.label:
             self.label = f"Line {self.id}"
 
     def to_pixel(self, w: int, h: int) -> tuple[tuple[int,int], tuple[int,int]]:
+        """Chuyển đổi tọa độ tỉ lệ 0-1 của đường sang tọa độ pixel theo kích thước frame."""
         return (int(self.x1 * w), int(self.y1 * h)), (int(self.x2 * w), int(self.y2 * h))
 
 
@@ -58,6 +60,7 @@ class LineDetector:
     _annotated_frame: np.ndarray | None       = field(default=None, init=False, repr=False)
 
     def start(self) -> None:
+        """Tải model YOLO và khởi động RTSP reader để bắt đầu phân tích."""
         self._model = YOLO(cfg.yolo_model)
         rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
         self._reader = RtspReader(rtsp_url, self.stream_id)
@@ -65,16 +68,19 @@ class LineDetector:
         logger.info("[LineDetector] Started for %s", self.stream_id)
 
     def stop(self) -> None:
+        """Dừng RTSP reader và giải phóng tài nguyên."""
         if self._reader:
             self._reader.stop()
 
     @property
     def annotated_frame(self) -> np.ndarray | None:
+        """Frame YOLO annotated mới nhất (thread-safe)."""
         return self._annotated_frame
 
     # ── Main process ─────────────────────────────────────────
 
     async def process(self) -> None:
+        """Chạy YOLO detect, kiểm tra line crossing, annotate frame và gửi alert nếu có vi phạm."""
         if self._reader is None or self._model is None:
             return
 
@@ -186,6 +192,7 @@ _annotated_frames: dict[str, np.ndarray] = {}
 
 
 def get_annotated_frame(stream_id: str) -> np.ndarray | None:
+    """Trả về frame đã annotate mới nhất của stream, hoặc None nếu chưa có."""
     return _annotated_frames.get(stream_id)
 
 
@@ -203,9 +210,11 @@ def _check_line_cross(
     Dùng công thức cross-product để xét phía của điểm so với đường thẳng.
     """
     def cross(ax, ay, bx, by, px, py):
+        """Tính cross product của vector AB và AP để xác định phía của điểm P so với AB."""
         return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
 
     def segments_intersect(p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y) -> bool:
+        """Kiểm tra hai đoạn thẳng (p1→p2) và (p3→p4) có giao nhau không."""
         d1 = cross(p3x, p3y, p4x, p4y, p1x, p1y)
         d2 = cross(p3x, p3y, p4x, p4y, p2x, p2y)
         d3 = cross(p1x, p1y, p2x, p2y, p3x, p3y)
@@ -229,5 +238,6 @@ def _check_line_cross(
 
 
 def _now_iso() -> str:
+    """Trả về timestamp hiện tại theo định dạng ISO 8601 UTC."""
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

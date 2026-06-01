@@ -1,6 +1,10 @@
 import './AnalyticsLayout.css';
 import CabinetAnalyticsTab from './tabs/CabinetAnalyticsTab';
 
+/**
+ * Layout trang Phân tích: bao bọc nội dung phân tích tủ điện,
+ * hiển thị tiêu đề toolbar và render tab CabinetAnalyticsTab bên dưới.
+ */
 export default function AnalyticsLayout() {
   return (
     <div className="admin-page-container">

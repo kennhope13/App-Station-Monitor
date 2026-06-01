@@ -44,6 +44,11 @@ public class CameraWebhookController : ControllerBase
         if (!Directory.Exists(Path.Combine(mediaPath, "videos")))     Directory.CreateDirectory(Path.Combine(mediaPath, "videos"));
     }
 
+    /// <summary>
+    /// Nhận HTTP event push từ camera Hikvision (XML hoặc multipart/form-data).
+    /// Phân tích XML, lưu ảnh snapshot, tạo DetectionEvent + Alert và broadcast qua SignalR.
+    /// Endpoint công khai — camera không có JWT.
+    /// </summary>
     // ── Nhận push từ camera ───────────────────────────────────
     [HttpPost]
     [AllowAnonymous]
@@ -225,6 +230,10 @@ public class CameraWebhookController : ControllerBase
             });
     }
 
+    /// <summary>
+    /// Nhận file MP4 từ Python FFMPEG sau khi AI Engine ghi xong clip sự kiện.
+    /// Lưu video vào thư mục media/videos và gắn URL vào Alert đang mở của camera tương ứng.
+    /// </summary>
     // ── Nắp ống xả Video từ Python FFMPEG ──────────────────────
     [HttpPost("video")]
     [AllowAnonymous]

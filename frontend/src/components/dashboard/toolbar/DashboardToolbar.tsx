@@ -94,11 +94,9 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
             {isEditMode ? 'Đang chỉnh' : 'Chỉnh sơ đồ'}
           </button>
           
-          {isEditMode && (
-            <button onClick={onToggleLabels} style={btnStyle(showLabels)}>
-              {showLabels ? 'Ẩn tên' : 'Hiện tên'}
-            </button>
-          )}
+          <button onClick={onToggleLabels} style={btnStyle(showLabels)}>
+            {showLabels ? 'Ẩn tên' : 'Hiện tên'}
+          </button>
 
           <label title="Màu đường nét" style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', color: 'var(--admin-text-muted)', fontSize: 10 }}>
             <input 

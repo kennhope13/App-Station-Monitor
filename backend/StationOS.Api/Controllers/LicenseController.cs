@@ -19,6 +19,8 @@ public class LicenseController : ControllerBase
 
     public LicenseController(LicenseService license) => _license = license;
 
+    /// <summary>Lấy trạng thái license hiện tại: tier, số người dùng tối đa, ngày hết hạn, số phiên đang hoạt động.</summary>
+    /// <returns>Thông tin license đang kích hoạt hoặc activated = false nếu chưa kích hoạt.</returns>
     [HttpGet("status")]
     public async Task<IActionResult> Status()
     {
@@ -39,6 +41,9 @@ public class LicenseController : ControllerBase
         });
     }
 
+    /// <summary>Kích hoạt license key cho hệ thống. Yêu cầu quyền admin.</summary>
+    /// <param name="req">License key cần kích hoạt.</param>
+    /// <returns>Thông báo kích hoạt thành công hoặc lỗi nếu key không hợp lệ.</returns>
     [Authorize(Roles = "admin")]
     [HttpPost("activate")]
     public async Task<IActionResult> Activate([FromBody] LicenseKeyRequest req)
@@ -53,6 +58,9 @@ public class LicenseController : ControllerBase
         return Ok(new { message = "Kích hoạt license thành công" });
     }
 
+    /// <summary>Kiểm tra tính hợp lệ của license key mà không kích hoạt. Trả về tier, maxUsers, ngày hết hạn nếu hợp lệ.</summary>
+    /// <param name="req">License key cần kiểm tra.</param>
+    /// <returns>Kết quả kiểm tra: valid, tier, maxUsers, expiresAt, daysRemaining.</returns>
     [HttpPost("validate")]
     public IActionResult Validate([FromBody] LicenseKeyRequest req)
     {

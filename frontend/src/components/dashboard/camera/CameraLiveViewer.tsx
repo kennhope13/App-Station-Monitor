@@ -13,45 +13,43 @@ export default function CameraLiveViewer({ cameraSrc = '', headerAddon }: Camera
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const navigate = useNavigate();
 
-
   return (
-    <div 
+    <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: '#000', borderRadius: 4, overflow: 'hidden', boxShadow: 'var(--admin-shadow)' }}
+      style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: '#000', borderRadius: 4, overflow: 'hidden', boxShadow: 'var(--admin-shadow)', minHeight: isCollapsed ? 26 : 0 }}
     >
-      <div style={{ 
+      <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px', 
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px',
         background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', borderBottom: '1px solid rgba(255,255,255,0.1)',
         opacity: isHovered || isCollapsed ? 1 : 0, transition: 'opacity 0.2s ease-in-out',
-        pointerEvents: isHovered || isCollapsed ? 'auto' : 'none'
+        pointerEvents: isHovered || isCollapsed ? 'auto' : 'none',
       }}>
-        <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#fff' }}>CAMERA</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* Trái: CAMERA label + select chọn camera */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, flex: 1 }}>
+          <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>CAMERA</span>
           {headerAddon}
-          <button 
-            onClick={() => navigate('/realtime')}
-            style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '0.55rem', fontWeight: 800, padding: '2px 5px', borderRadius: 3 }}
-          >
-            FULL VIEW →
-          </button>
-          <button 
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '0.7rem', lineHeight: 1, padding: '0 2px' }}
-          >
-            {isCollapsed ? '▼' : '▲'}
-          </button>
         </div>
+        {/* Phải: nút collapse */}
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '0.7rem', lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+        >
+          {isCollapsed ? '▼' : '▲'}
+        </button>
       </div>
-      
+
       {!isCollapsed && (
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '4/3', background: '#000', overflow: 'hidden' }}>
+        <div
+          onDoubleClick={() => navigate('/realtime')}
+          style={{ position: 'relative', width: '100%', aspectRatio: '4/3', background: '#000', overflow: 'hidden', cursor: 'pointer' }}
+        >
           {cameraSrc ? (
-            <iframe 
+            <iframe
               ref={iframeRef}
               src={`/camera-stream.html?src=${cameraSrc}&mode=webrtc,mse&go2rtc=${GO2RTC_URL}`}
-              style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', display: 'block' }} 
+              style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', display: 'block' }}
               allow="autoplay"
               title="Camera Live Stream"
             />

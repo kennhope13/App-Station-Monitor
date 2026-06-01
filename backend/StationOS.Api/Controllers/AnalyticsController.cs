@@ -27,6 +27,11 @@ public class AnalyticsController : ControllerBase
         _healthWorker = healthWorker;
     }
 
+    /// <summary>
+    /// Lấy điểm sức khỏe (health score) và mức rủi ro của từng thiết bị.
+    /// Dữ liệu được tính toán bởi HealthScoreWorker và lưu trong SystemSettings.
+    /// Query: ?stationId= để lọc theo trạm.
+    /// </summary>
     // ── GET /api/v1/analytics/health?stationId= ──────────────
     [HttpGet("health")]
     public async Task<IActionResult> GetHealth([FromQuery] Guid? stationId)
@@ -74,6 +79,11 @@ public class AnalyticsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Tính xu hướng (slope) của từng điểm đo trong N ngày gần đây.
+    /// Trả về: slopePerDay, trend (rising/falling/stable), latestValue, unit.
+    /// Query: ?stationId=&days=7 (tối đa 30 ngày).
+    /// </summary>
     // ── GET /api/v1/analytics/trend?stationId=&days=7 ────────
     [HttpGet("trend")]
     public async Task<IActionResult> GetTrend(
@@ -149,6 +159,10 @@ public class AnalyticsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Xóa toàn bộ zone states và health score cũ, sau đó tính lại ngay lập tức trong background.
+    /// Chỉ admin và manager. Query: ?deviceId= để giới hạn cho 1 thiết bị.
+    /// </summary>
     // ── POST /api/v1/analytics/health/recalculate ────────────
     // Xóa zone states cũ + tính lại điểm sức khỏe ngay lập tức
     [HttpPost("health/recalculate")]

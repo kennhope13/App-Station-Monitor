@@ -31,7 +31,7 @@ CAM_AUTH = HTTPDigestAuth(CAM_USER, CAM_PASS)
 # RTSP main stream channel 101 (đã render acoustic overlay)
 import urllib.parse
 RTSP_URL = f"rtsp://{CAM_USER}:{urllib.parse.quote(CAM_PASS, safe='')}@{CAM_IP}:554/Streaming/Channels/101"
-TARGET_FPS = 15   # mục tiêu fps stream + detect (giới hạn bởi CPU OpenCV)
+TARGET_FPS = 10   # mục tiêu fps stream + detect (giới hạn bởi CPU OpenCV)
 BOUNDARIES_FILE = os.path.join(os.path.dirname(__file__), "cam153_boundaries.json")
 
 # ── State ───────────────────────────────────────────────────────────────
@@ -151,11 +151,8 @@ def rtsp_loop():
             time.sleep(0.1)
             continue
             
-        # Encode JPEG cho MJPEG endpoint (quality 65 cho nhẹ)
-        ok2, buf = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 65])
-        if ok2:
-            with lock:
-                state["frame"] = buf.tobytes()
+        # Loại bỏ hoàn toàn việc nén JPEG và stream hình qua mạng (giống file Thermal)
+        # Chỉ để lại OpenCV chạy ngầm lấy tọa độ nguồn âm!
                 
         # Detect blob
         det = detect_from_frame(img)
@@ -221,16 +218,7 @@ def alert_loop():
 # ── Flask app ───────────────────────────────────────────────────────────
 app = Flask(__name__)
 
-@app.route("/video_feed")
-def video_feed():
-    def gen():
-        while True:
-            with lock:
-                frame = state["frame"]
-            if frame:
-                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
-            time.sleep(1.0 / TARGET_FPS)
-    return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+# Route video_feed đã bị xóa vì không cần stream hình nặng nề nữa
 
 @app.route("/api/state")
 def api_state():
@@ -249,9 +237,10 @@ def add_boundary():
     data = request.get_json()
     name = (data.get("name") or "").strip()
     polygon = data.get("polygon")
+    label_pos = data.get("labelPos", "bottom")
     if not name or not polygon or len(polygon) < 3:
         return jsonify({"error": "need name + polygon(>=3 points)"}), 400
-    boundaries.append({"name": name, "polygon": polygon})
+    boundaries.append({"name": name, "polygon": polygon, "labelPos": label_pos})
     save_boundaries()
     return jsonify({"ok": True})
 
@@ -259,6 +248,17 @@ def add_boundary():
 def del_boundary(idx):
     if 0 <= idx < len(boundaries):
         boundaries.pop(idx); save_boundaries()
+        return jsonify({"ok": True})
+    return jsonify({"error": "not found"}), 404
+
+@app.route("/api/boundaries/<int:idx>", methods=["PUT"])
+def edit_boundary(idx):
+    if 0 <= idx < len(boundaries):
+        data = request.get_json()
+        if "name" in data: boundaries[idx]["name"] = data["name"].strip()
+        if "polygon" in data: boundaries[idx]["polygon"] = data["polygon"]
+        if "labelPos" in data: boundaries[idx]["labelPos"] = data["labelPos"]
+        save_boundaries()
         return jsonify({"ok": True})
     return jsonify({"error": "not found"}), 404
 
@@ -278,10 +278,9 @@ body { background: #0a0a0a; color: #e0e0e0; font-family: 'Segoe UI', monospace; 
     display: flex; align-items: center; justify-content: center;
 }
 .video-wrap {
-    position: relative; max-width: 100%; max-height: 100%;
-    display: inline-block;
+    position: relative; width: 100%; height: 100%;
 }
-.video-wrap img { display: block; max-width: 100%; max-height: 100vh; object-fit: contain; }
+.video-wrap video, .video-wrap iframe { display: block; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
 .video-wrap svg {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     pointer-events: auto;
@@ -360,7 +359,9 @@ button.cancel:hover { background: #616161; }
 }
 .b-row.active { border-left-color: #f44336; background: #1f0a0a; }
 .b-row .nm { font-size: 12px; font-weight: 700; }
-.b-row .del { background: transparent; color: #888; padding: 2px 6px; font-size: 14px; }
+.b-row .edit-btn { transition: transform 0.1s; filter: grayscale(0.2); }
+.b-row .edit-btn:hover { transform: scale(1.2); filter: grayscale(0); }
+.b-row .del { background: transparent; color: #888; padding: 2px 6px; font-size: 14px; transition: color 0.2s; }
 .b-row .del:hover { color: #f44336; }
 
 .events { flex: 1; overflow-y: auto; padding: 8px 14px; }
@@ -377,14 +378,21 @@ button.cancel:hover { background: #616161; }
         <span class="conn-dot" id="dot"></span>
         DS-QAAI264G1-P | 192.168.10.153
       </div>
-      <img id="stream" src="/video_feed" alt="stream">
+      <!-- Dùng luồng WebRTC mượt mà trực tiếp từ go2rtc -->
+      <iframe id="stream" src="http://localhost:1984/webrtc.html?src=camera_192_168_10_153_pd" allow="autoplay" style="border: none; width: 100%; height: 100vh; pointer-events: none; display: block;"></iframe>
       <svg id="svg" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
       <div class="draw-hint" id="hint" style="display:none">
-        Kéo chuột để vẽ hình chữ nhật bao quanh vùng (vd: 1 tủ điện) · Esc=hủy
+        Click các điểm để tạo đa giác bao quanh vùng thiết bị. Nhấn phím Enter để hoàn thành, Esc để hủy.
       </div>
       <div class="name-modal" id="nameModal" style="display:none">
-        <div class="nm-title">Đặt tên cho boundary</div>
-        <input type="text" id="nameInput" placeholder="vd: TỦ A1" autocomplete="off">
+        <div class="nm-title" id="nmTitle">Cài đặt Boundary</div>
+        <input type="text" id="nameInput" placeholder="Nhập tên (vd: TỦ A1)" autocomplete="off">
+        <select id="posInput" style="width: 100%; background: #1a1a1a; color: #fff; border: 1px solid #333; padding: 8px 10px; font-size: 14px; margin-bottom: 15px; border-radius: 3px;">
+            <option value="bottom">Nhãn ở dưới (Bottom)</option>
+            <option value="top">Nhãn ở trên (Top)</option>
+            <option value="left">Nhãn bên trái (Left)</option>
+            <option value="right">Nhãn bên phải (Right)</option>
+        </select>
         <div class="nm-btns">
           <button id="saveNameBtn">Lưu</button>
           <button class="cancel" id="cancelNameBtn">Hủy</button>
@@ -426,9 +434,11 @@ const svg = document.getElementById('svg');
 const wrap = document.getElementById('wrap');
 const hint = document.getElementById('hint');
 let mode = 'view';        // 'view' | 'drawing'
-let dragStart = null;     // [x,y] normalized 0-1
-let dragEnd = null;
+let draftPolygon = [];
+let draftPoint = null;
+let pendingPolygon = null;
 let lastState = null;
+let editingIdx = null;
 const COLORS = ['#42a5f5','#66bb6a','#ffa726','#ab47bc','#26c6da','#ef5350','#ffee58','#8d6e63'];
 
 function svgPt(evt) {
@@ -443,25 +453,47 @@ function render() {
     const boundaries = lastState ? lastState.boundaries : [];
     const active = lastState ? lastState.active_boundary : null;
     boundaries.forEach((b, i) => {
-        const col = COLORS[i % COLORS.length];
+        if (i === editingIdx) return;
+        const col = '#10B981'; // Xanh lá
         const pts = b.polygon.map(p => `${p[0]*1000},${p[1]*1000}`).join(' ');
         const isActive = b.name === active;
         const stroke = isActive ? '#f44336' : col;
-        const fill = isActive ? 'rgba(244,67,54,0.25)' : col + '22';
+        const fill = isActive ? 'rgba(244,67,54,0.25)' : 'rgba(16, 185, 129, 0.05)';
         const sw = isActive ? 4 : 2;
         html += `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
-        // Label at centroid
-        const cx = b.polygon.reduce((s,p)=>s+p[0],0)/b.polygon.length*1000;
-        const cy = b.polygon.reduce((s,p)=>s+p[1],0)/b.polygon.length*1000;
-        html += `<text x="${cx}" y="${cy}" fill="${isActive?'#fff':col}" font-size="22" font-weight="700" text-anchor="middle" dominant-baseline="middle" style="paint-order:stroke;stroke:#000;stroke-width:4">${b.name}</text>`;
+        
+        const xs = b.polygon.map(p => p[0]*1000);
+        const ys = b.polygon.map(p => p[1]*1000);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        
+        let tx = (minX + maxX) / 2;
+        let ty = (minY + maxY) / 2;
+        let anchor = 'middle';
+        let baseline = 'middle';
+        
+        const pos = b.labelPos || 'bottom';
+        if (pos === 'top') {
+            ty = minY - 10; baseline = 'bottom';
+        } else if (pos === 'bottom') {
+            ty = maxY + 10; baseline = 'hanging';
+        } else if (pos === 'left') {
+            tx = minX - 10; anchor = 'end';
+        } else if (pos === 'right') {
+            tx = maxX + 10; anchor = 'start';
+        }
+        
+        html += `<text x="${tx}" y="${ty}" fill="${isActive?'#fff':col}" font-size="22" font-weight="700" text-anchor="${anchor}" dominant-baseline="${baseline}" style="paint-order:stroke;stroke:#000;stroke-width:4">${b.name}</text>`;
     });
-    // Drawing rectangle in progress
-    if (mode === 'drawing' && dragStart && dragEnd && !pendingPolygon) {
-        const x = Math.min(dragStart[0], dragEnd[0]) * 1000;
-        const y = Math.min(dragStart[1], dragEnd[1]) * 1000;
-        const rw = Math.abs(dragEnd[0] - dragStart[0]) * 1000;
-        const rh = Math.abs(dragEnd[1] - dragStart[1]) * 1000;
-        html += `<rect x="${x}" y="${y}" width="${rw}" height="${rh}" fill="rgba(255,215,64,0.2)" stroke="#ffd740" stroke-width="2" stroke-dasharray="6" vector-effect="non-scaling-stroke"/>`;
+    // Drawing polygon in progress
+    if (mode === 'drawing' && draftPolygon.length > 0 && !pendingPolygon) {
+        const dpts = [...draftPolygon];
+        if (draftPoint) dpts.push(draftPoint);
+        const pts = dpts.map(p => `${p[0]*1000},${p[1]*1000}`).join(' ');
+        html += `<polygon points="${pts}" fill="rgba(255,215,64,0.1)" stroke="#ffd740" stroke-width="2" stroke-dasharray="6" vector-effect="non-scaling-stroke"/>`;
+        draftPolygon.forEach(p => {
+            html += `<circle cx="${p[0]*1000}" cy="${p[1]*1000}" r="4" fill="#ffd740"/>`;
+        });
     }
     // Pending polygon (đã thả chuột, đợi đặt tên)
     if (typeof pendingPolygon !== 'undefined' && pendingPolygon) {
@@ -498,14 +530,16 @@ function renderSidebar() {
     }
     document.getElementById('ts').textContent = 'Cập nhật ' + (lastState.ts || '—');
     document.getElementById('dot').className = 'conn-dot' + (lastState.connected ? ' ok' : '');
-    // Boundary list
     const bl = document.getElementById('blist');
     bl.innerHTML = lastState.boundaries.map((b, i) => {
-        const col = COLORS[i % COLORS.length];
+        const col = '#10B981';
         const isActive = b.name === lastState.active_boundary;
         return `<div class="b-row${isActive?' active':''}" style="border-left-color:${isActive?'#f44336':col}">
             <span class="nm" style="color:${isActive?'#f44336':col}">${b.name}</span>
-            <button class="del" onclick="delBoundary(${i})">×</button>
+            <div class="actions">
+                <button class="edit-btn" onclick="event.stopPropagation(); editBoundary(${i})" style="background:transparent; border:none; cursor:pointer; padding: 2px 6px; font-size:14px">✏️</button>
+                <button class="del" onclick="event.stopPropagation(); delBoundary(${i})">×</button>
+            </div>
         </div>`;
     }).join('') || '<div style="color:#444;font-size:11px;text-align:center;padding:10px">Chưa có boundary nào</div>';
     // Events
@@ -531,78 +565,103 @@ async function poll() {
 async function delBoundary(i) {
     if (!confirm('Xóa boundary này?')) return;
     await fetch('/api/boundaries/' + i, {method: 'DELETE'});
+    if (editingIdx === i) abortNaming();
+}
+
+function editBoundary(i) {
+    if (mode === 'drawing' || !lastState || !lastState.boundaries[i]) return;
+    const b = lastState.boundaries[i];
+    editingIdx = i;
+    pendingPolygon = b.polygon;
+    document.getElementById('nmTitle').textContent = 'Sửa Boundary';
+    document.getElementById('nameInput').value = b.name;
+    document.getElementById('posInput').value = b.labelPos || 'bottom';
+    document.getElementById('hint').style.display = 'none';
+    document.getElementById('nameModal').style.display = 'block';
+    document.getElementById('nameInput').focus();
+    render();
 }
 
 document.getElementById('addBtn').onclick = () => {
     if (mode === 'drawing') { cancelDraw(); return; }
     mode = 'drawing';
-    dragStart = null; dragEnd = null;
+    editingIdx = null;
+    draftPolygon = [];
+    draftPoint = null;
+    pendingPolygon = null;
     wrap.classList.add('drawing');
-    hint.style.display = 'block';
+    document.getElementById('hint').style.display = 'block';
+    document.getElementById('nmTitle').textContent = 'Tạo Boundary Mới';
     document.getElementById('addBtn').textContent = 'Hủy';
 };
 
 function cancelDraw() {
     mode = 'view';
-    dragStart = null; dragEnd = null;
+    draftPolygon = [];
+    draftPoint = null;
+    pendingPolygon = null;
+    editingIdx = null;
     wrap.classList.remove('drawing');
-    hint.style.display = 'none';
+    document.getElementById('hint').style.display = 'none';
     document.getElementById('addBtn').textContent = '+ Thêm';
     render();
 }
 
-let pendingPolygon = null;
-const nameModal = document.getElementById('nameModal');
-const nameInput = document.getElementById('nameInput');
-
 svg.addEventListener('mousedown', (e) => {
     if (mode !== 'drawing' || pendingPolygon) return;
     e.preventDefault();
-    dragStart = svgPt(e);
-    dragEnd = dragStart;
+    draftPolygon.push(svgPt(e));
     render();
 });
 svg.addEventListener('mousemove', (e) => {
-    if (mode !== 'drawing' || !dragStart || pendingPolygon) return;
-    dragEnd = svgPt(e);
+    if (mode !== 'drawing' || !draftPolygon.length || pendingPolygon) return;
+    draftPoint = svgPt(e);
     render();
 });
-function finishDrag() {
-    if (!dragStart || !dragEnd) return;
-    const wpx = Math.abs(dragEnd[0] - dragStart[0]);
-    const hpx = Math.abs(dragEnd[1] - dragStart[1]);
-    if (wpx < 0.005 || hpx < 0.005) {
-        dragStart = null; dragEnd = null; render(); return;
+
+document.addEventListener('keydown', (e) => {
+    if (mode === 'drawing' && e.key === 'Enter' && !pendingPolygon) {
+        if (draftPolygon.length >= 3) {
+            e.preventDefault();
+            pendingPolygon = [...draftPolygon];
+            draftPolygon = [];
+            draftPoint = null;
+            document.getElementById('hint').style.display = 'none';
+            document.getElementById('nameModal').style.display = 'block';
+            document.getElementById('nameInput').value = '';
+            setTimeout(() => document.getElementById('nameInput').focus(), 50);
+            render();
+        } else {
+            alert('Cần vẽ ít nhất 3 điểm để tạo đa giác!');
+        }
     }
-    const x1 = Math.min(dragStart[0], dragEnd[0]);
-    const y1 = Math.min(dragStart[1], dragEnd[1]);
-    const x2 = Math.max(dragStart[0], dragEnd[0]);
-    const y2 = Math.max(dragStart[1], dragEnd[1]);
-    pendingPolygon = [[x1,y1],[x2,y1],[x2,y2],[x1,y2]];
-    hint.style.display = 'none';
-    nameModal.style.display = 'block';
-    nameInput.value = '';
-    setTimeout(() => nameInput.focus(), 50);
-    render();
-}
-svg.addEventListener('mouseup', finishDrag);
-// Bắt cả mouseup ngoài svg (phòng khi kéo ra ngoài rồi thả)
-document.addEventListener('mouseup', (e) => {
-    if (mode === 'drawing' && dragStart && !pendingPolygon) finishDrag();
+    if (mode === 'drawing' && e.key === 'Escape' && !pendingPolygon) {
+        cancelDraw();
+    }
 });
 
 async function saveBoundary() {
     if (!pendingPolygon) return;
-    const name = nameInput.value.trim();
-    if (!name) { nameInput.focus(); return; }
-    const res = await fetch('/api/boundaries', {
-        method: 'POST',
+    const name = document.getElementById('nameInput').value.trim();
+    if (!name) { document.getElementById('nameInput').focus(); return; }
+    const pos = document.getElementById('posInput').value;
+    
+    let url = '/api/boundaries';
+    let method = 'POST';
+    if (editingIdx !== null) {
+        url = '/api/boundaries/' + editingIdx;
+        method = 'PUT';
+    }
+    
+    const res = await fetch(url, {
+        method: method,
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({name: name, polygon: pendingPolygon})
+        body: JSON.stringify({name: name, polygon: pendingPolygon, labelPos: pos})
     });
     if (res.ok) {
         pendingPolygon = null;
-        nameModal.style.display = 'none';
+        editingIdx = null;
+        document.getElementById('nameModal').style.display = 'none';
         cancelDraw();
     } else {
         alert('Lỗi: ' + (await res.text()));
@@ -610,9 +669,11 @@ async function saveBoundary() {
 }
 function abortNaming() {
     pendingPolygon = null;
-    nameModal.style.display = 'none';
-    dragStart = null; dragEnd = null;
-    if (mode === 'drawing') hint.style.display = 'block';
+    editingIdx = null;
+    document.getElementById('nameModal').style.display = 'none';
+    draftPolygon = [];
+    draftPoint = null;
+    if (mode === 'drawing') document.getElementById('hint').style.display = 'block';
     render();
 }
 document.getElementById('saveNameBtn').onclick = saveBoundary;

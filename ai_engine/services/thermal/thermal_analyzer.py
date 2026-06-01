@@ -1,8 +1,9 @@
 """
 thermal_analyzer.py — Phân tích camera nhiệt
-- Đọc nhiệt độ tại các điểm đo P1-P10 qua Hikvision ISAPI
-- Vẽ điểm + nhãn nhiệt độ lên frame
-- Gửi cảnh báo về backend nếu vượt ngưỡng
+- Đọc nhiệt độ tại các điểm đo và vùng ROI qua Hikvision ISAPI
+- Gửi dữ liệu đo về backend (lưu DB + SignalR broadcast)
+- Gửi cảnh báo webhook nếu vượt ngưỡng
+- Overlay trực quan xử lý ở Frontend (React SVG), không dùng OpenCV annotation
 """
 import asyncio
 import time
@@ -30,6 +31,7 @@ class ThermalPoint:
     label:       str = ""      # Nhãn hiển thị (tự sinh từ id nếu bỏ trống)
 
     def __post_init__(self):
+        """Tự sinh nhãn hiển thị từ id nếu người dùng không cung cấp."""
         if not self.label:
             self.label = self.id
 
@@ -44,6 +46,7 @@ class ThermalZone:
     label:       str = ""
 
     def __post_init__(self):
+        """Tự sinh nhãn hiển thị từ id nếu người dùng không cung cấp."""
         if not self.label:
             self.label = self.id
 
@@ -65,11 +68,13 @@ class ThermalAnalyzer:
     _auth_cooldown_until:       float = field(default=0.0, init=False, repr=False)
 
     def start(self) -> None:
+        """Khởi động RTSP reader để bắt đầu nhận frame từ camera nhiệt."""
         rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
         self._reader = RtspReader(rtsp_url, self.stream_id)
         self._reader.start()
 
     def stop(self) -> None:
+        """Dừng RTSP reader và giải phóng tài nguyên."""
         if self._reader:
             self._reader.stop()
 
@@ -125,16 +130,10 @@ class ThermalAnalyzer:
         if zone_results:
             logger.info("[Thermal] Processed %d zones for device %s", len(zone_results), self.device_id)
 
-        # 4. Gửi nhiệt độ thực tế về backend
+        # 4. Gửi nhiệt độ thực tế về backend (lưu DB + SignalR broadcast)
         await self._ingest_measurements(point_temps, zone_results)
 
-        # 5. Annotate và Serve MJPEG
-        frame = self._reader.latest_frame if self._reader else None
-        if frame is not None:
-            annotated = self._annotate(frame, point_temps, zone_results)
-            _annotated_frames[self.stream_id] = annotated
-
-        # 6. Check alert
+        # 5. Check alert
         await self._check_and_alert(point_temps, zone_results)
 
     async def _ingest_measurements(self, point_temps: dict[str, float], zone_results: dict[str, dict]) -> None:
@@ -238,58 +237,10 @@ class ThermalAnalyzer:
                     pass
         return None
 
-    # ── Vẽ annotations lên frame ─────────────────────────────
-
-    def _annotate(self, frame: np.ndarray, point_temps: dict[str, float], zone_results: dict[str, dict]) -> np.ndarray:
-        """Vẽ points + zones + nhãn nhiệt độ."""
-        out = frame.copy()
-        h, w = out.shape[:2]
-        font = cv2.FONT_HERSHEY_SIMPLEX
-
-        # 1. Vẽ Zones
-        for zn in self.zones:
-            res = zone_results.get(zn.id)
-            if not res: continue
-
-            poly_pts = np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)
-            temp = res["max"]
-
-            # Màu theo mức nhiệt độ
-            if temp >= zn.alarm: color = (0, 0, 255)
-            elif temp >= zn.pre_alarm: color = (0, 165, 255)
-            else: color = (0, 255, 0)
-
-            # Vẽ polygon rỗng + điểm nóng nhất
-            cv2.polylines(out, [poly_pts], True, color, 1)
-            
-            mx, my = int(res["x"]*w), int(res["y"]*h)
-            cv2.drawMarker(out, (mx, my), color, cv2.MARKER_CROSS, 10, 1)
-
-            # Nhãn tại đỉnh đầu tiên của polygon
-            lx, ly = poly_pts[0]
-            label = f"{zn.label}: {temp:.1f}C"
-            cv2.putText(out, label, (lx, ly - 5), font, 0.45, color, 1, cv2.LINE_AA)
-
-        # 2. Vẽ Points (giữ nguyên logic cũ)
-        for pt in self.points:
-            temp = point_temps.get(pt.id)
-            if temp is None: continue
-
-            cx, cy = int(pt.x * w), int(pt.y * h)
-            if temp >= pt.alarm: color = (0, 0, 255)
-            elif temp >= pt.pre_alarm: color = (0, 165, 255)
-            else: color = (0, 255, 0)
-
-            cv2.circle(out, (cx, cy), 12, color, 2)
-            cv2.circle(out, (cx, cy), 3,  color, -1)
-            cv2.putText(out, pt.label, (cx + 15, cy - 4), font, 0.45, color, 1, cv2.LINE_AA)
-            cv2.putText(out, f"{temp:.1f}C", (cx + 15, cy + 12), font, 0.5, color, 1, cv2.LINE_AA)
-
-        return out
-
     # ── Gửi alert về backend ─────────────────────────────────
 
     async def _check_and_alert(self, point_temps: dict[str, float], zone_results: dict[str, dict]) -> None:
+        """Kiểm tra ngưỡng nhiệt độ cho points và zones, gửi webhook cảnh báo nếu vượt mức."""
         now = time.time()
         
         # Check Points
@@ -316,6 +267,7 @@ class ThermalAnalyzer:
                     await self._send_webhook(zn.label, self.camera_ip, temp, level)
 
     async def _send_webhook(self, label: str, ip: str, temp: float, level: str) -> None:
+        """Gửi cảnh báo nhiệt độ kèm ảnh snapshot về backend qua camera-webhook."""
         event_type = "temperaturealarm" if level == "alarm" else "thermalexception"
         xml = (
             f'<EventNotificationAlert version="2.0">'
@@ -329,11 +281,9 @@ class ThermalAnalyzer:
             f'</EventNotificationAlert>'
         )
 
-        # Đính kèm ảnh snapshot nếu có
+        # Đính kèm ảnh snapshot từ raw stream (không cần OpenCV annotation)
         files = {"event": (None, xml, "application/xml")}
-        frame = get_annotated_frame(self.stream_id)
-        if frame is None and self._reader:
-            frame = self._reader.latest_frame
+        frame = self._reader.latest_frame if self._reader else None
         
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -347,15 +297,9 @@ class ThermalAnalyzer:
             logger.warning("[Thermal] Webhook failed: %s", ex)
 
 
-# ── Shared annotated frame store ─────────────────────────────
-# Dùng để MJPEG endpoint lấy frame đã có annotations
-_annotated_frames: dict[str, np.ndarray] = {}
-
-
-def get_annotated_frame(stream_id: str) -> np.ndarray | None:
-    return _annotated_frames.get(stream_id)
 
 
 def _now_iso() -> str:
+    """Trả về timestamp hiện tại theo định dạng ISO 8601 UTC."""
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

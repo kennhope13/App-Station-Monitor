@@ -17,6 +17,7 @@ class ExternalApiPusher(threading.Thread):
     đồng thời định kỳ mô phỏng dự đoán phóng điện để phục vụ giao diện 2x2.
     """
     def __init__(self, camera_ip, backend_url, data_dir):
+        """Khởi tạo pusher với thông tin camera, backend URL và thư mục lưu CSV."""
         super().__init__(daemon=True)
         self.camera_ip = camera_ip
         self.backend_url = backend_url
@@ -30,10 +31,12 @@ class ExternalApiPusher(threading.Thread):
         self.csv_pd = os.path.join(self.data_dir, "pd_history_v2.csv")
 
     def stop(self):
+        """Dừng thread xử lý và kích hoạt stop event."""
         self.running = False
         self._stop_event.set()
 
     def run(self):
+        """Thu thập dữ liệu dB/Hz từ cảm biến thực tế, lưu CSV và gửi cảnh báo khi vượt ngưỡng."""
         logger.info("[ExternalPusher] Đang chạy với Jetson Target: %s", EXTERNAL_API_URL)
         session = requests.Session()
         
@@ -91,6 +94,7 @@ class ExternalApiPusher(threading.Thread):
             time.sleep(2.0)
 
     def _save_pd_csv(self, timestamp, sensor_id, pd_val, freq, s_db, freq_ai):
+        """Ghi một bản ghi dữ liệu phóng điện vào CSV lịch sử."""
         try:
             file_exists = os.path.isfile(self.csv_pd)
             with open(self.csv_pd, 'a', newline='', encoding='utf-8') as f:

@@ -28,6 +28,8 @@ public class NotificationsController : ControllerBase
 
     // GET /api/v1/notifications/smtp-config
     // Trả về cấu hình SMTP hiện tại đang lưu trong bảng SystemSettings
+    /// <summary>Lấy cấu hình SMTP hiện tại từ bảng SystemSettings (host, port, username, from). Không trả về mật khẩu — chỉ trả về cờ hasPassword.</summary>
+    /// <returns>Thông tin cấu hình SMTP: host, port, username, hasPassword, from.</returns>
     [HttpGet("smtp-config")]
     public async Task<IActionResult> GetSmtpConfig()
     {
@@ -57,6 +59,9 @@ public class NotificationsController : ControllerBase
     }
 
     // POST /api/v1/notifications/test-email
+    /// <summary>Gửi email kiểm tra tới địa chỉ được chỉ định để xác nhận cấu hình SMTP hoạt động đúng.</summary>
+    /// <param name="req">Địa chỉ email nhận test.</param>
+    /// <returns>Thông báo thành công hoặc lỗi gửi email.</returns>
     [HttpPost("test-email")]
     public async Task<IActionResult> TestEmail([FromBody] TestEmailRequest req)
     {
@@ -74,6 +79,9 @@ public class NotificationsController : ControllerBase
     }
 
     // GET /api/v1/notifications/test-email/direct?email=...
+    /// <summary>Gửi email kiểm tra trực tiếp qua query string (không yêu cầu xác thực). Dùng cho debug nhanh từ trình duyệt.</summary>
+    /// <param name="email">Địa chỉ email nhận test (query param).</param>
+    /// <returns>Kết quả gửi email.</returns>
     [HttpGet("test-email/direct")]
     [AllowAnonymous]
     public async Task<IActionResult> TestEmailDirect([FromQuery] string email)

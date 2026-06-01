@@ -5,17 +5,30 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { Edit2, LayoutList, Trash2, Settings, Zap } from 'lucide-react';
+import { LayoutList, Trash2, Settings, Zap, Thermometer, Target, Play, Plus } from 'lucide-react';
 import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
-import ThermalConfigTab from './ThermalConfigTab';
+import ThermalConfigTab from './components/ThermalConfigTab';
 import PdRegionTab from './components/PdRegionTab';
+import BoundaryTab from './components/BoundaryTab';
+import LiveViewTab from './components/LiveViewTab';
 import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
+
+// PD Refactor imports
+import { usePdRegion } from '@/hooks/usePdRegion';
+import { PdCanvasOverlay } from '@/components/pd/PdCanvasOverlay';
+import { PdList } from '@/components/pd/PdList';
+import { PdModal } from '@/components/pd/PdModal';
+import { GO2RTC_URL } from '@/utils/env';
 
 // Nhãn hiển thị theo loại thiết bị — import từ constants để dùng chung
 const TYPE_LABELS = DEVICE_TYPE_LABELS;
 
+/**
+ * Trang quản lý thiết bị — hỗ trợ thêm/sửa/xóa thiết bị,
+ * kiểm tra kết nối, quét LAN/ONVIF và cấu hình nhiệt/PD/vùng giám sát.
+ */
 export default function DeviceManagementPage() {
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -48,6 +61,8 @@ export default function DeviceManagementPage() {
   const [selectedRoiDevice, setSelectedRoiDevice] = useState<CameraDevice | null>(null);
   const [selectedPdDevice, setSelectedPdDevice] = useState<CameraDevice | null>(null);
 
+  // PD Refactor hook
+
   // Trạng thái modal dò tìm thiết bị trên mạng
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [scanTab, setScanTab] = useState(0); // 0=Ping scan, 1=ONVIF, 2=Test thủ công
@@ -75,6 +90,7 @@ export default function DeviceManagementPage() {
     loadDevices();
   }, []);
 
+  /** Tải danh sách thiết bị từ trạm đầu tiên và cập nhật state. */
   const loadDevices = async () => {
     setLoading(true);
     try {
@@ -91,6 +107,7 @@ export default function DeviceManagementPage() {
     }
   };
 
+  /** Kiểm tra kết nối tới thiết bị và hiển thị kết quả latency qua alert. */
   const handleTestDevice = async (id: string) => {
     try {
       const res = await stationApi.testConnection(id);
@@ -100,6 +117,7 @@ export default function DeviceManagementPage() {
     }
   };
 
+  /** Xóa thiết bị sau khi xác nhận từ người dùng và cập nhật danh sách. */
   const handleDelete = async (d: Device) => {
     const isCamera = d.type.startsWith('camera');
     if (!await confirmDialog({
@@ -118,6 +136,7 @@ export default function DeviceManagementPage() {
     }
   };
 
+  /** Mở modal thêm hoặc sửa thiết bị, nạp dữ liệu hiện tại vào form nếu sửa. */
   const openDeviceModal = (d?: Device) => {
     setEditingId(d?.id ?? null);
     setTestConnResult({ show: false });
@@ -150,6 +169,7 @@ export default function DeviceManagementPage() {
     setIsDeviceModalOpen(true);
   };
 
+  /** Lưu thiết bị (tạo mới hoặc cập nhật) với cấu hình phù hợp từng loại. */
   const saveDevice = async () => {
     if (!formData.name) { alert('Vui lòng nhập tên thiết bị'); return; }
     setIsSaving(true);
@@ -209,6 +229,7 @@ export default function DeviceManagementPage() {
     }
   };
 
+  /** Kiểm tra kết nối tới thiết bị đang chỉnh sửa và hiển thị kết quả trong modal. */
   const testModalConn = async () => {
     if (editingId) {
       setTestConnResult({ show: true, msg: 'Đang kiểm tra...' });
@@ -224,6 +245,7 @@ export default function DeviceManagementPage() {
   };
 
   // Discovery functions
+  /** Quét dải IP trong subnet để tìm thiết bị online. */
   const runLanScan = async () => {
     setIsScanning(true);
     setScanResults(null);
@@ -236,6 +258,7 @@ export default function DeviceManagementPage() {
     }
   };
 
+  /** Gửi WS-Discovery multicast để tìm camera ONVIF trong mạng. */
   const runOnvifScan = async () => {
     setIsOnvifScanning(true);
     setOnvifResults(null);
@@ -248,6 +271,7 @@ export default function DeviceManagementPage() {
     }
   };
 
+  /** Kiểm tra kết nối thủ công tới IP/port với giao thức được chọn. */
   const runTestConn = async () => {
     if (!tcIp) { alert('Nhập địa chỉ IP'); return; }
     setIsTesting(true);
@@ -263,57 +287,101 @@ export default function DeviceManagementPage() {
 
   const online = devices.filter(d => d.status === 'online').length;
 
-  const PAGE_TABS = ['Tất cả thiết bị', 'Camera & Stream'];
-
 
   return (
     <div className="admin-page-container">
       {/* TOOLBAR */}
-      <div className="page-toolbar-row" style={{ display: 'flex', flexWrap: 'wrap', rowGap: 8 }}>
-        <div className="page-title-cell">
-          <h2>QUẢN LÝ THIẾT BỊ</h2>
-        </div>
-        <div className="page-toolbar-group" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Page tabs - Standard Unified Buttons Pattern */}
-          <div style={{ display: 'flex', gap: '4px' }}>
-            {PAGE_TABS.map((t, i) => (
-              <button
-                key={i}
-                onClick={() => setRoiTab(i)}
-                className={`btn-industrial${roiTab === i ? ' btn-primary' : ''}`}
-                style={{ 
-                  height: 34, 
-                  padding: '0 16px', 
-                  fontSize: '.75rem', 
-                  fontWeight: 700, 
-                  textTransform: 'uppercase', 
-                  letterSpacing: '.5px' 
-                }}
-              >
-                {t}
-              </button>
-            ))}
+      {roiTab === 3 ? (
+        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              className="btn-industrial"
+              onClick={() => { setRoiTab(0); setSelectedRoiDevice(null); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
+            >
+              ← Quay lại danh sách
+            </button>
+            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
+              CẤU HÌNH ĐIỂM ĐO NHIỆT ĐỘ
+              <span style={{ fontSize: '.68rem', background: 'rgba(239,68,68,.08)', padding: '2px 8px', border: '1px solid rgba(239,68,68,.18)', color: 'var(--admin-danger)', borderRadius: 3 }}>
+                {selectedRoiDevice?.name || 'Camera Nhiệt'}
+              </span>
+            </h3>
           </div>
-
-          {/* Status Indicators */}
-          <div className="page-toolbar-cell">
-            <span style={{ color: 'var(--admin-success)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>🟢 {online} ONLINE</span>
-            <span style={{ color: 'var(--admin-text-muted)', opacity: 0.3, fontSize: '.7rem' }}>|</span>
-            <span style={{ color: 'var(--admin-danger)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>{devices.length - online} OFFLINE</span>
-          </div>
-
-          {/* Action Buttons */}
-          {roiTab === 0 && (
-            <>
-              <button className="btn-industrial btn-primary" onClick={() => openDeviceModal()}>+ Thêm thiết bị</button>
-              <button className="btn-industrial" onClick={() => setIsScanModalOpen(true)}>Quét LAN</button>
-            </>
-          )}
-          {roiTab === 1 && (
-            <button className="btn-industrial btn-primary" onClick={() => { setFormData(f => ({ ...f, type: 'camera_thermal' })); openDeviceModal(); }}>+ Thêm camera</button>
-          )}
         </div>
-      </div>
+      ) : roiTab === 2 ? (
+        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              className="btn-industrial"
+              onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
+            >
+              ← Quay lại danh sách
+            </button>
+            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
+              VẼ VÙNG PHÁT HIỆN PD
+              <span style={{ fontSize: '.68rem', background: 'rgba(59,130,246,.08)', padding: '2px 8px', border: '1px solid rgba(59,130,246,.18)', color: 'var(--admin-accent)', borderRadius: 3 }}>
+                {selectedPdDevice?.name || 'Camera PD'}
+              </span>
+            </h3>
+          </div>
+        </div>
+      ) : roiTab === 4 ? (
+        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              className="btn-industrial"
+              onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
+            >
+              ← Quay lại danh sách
+            </button>
+            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
+              CẤU HÌNH VÙNG GIÁM SÁT AN NINH (AI)
+              <span style={{ fontSize: '.68rem', background: 'rgba(59,130,246,.08)', padding: '2px 8px', border: '1px solid rgba(59,130,246,.18)', color: 'var(--admin-accent)', borderRadius: 3 }}>
+                {selectedPdDevice?.name || 'Camera AI'}
+              </span>
+            </h3>
+          </div>
+        </div>
+      ) : roiTab === 5 ? (
+        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              className="btn-industrial"
+              onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
+            >
+              ← Quay lại danh sách
+            </button>
+            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
+              XEM LIVE & METADATA OVERLAY
+              <span style={{ fontSize: '.68rem', background: 'rgba(59,130,246,.08)', padding: '2px 8px', border: '1px solid rgba(59,130,246,.18)', color: 'var(--admin-accent)', borderRadius: 3 }}>
+                {selectedPdDevice?.name || 'Camera Live'}
+              </span>
+            </h3>
+          </div>
+        </div>
+      ) : (
+        <div className="page-toolbar-row" style={{ display: 'flex', flexWrap: 'wrap', rowGap: 8 }}>
+          <div className="page-title-cell">
+            <h2>QUẢN LÝ THIẾT BỊ</h2>
+          </div>
+          <div className="page-toolbar-group" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Status Indicators */}
+            <div className="page-toolbar-cell">
+              <span style={{ color: 'var(--admin-success)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>🟢 {online} ONLINE</span>
+              <span style={{ color: 'var(--admin-text-muted)', opacity: 0.3, fontSize: '.7rem' }}>|</span>
+              <span style={{ color: 'var(--admin-danger)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>{devices.length - online} OFFLINE</span>
+            </div>
+  
+            {/* Action Buttons */}
+            <button className="btn-industrial btn-primary" onClick={() => openDeviceModal()}>+ Thêm thiết bị</button>
+            <button className="btn-industrial" onClick={() => setIsScanModalOpen(true)}>Quét LAN</button>
+          </div>
+        </div>
+      )}
 
       {/* ═══ TAB 0: ALL DEVICES ═══ */}
       {roiTab === 0 && (
@@ -354,13 +422,19 @@ export default function DeviceManagementPage() {
 
                     <td style={{ textAlign: 'center' }}>
                       <ActionDropdown>
-                        <ActionDropdownItem icon={<Edit2 size={14} />} label="Sửa thiết bị" onClick={() => openDeviceModal(d)} />
+                        <ActionDropdownItem icon={<Settings size={14} />} label="Sửa thiết bị" onClick={() => openDeviceModal(d)} />
                         <ActionDropdownItem icon={<LayoutList size={14} />} label="Kiểm tra kết nối" onClick={() => handleTestDevice(d.id)} />
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                          <ActionDropdownItem icon={<Settings size={14} />} label="Cấu hình nhiệt" onClick={() => setSelectedRoiDevice(d as CameraDevice)} />
+                          <ActionDropdownItem icon={<Thermometer size={14} />} label="Cấu hình nhiệt" onClick={() => { setSelectedRoiDevice(d as CameraDevice); setRoiTab(3); }} />
                         )}
                         {d.type === 'camera_pd' && (
-                          <ActionDropdownItem icon={<Zap size={14} />} label="Vẽ vùng PD" onClick={() => setSelectedPdDevice(d as CameraDevice)} />
+                          <ActionDropdownItem icon={<Zap size={14} />} label="Vẽ vùng PD" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(2); }} />
+                        )}
+                        {d.type.startsWith('camera') && (
+                          <>
+                            <ActionDropdownItem icon={<Target size={14} />} label="Cấu hình Vùng" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(4); }} />
+                            <ActionDropdownItem icon={<Play size={14} />} label="Xem Live & Overlay" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(5); }} />
+                          </>
                         )}
                         <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa thiết bị" danger onClick={() => handleDelete(d)} />
                       </ActionDropdown>
@@ -373,79 +447,53 @@ export default function DeviceManagementPage() {
         </div>
       )}
 
-      {/* ═══ TAB 1: CAMERA & STREAM ═══ */}
-      {roiTab === 1 && (
-        <div className="admin-card" style={{ padding: 0, overflow: 'auto', flex: 1 }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Tên camera</th>
-                <th>Loại</th>
-                <th>Luồng quang học</th>
-                <th>Luồng nhiệt</th>
-                <th>Trạng thái</th>
-                <th>Hành động</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>⏳ Đang tải...</td></tr>
-              ) : devices.filter(d => d.type.startsWith('camera')).length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>
-                  <div style={{ fontSize: '2rem', opacity: .15, marginBottom: 8 }}>📷</div>
-                  Chưa có camera nào. Nhấn "+ Thêm camera" để bắt đầu.
-                </td></tr>
-              ) : (
-                devices.filter(d => d.type.startsWith('camera')).map(d => {
-                  const cfg = d.config || {};
-                  const hasOptical = !!(cfg.go2rtc_optical || cfg.go2rtc_id || cfg.rtsp_optical || cfg.rtsp_path);
-                  const hasThermal = !!(cfg.go2rtc_thermal || cfg.rtsp_thermal);
-                  return (
-                    <tr key={d.id}>
-                      <td><b>{d.name}</b><br/><small style={{ opacity: .5 }}>{cfg.ip}</small></td>
-                      <td>
-                        <span style={{ fontSize: '.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 2,
-                          background: d.type === 'camera_thermal' ? 'rgba(239,68,68,.12)' : d.type === 'camera_dual' ? 'rgba(168,85,247,.12)' : 'rgba(59,130,246,.12)',
-                          color: d.type === 'camera_thermal' ? 'var(--admin-danger)' : d.type === 'camera_dual' ? '#a855f7' : 'var(--admin-accent)' }}>
-                          {d.type === 'camera_thermal' ? '🌡 NHIỆT' : d.type === 'camera_dual' ? '⚡ DUAL' : d.type === 'camera_pd' ? '⚡ PD' : '📷 CCTV'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '.78rem' }}>
-                        {hasOptical
-                          ? <span style={{ color: 'var(--admin-success)' }}>✓ {cfg.go2rtc_optical || cfg.go2rtc_id || 'cấu hình'}</span>
-                          : <span style={{ color: 'var(--admin-text-muted)', opacity: .5 }}>— Không có</span>}
-                      </td>
-                      <td style={{ fontSize: '.78rem' }}>
-                        {hasThermal
-                          ? <span style={{ color: 'var(--admin-danger)' }}>🌡 {cfg.go2rtc_thermal || 'cấu hình'}</span>
-                          : (d.type === 'camera_thermal' || d.type === 'camera_dual')
-                            ? <span style={{ color: 'var(--admin-warning)' }}>⚠ Chưa cấu hình</span>
-                            : <span style={{ color: 'var(--admin-text-muted)', opacity: .5 }}>— Không có</span>}
-                      </td>
-                      <td>
-                        <span style={{ color: d.status === 'online' ? 'var(--admin-success)' : 'var(--admin-danger)', fontWeight: 700, fontSize: '.78rem' }}>
-                          {d.status === 'online' ? '🟢 Online' : '⚫ Offline'}
-                        </span>
-                      </td>
-                      <td style={{ display: 'flex', gap: 4 }}>
-                        <button className="btn-industrial btn-sm" onClick={() => openDeviceModal(d)}>Sửa stream</button>
-                        {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                          <button className="btn-industrial btn-sm"
-                            style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                            onClick={() => setSelectedRoiDevice(d as CameraDevice)}>Cấu hình nhiệt</button>
-                        )}
-                        {d.type === 'camera_pd' && (
-                          <button className="btn-industrial btn-sm"
-                            style={{ background: 'var(--admin-accent)', color: '#fff', borderColor: 'var(--admin-accent)' }}
-                            onClick={() => setSelectedPdDevice(d as CameraDevice)}>Vẽ vùng PD</button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {/* ═══ TAB 2: CẤU HÌNH VÙNG PD ═══ */}
+      {roiTab === 2 && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+
+
+          <div style={{ flex: 1, padding: 8, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {selectedPdDevice ? (
+              <PdRegionTab 
+                cameras={devices.filter(d => d.type.startsWith('camera')) as CameraDevice[]}
+                initialCamera={selectedPdDevice}
+              />
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-text-muted)' }}>
+                Vui lòng chọn một thiết bị PD từ danh sách.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TAB 3: CẤU HÌNH ĐIỂM ĐO NHIỆT ĐỘ ═══ */}
+      {roiTab === 3 && selectedRoiDevice && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <ThermalConfigTab
+            device={selectedRoiDevice}
+            onBack={() => { setRoiTab(0); setSelectedRoiDevice(null); }}
+          />
+        </div>
+      )}
+
+      {/* ═══ TAB 4: CẤU HÌNH VÙNG POLYGON ═══ */}
+      {roiTab === 4 && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <BoundaryTab
+            cameras={devices.filter(d => d.type.startsWith('camera')) as CameraDevice[]}
+            initialCamera={selectedPdDevice || null}
+          />
+        </div>
+      )}
+
+      {/* ═══ TAB 5: XEM LIVE & OVERLAY ═══ */}
+      {roiTab === 5 && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <LiveViewTab
+            cameras={devices.filter(d => d.type.startsWith('camera')) as CameraDevice[]}
+            initialCamera={selectedPdDevice || null}
+          />
         </div>
       )}
 
@@ -768,40 +816,9 @@ export default function DeviceManagementPage() {
           </div>
         </div>
       )}
-      {/* ╔═══ ROI CONFIGURATION POPUP DIALOG ═══╗ */}
-      {selectedRoiDevice && (
-        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setSelectedRoiDevice(null); }}>
-          <div className="modal-content" style={{ maxWidth: 1400, width: '95%', height: '90vh', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <ThermalConfigTab
-              device={selectedRoiDevice}
-              onBack={() => setSelectedRoiDevice(null)}
-            />
-          </div>
-        </div>
-      )}
+      {/* ╔═══ ROI CONFIGURATION POPUP DIALOG REMOVED ═══ */}
 
-      {/* ╔═══ PD REGION CONFIGURATION POPUP DIALOG ═══╗ */}
-      {selectedPdDevice && (
-        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setSelectedPdDevice(null); }}>
-          <div className="modal-content" style={{ maxWidth: 1400, width: '95%', height: '90vh', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div className="modal-header">
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800 }}>
-                VẼ VÙNG CAMERA PD
-                <span style={{ fontSize: '.7rem', background: 'var(--admin-layer-3)', padding: '2px 8px', border: '1px solid var(--admin-border)', color: 'var(--admin-accent)' }}>
-                  {selectedPdDevice.name}
-                </span>
-              </h3>
-              <button className="modal-close-btn" onClick={() => setSelectedPdDevice(null)}>✕</button>
-            </div>
-            <div className="modal-body" style={{ flex: 1, display: 'flex', padding: 0, overflow: 'hidden' }}>
-              <PdRegionTab
-                cameras={[selectedPdDevice]}
-                initialCamera={selectedPdDevice}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ╔═══ PD REGION CONFIGURATION POPUP DIALOG REMOVED ═══ */}
     </div>
   );
 }

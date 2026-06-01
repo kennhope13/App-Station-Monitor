@@ -57,6 +57,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5000',
         changeOrigin: true,
+      },
+      '/pd-monitor': {
+        target: 'http://localhost:8100',
+        changeOrigin: true,
       }
     }
   }

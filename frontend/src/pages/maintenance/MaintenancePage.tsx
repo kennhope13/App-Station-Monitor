@@ -1,17 +1,7 @@
-// ============================================================
-// MaintenancePage.tsx — Lịch bảo trì thiết bị
-// Trạng thái: pending → in_progress → completed | overdue
-// Tính năng: checklist từng bước, ghi chú, gợi ý từ hệ thống
-// Gợi ý bảo trì được tạo tự động khi quy tắc kích hoạt nhiều lần
-// ============================================================
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { stationApi, MaintenanceTask, MaintenanceSuggestion, Device } from '@/services/StationApiService';
+import { useState, useEffect, useMemo } from 'react';
+import { stationApi, MaintenanceTask, Device } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore } from '@/store';
-import { confirmDialog } from '@/utils/confirm';
-import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
-import { FolderOpen, Play, CheckCircle2, Edit2, Trash2, LayoutList, Clock, Loader2, AlertTriangle } from 'lucide-react';
+import { Edit2 } from 'lucide-react';
 
 const DEFAULT_CHECKLIST: Record<string, string[]> = {
   inspection: ['Kiểm tra tổng quan', 'Đo nhiệt độ', 'Kiểm tra cách điện', 'Ghi nhật ký'],
@@ -43,16 +33,24 @@ const STATUS_LABELS: Record<string, string> = {
   overdue: 'Quá hạn',
 };
 
-interface ChecklistItem {
-  item: string;
-  done: boolean;
-}
+const FILTERS = [
+  { f: 'all', lbl: 'Tất cả' },
+  { f: 'pending', lbl: 'Đang chờ' },
+  { f: 'in_progress', lbl: 'Đang làm' },
+  { f: 'overdue', lbl: 'Quá hạn' },
+  { f: 'completed', lbl: 'Hoàn thành' },
+];
 
+interface ChecklistItem { item: string; done: boolean; }
+
+/**
+ * Trang quản lý lịch bảo trì thiết bị: hiển thị danh sách công việc
+ * dạng bảng, hỗ trợ lọc theo trạng thái và tạo/chỉnh sửa qua modal.
+ */
 export default function MaintenancePage() {
-  const navigate = useNavigate();
   const [stationId, setStationId] = useState('');
   const [tasks, setTasks] = useState<MaintenanceTask[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [filter, setFilter] = useState('all');
 
   const getFirstStationId = useStationStore(s => s.getFirstStationId);
   const fetchDevices = useDeviceStore(s => s.fetch);
@@ -62,12 +60,9 @@ export default function MaintenancePage() {
     [stationId, devicesByStation]
   );
 
-  const [filter, setFilter] = useState('all');
-
-  // Modal State
+  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
   const [mDevice, setMDevice] = useState('');
   const [mType, setMType] = useState('inspection');
   const [mTitle, setMTitle] = useState('');
@@ -76,24 +71,23 @@ export default function MaintenancePage() {
   const [mNotes, setMNotes] = useState('');
   const [mChecklist, setMChecklist] = useState<ChecklistItem[]>([]);
 
+  /** Tải danh sách công việc bảo trì và danh sách thiết bị của trạm. */
   const loadData = async (sid: string) => {
-    setLoadError(null);
     try {
       const t = await stationApi.getMaintenance(sid || undefined);
       setTasks(t);
       if (sid) fetchDevices(sid);
-    } catch (e: any) {
-      setLoadError(e?.message ?? 'Không kết nối được máy chủ');
-      setTasks([]);
-    }
+    } catch { setTasks([]); }
   };
 
   useEffect(() => {
-    getFirstStationId().then(id => {
-      if (id) { setStationId(id); loadData(id); }
-    });
+    getFirstStationId().then(id => { if (id) { setStationId(id); loadData(id); } });
   }, [getFirstStationId]);
 
+  /**
+   * Mở modal tạo mới hoặc chỉnh sửa công việc bảo trì.
+   * Nếu truyền task vào thì điền sẵn form với dữ liệu task đó.
+   */
   const openModal = (task?: MaintenanceTask) => {
     if (task) {
       setEditingId(task.id);
@@ -106,23 +100,38 @@ export default function MaintenancePage() {
       try { setMChecklist(JSON.parse(task.checklist || '[]')); } catch { setMChecklist([]); }
     } else {
       setEditingId(null);
+      setMDevice('');
+      setMType('inspection');
       setMTitle('');
       setMDate(new Date().toISOString().substring(0, 10));
-      setMChecklist([]);
+      setMAssign('');
+      setMNotes('');
+      setMChecklist((DEFAULT_CHECKLIST['inspection'] ?? []).map(item => ({ item, done: false })));
     }
     setModalOpen(true);
   };
 
+  /**
+   * Cập nhật loại bảo trì và tự động nạp checklist mặc định
+   * cho loại đó nếu đang tạo mới (không phải chỉnh sửa).
+   */
+  const handleTypeChange = (type: string) => {
+    setMType(type);
+    // Chỉ reset checklist khi tạo mới — giữ nguyên khi sửa
+    if (!editingId) setMChecklist((DEFAULT_CHECKLIST[type] ?? []).map(item => ({ item, done: false })));
+  };
+
+  /** Lưu công việc bảo trì (tạo mới hoặc cập nhật) rồi đóng modal và làm mới danh sách. */
   const saveModal = async () => {
     const payload = {
-        stationId: stationId,
-        deviceId: mDevice || null,
-        title: mTitle,
-        type: mType,
-        scheduledDate: new Date(mDate).toISOString(),
-        assignedTo: mAssign,
-        notes: mNotes,
-        checklist: JSON.stringify(mChecklist),
+      stationId,
+      deviceId: mDevice || null,
+      title: mTitle,
+      type: mType,
+      scheduledDate: new Date(mDate).toISOString(),
+      assignedTo: mAssign,
+      notes: mNotes,
+      checklist: JSON.stringify(mChecklist),
     };
     try {
       if (editingId) await stationApi.updateMaintenance(editingId, payload);
@@ -132,106 +141,144 @@ export default function MaintenancePage() {
     } catch (e: any) { alert(`Lỗi: ${e.message}`); }
   };
 
+  // Lọc danh sách theo tab trạng thái đang chọn
   const filteredTasks = filter === 'all' ? tasks : tasks.filter(t => t.status === filter);
+
+  /** Đếm số công việc theo từng trạng thái để hiển thị badge trên tab lọc. */
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: tasks.length };
+    tasks.forEach(t => { c[t.status] = (c[t.status] || 0) + 1; });
+    return c;
+  }, [tasks]);
 
   return (
     <div className="admin-page-container">
-      {/* Header */}
-      <div style={{ marginBottom: 24, marginTop: 12 }}>
-        <h2 style={{ margin: 0 }}>LỊCH BẢO TRÌ</h2>
-      </div>
 
-      {/* Filter Tabs & Action */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: '1px solid var(--admin-border)' }}>
-        <div style={{ display: 'flex', gap: 24 }}>
-          {[ { f: 'all', lbl: 'Tất cả' }, { f: 'pending', lbl: 'Đang chờ' }, { f: 'in_progress', lbl: 'Đang làm' }, { f: 'overdue', lbl: 'Quá hạn' }, { f: 'completed', lbl: 'Hoàn thành' } ].map(item => (
-            <button key={item.f} onClick={() => setFilter(item.f)} 
-              style={{ background: 'none', border: 'none', color: filter === item.f ? 'var(--admin-accent)' : 'var(--admin-text-muted)', fontWeight: 700, paddingBottom: 8, cursor: 'pointer', borderBottom: filter === item.f ? '2px solid var(--admin-accent)' : 'none' }}>
-              {item.lbl}
-            </button>
-          ))}
+      {/* Toolbar — khớp pattern với các trang khác */}
+      <div className="page-toolbar-row">
+        <div className="page-title-cell">
+          <h2>LỊCH BẢO TRÌ</h2>
         </div>
-        <button className="btn-industrial btn-primary" style={{ marginBottom: 8 }} onClick={() => openModal()}>+ Tạo lịch mới</button>
+
+        <div className="page-toolbar-group">
+          {/* Filter tabs */}
+          <div className="page-toolbar-cell" style={{ gap: 0, padding: '0 4px' }}>
+            <span className="page-cell-label" style={{ marginRight: 6 }}>LỌC:</span>
+            {FILTERS.map(({ f, lbl }) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                style={{
+                  background: filter === f ? 'var(--admin-accent)' : 'transparent',
+                  border: 'none',
+                  borderRadius: 3,
+                  color: filter === f ? 'var(--admin-text-on-accent)' : 'var(--admin-text-muted)',
+                  fontWeight: 700,
+                  fontSize: '.65rem',
+                  padding: '2px 8px',
+                  cursor: 'pointer',
+                  height: 22,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {lbl}{counts[f] ? ` (${counts[f]})` : ''}
+              </button>
+            ))}
+          </div>
+
+          <button
+            className="btn-industrial btn-primary btn-sm"
+            style={{ height: 22, padding: '0 10px', fontSize: '.65rem' }}
+            onClick={() => openModal()}
+          >
+            + Tạo lịch mới
+          </button>
+
+          <button
+            className="btn-industrial btn-sm"
+            style={{ height: 22, padding: '0 8px', fontSize: '.65rem' }}
+            onClick={() => loadData(stationId)}
+          >
+            ↺ Làm mới
+          </button>
+        </div>
       </div>
 
-      {/* Professional Table */}
-      <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
-
-          <table className="data-table">
-            <thead>
+      {/* Table */}
+      <div className="admin-card" style={{ padding: 0, overflow: 'hidden', marginTop: 12 }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>TIÊU ĐỀ</th>
+              <th>THIẾT BỊ</th>
+              <th>LOẠI</th>
+              <th>NGÀY DỰ KIẾN</th>
+              <th>GIAO CHO</th>
+              <th>TRẠNG THÁI</th>
+              <th style={{ width: 60 }}>SỬA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredTasks.length === 0 ? (
               <tr>
-                <th>TIÊU ĐỀ</th>
-                <th>THIẾT BỊ</th>
-                <th>LOẠI</th>
-                <th>NGÀY DỰ KIẾN</th>
-                <th>TRẠNG THÁI</th>
-                <th style={{ width: 100 }}>HÀNH ĐỘNG</th>
+                <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>
+                  Không có dữ liệu
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredTasks.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>Không có dữ liệu</td></tr>
-              ) : (
-                filteredTasks.map(t => (
-                  <tr key={t.id}>
-                    <td style={{ fontWeight: 600 }}>{t.title}</td>
-                    <td>{t.deviceName || '—'}</td>
-                    <td>{TYPE_LABELS[t.type] || t.type}</td>
-                    <td>{t.scheduledDate?.substring(0, 10)}</td>
-                    <td>
-                      <span className="tag" style={{ color: STATUS_COLORS[t.status], background: `${STATUS_COLORS[t.status]}10` }}>
-                        {STATUS_LABELS[t.status]}
-                      </span>
-                    </td>
-                    <td>
-                      <button 
-                        style={{ 
-                          background: 'transparent', 
-                          border: 'none', 
-                          padding: '6px', 
-                          borderRadius: '50%',
-                          color: 'var(--admin-text-muted)', 
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseOver={(e) => e.currentTarget.style.color = 'var(--admin-accent)'}
-                        onMouseOut={(e) => e.currentTarget.style.color = 'var(--admin-text-muted)'}
-                        onClick={() => openModal(t)}
-                        title="Sửa"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+            ) : (
+              filteredTasks.map(t => (
+                <tr key={t.id}>
+                  <td style={{ fontWeight: 600 }}>{t.title}</td>
+                  <td>{t.deviceName || '—'}</td>
+                  <td>{TYPE_LABELS[t.type] || t.type}</td>
+                  <td>{t.scheduledDate?.substring(0, 10)}</td>
+                  <td>{t.assignedTo || '—'}</td>
+                  <td>
+                    <span className="tag" style={{ color: STATUS_COLORS[t.status], background: `${STATUS_COLORS[t.status]}18`, border: `1px solid ${STATUS_COLORS[t.status]}40` }}>
+                      {STATUS_LABELS[t.status]}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      onClick={() => openModal(t)}
+                      title="Sửa"
+                      style={{ background: 'transparent', border: 'none', padding: 6, borderRadius: '50%', color: 'var(--admin-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--admin-accent)'}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = 'var(--admin-text-muted)'}
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Modal */}
       {modalOpen && (
         <div className="modal-overlay active">
           <div className="modal-content" style={{ width: 620, background: 'var(--admin-panel)', borderRadius: 8, border: '1px solid var(--admin-border)', padding: 0 }}>
-            <div className="modal-header" style={{ padding: '20px 24px', borderBottom: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, fontSize: '1rem' }}>{editingId ? 'SỬA LỊCH BẢO TRÌ' : 'TẠO LỊCH BẢO TRÌ'}</h3>
-              <button className="modal-close-btn" onClick={() => setModalOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.2rem', color: 'var(--admin-text-muted)' }}>✕</button>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '.85rem', fontWeight: 800, letterSpacing: '.5px' }}>
+                {editingId ? 'SỬA LỊCH BẢO TRÌ' : 'TẠO LỊCH BẢO TRÌ MỚI'}
+              </h3>
+              <button onClick={() => setModalOpen(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1.1rem', color: 'var(--admin-text-muted)', lineHeight: 1 }}>✕</button>
             </div>
-            <div className="modal-body" style={{ padding: '24px' }}>
+
+            <div className="modal-body" style={{ padding: 20 }}>
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>THIẾT BỊ</label>
+                  <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>THIẾT BỊ</label>
                   <select className="form-select" style={{ background: 'var(--admin-layer-2)' }} value={mDevice} onChange={e => setMDevice(e.target.value)}>
                     <option value="">-- Không chọn --</option>
                     {devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>LOẠI BẢO TRÌ</label>
-                  <select className="form-select" style={{ background: 'var(--admin-layer-2)' }} value={mType} onChange={e => setMType(e.target.value)}>
+                  <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>LOẠI BẢO TRÌ</label>
+                  <select className="form-select" style={{ background: 'var(--admin-layer-2)' }} value={mType} onChange={e => handleTypeChange(e.target.value)}>
                     <option value="inspection">Kiểm tra</option>
                     <option value="repair">Sửa chữa</option>
                     <option value="cleaning">Vệ sinh</option>
@@ -240,41 +287,42 @@ export default function MaintenancePage() {
                   </select>
                 </div>
                 <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>TIÊU ĐỀ *</label>
+                  <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>TIÊU ĐỀ *</label>
                   <input type="text" className="form-input" style={{ background: 'var(--admin-layer-2)' }} value={mTitle} onChange={e => setMTitle(e.target.value)} placeholder="Vd: Kiểm tra MBA chính" />
                 </div>
                 <div className="form-group">
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>NGÀY DỰ KIẾN *</label>
+                  <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>NGÀY DỰ KIẾN *</label>
                   <input type="date" className="form-input" style={{ background: 'var(--admin-layer-2)' }} value={mDate} onChange={e => setMDate(e.target.value)} />
                 </div>
                 <div className="form-group">
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>GIAO CHO</label>
+                  <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>GIAO CHO</label>
                   <input type="text" className="form-input" style={{ background: 'var(--admin-layer-2)' }} value={mAssign} onChange={e => setMAssign(e.target.value)} placeholder="Tên kỹ thuật viên" />
                 </div>
               </div>
 
               <div className="form-group">
-                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>GHI CHÚ</label>
-                <textarea rows={2} className="form-input" style={{ background: 'var(--admin-layer-2)', resize: 'vertical' }} value={mNotes} onChange={e => setMNotes(e.target.value)} placeholder="Mô tả công việc..."></textarea>
+                <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>GHI CHÚ</label>
+                <textarea rows={2} className="form-input" style={{ background: 'var(--admin-layer-2)', resize: 'vertical' }} value={mNotes} onChange={e => setMNotes(e.target.value)} placeholder="Mô tả công việc..." />
               </div>
 
               <div className="form-group">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>CHECKLIST</label>
-                  <button className="btn-industrial btn-sm btn-primary" onClick={() => setMChecklist([...mChecklist, { item: '', done: false }])}>+ Thêm mục</button>
+                  <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>CHECKLIST</label>
+                  <button className="btn-industrial btn-sm" onClick={() => setMChecklist([...mChecklist, { item: '', done: false }])}>+ Thêm mục</button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {mChecklist.map((c, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', padding: '6px 10px', borderRadius: 4 }}>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', padding: '5px 10px', borderRadius: 4 }}>
                       <input type="checkbox" checked={c.done} onChange={e => { const nc = [...mChecklist]; nc[i]!.done = e.target.checked; setMChecklist(nc); }} style={{ accentColor: 'var(--admin-success)', cursor: 'pointer' }} />
-                      <input type="text" value={c.item} onChange={e => { const nc = [...mChecklist]; nc[i]!.item = e.target.value; setMChecklist(nc); }} placeholder="Nội dung mục..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--admin-text)', fontSize: '0.8rem', outline: 'none' }} />
-                      <button className="modal-close-btn" style={{ fontSize: '0.9rem', opacity: 0.6 }} onClick={() => setMChecklist(mChecklist.filter((_, idx) => idx !== i))}>✕</button>
+                      <input type="text" value={c.item} onChange={e => { const nc = [...mChecklist]; nc[i]!.item = e.target.value; setMChecklist(nc); }} placeholder="Nội dung mục..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'var(--admin-text)', fontSize: '.8rem', outline: 'none' }} />
+                      <button onClick={() => setMChecklist(mChecklist.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: 'var(--admin-text-muted)', cursor: 'pointer', fontSize: '.85rem', lineHeight: 1 }}>✕</button>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-            <div className="modal-footer" style={{ padding: '16px 24px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+
+            <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn-industrial" onClick={() => setModalOpen(false)}>Hủy</button>
               <button className="btn-industrial btn-primary" onClick={saveModal}>Lưu</button>
             </div>

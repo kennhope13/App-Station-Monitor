@@ -8,6 +8,7 @@
 
 // URL server go2rtc để phát stream camera qua WebRTC
 const rawGo2rtc = (import.meta.env.VITE_GO2RTC_URL as string | undefined) ?? 'http://localhost:1984';
+/** URL của server go2rtc — tự thay localhost bằng hostname thực nếu chạy trên mạng. */
 export const GO2RTC_URL: string = (() => {
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
@@ -20,6 +21,7 @@ export const GO2RTC_URL: string = (() => {
 
 // URL gốc của backend API — dùng cho REST và WebSocket SignalR
 const rawApi = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000';
+/** URL gốc của backend REST API và SignalR — tự thay localhost bằng hostname thực. */
 export const API_BASE_URL: string = (() => {
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
@@ -32,6 +34,7 @@ export const API_BASE_URL: string = (() => {
 
 // URL gốc của AI Engine (FastAPI) — dùng để xem luồng camera AI đã được vẽ sẵn
 const rawAi = (import.meta.env.VITE_AI_URL as string | undefined) ?? 'http://localhost:8100';
+/** URL của AI Engine (FastAPI) — dùng cho stream đã được xử lý và các API AI. */
 export const AI_ENGINE_URL: string = (() => {
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;

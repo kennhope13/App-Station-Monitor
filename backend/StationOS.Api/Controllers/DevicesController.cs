@@ -31,9 +31,11 @@ public class DevicesController : ControllerBase
     private readonly HikvisionIsapiService _isapi;
     private readonly CredentialEncryptionService _crypto;
     private readonly AutoDiscoveryService _autoDiscovery;
+    private readonly IHttpClientFactory _http;
 
     public DevicesController(AppDbContext db, DeviceService deviceService, PermissionService permissions,
-                             IConfiguration config, HikvisionIsapiService isapi, CredentialEncryptionService crypto, AutoDiscoveryService autoDiscovery)
+                             IConfiguration config, HikvisionIsapiService isapi, CredentialEncryptionService crypto,
+                             AutoDiscoveryService autoDiscovery, IHttpClientFactory http)
     {
         _db = db;
         _deviceService = deviceService;
@@ -42,6 +44,7 @@ public class DevicesController : ControllerBase
         _isapi = isapi;
         _crypto = crypto;
         _autoDiscovery = autoDiscovery;
+        _http = http;
     }
 
     private bool IsTrustedInternal(string? ip)
@@ -331,6 +334,10 @@ public class DevicesController : ControllerBase
         catch { return newConfig; }
     }
 
+    /// <summary>
+    /// Lấy chi tiết 1 thiết bị theo ID.
+    /// Trusted IP (localhost/LAN nội bộ) nhận config đầy đủ; các IP khác nhận config đã ẩn mật khẩu.
+    /// </summary>
     [HttpGet("devices/{id}")]
     [AllowAnonymous]
     public async Task<IActionResult> GetById(Guid id)
@@ -436,6 +443,9 @@ public class DevicesController : ControllerBase
 
     // ── ROI Points ────────────────────────────────────────────
 
+    /// <summary>
+    /// Lấy danh sách điểm ROI (điểm đo nhiệt độ) được cấu hình trên camera nhiệt.
+    /// </summary>
     [HttpGet("devices/{deviceId}/roi-points")]
     [AllowAnonymous]
     public async Task<IActionResult> GetRoiPoints(Guid deviceId)
@@ -451,6 +461,9 @@ public class DevicesController : ControllerBase
         return Ok(points);
     }
 
+    /// <summary>
+    /// Thêm điểm ROI mới cho camera nhiệt. Sau khi tạo, tự động đồng bộ cấu hình sang AI Engine.
+    /// </summary>
     [HttpPost("devices/{deviceId}/roi-points")]
     public async Task<IActionResult> CreateRoiPoint(Guid deviceId, [FromBody] RoiPointRequest req)
     {
@@ -473,11 +486,14 @@ public class DevicesController : ControllerBase
         _db.RoiPoints.Add(point);
         await _db.SaveChangesAsync();
 
-        await SyncThermalPointsToAIEngineAsync(deviceId);
+        _ = SyncThermalPointsToAIEngineAsync(deviceId);
 
         return Ok(point);
     }
 
+    /// <summary>
+    /// Cập nhật tọa độ, tên hoặc ngưỡng cảnh báo của điểm ROI. Sau khi sửa, tự động đồng bộ sang AI Engine.
+    /// </summary>
     [HttpPut("devices/{deviceId}/roi-points/{id}")]
     public async Task<IActionResult> UpdateRoiPoint(Guid deviceId, Guid id, [FromBody] RoiPointRequest req)
     {
@@ -499,11 +515,14 @@ public class DevicesController : ControllerBase
 
         await _db.SaveChangesAsync();
 
-        await SyncThermalPointsToAIEngineAsync(deviceId);
+        _ = SyncThermalPointsToAIEngineAsync(deviceId);
 
         return Ok(point);
     }
 
+    /// <summary>
+    /// Xóa điểm ROI khỏi camera. Sau khi xóa, tự động đồng bộ lại cấu hình sang AI Engine.
+    /// </summary>
     [HttpDelete("devices/{deviceId}/roi-points/{id}")]
     public async Task<IActionResult> DeleteRoiPoint(Guid deviceId, Guid id)
     {
@@ -513,7 +532,7 @@ public class DevicesController : ControllerBase
         _db.RoiPoints.Remove(point);
         await _db.SaveChangesAsync();
 
-        await SyncThermalPointsToAIEngineAsync(deviceId);
+        _ = SyncThermalPointsToAIEngineAsync(deviceId);
 
         return NoContent();
     }
@@ -522,6 +541,62 @@ public class DevicesController : ControllerBase
     {
         await _deviceService.SyncThermalConfigToAIEngineAsync(_db, deviceId);
     }
+
+    /// <summary>
+    /// Query nhiệt độ tức thời tại các tọa độ — proxy tới AI Engine.
+    /// Frontend gọi endpoint này, Backend lấy credentials từ DB rồi forward.
+    /// </summary>
+    [HttpPost("devices/{deviceId}/thermal/live-temps")]
+    public async Task<IActionResult> LiveTemps(Guid deviceId, [FromBody] LiveTempsRequest req)
+    {
+        var device = await _db.Devices.FindAsync(deviceId);
+        if (device == null) return NotFound();
+
+        // Parse config JSON trực tiếp
+        string ip = "", username = "admin", password = "";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(device.Config ?? "{}");
+            var root = doc.RootElement;
+            ip       = root.TryGetProperty("ip",       out var ipEl)   ? ipEl.GetString()   ?? "" : "";
+            username = root.TryGetProperty("username", out var userEl) ? userEl.GetString() ?? "admin" : "admin";
+            var rawPass = root.TryGetProperty("password", out var passEl) ? passEl.GetString() ?? "" : "";
+            try { password = _crypto.Decrypt(rawPass); } catch { password = rawPass; }
+        }
+        catch { }
+
+        if (string.IsNullOrEmpty(ip))
+            return BadRequest(new { error = "device_no_ip" });
+
+        try
+        {
+            using var client = _http.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            // Dùng anonymous object với lowercase field names để khớp Pydantic AI Engine
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                camera_ip = ip,
+                username  = username,
+                password  = password,
+                points = (req.Points ?? new List<LiveTempPoint>())
+                    .Select(p => new { id = p.Id, x = p.X, y = p.Y }).ToList(),
+                rois = (req.Rois ?? new List<LiveTempRoi>())
+                    .Select(r => new { id = r.Id, x1 = r.X1, y1 = r.Y1, x2 = r.X2, y2 = r.Y2 }).ToList(),
+            });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("http://localhost:8100/thermal/query-temps", content);
+            var body = await resp.Content.ReadAsStringAsync();
+            return Content(body, "application/json");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { error = "ai_engine_unreachable", detail = ex.Message });
+        }
+    }
+
+    public record LiveTempPoint(string Id, double X, double Y);
+    public record LiveTempRoi(string Id, double X1, double Y1, double X2, double Y2);
+    public record LiveTempsRequest(List<LiveTempPoint>? Points, List<LiveTempRoi>? Rois);
 
     private static string GetStringValue(Dictionary<string, object?> dict, string key, string defaultValue = "")
     {
@@ -538,6 +613,56 @@ public class DevicesController : ControllerBase
         return val.ToString() ?? defaultValue;
     }
 
+    /// <summary>
+    /// Lấy toàn bộ dữ liệu liên quan đến một thiết bị: điểm ROI, rules, cảnh báo gần đây, boundaries và công việc bảo trì.
+    /// </summary>
+    [HttpGet("devices/{id:guid}/related")]
+    public async Task<IActionResult> GetRelated(Guid id)
+    {
+        var device = await _db.Devices.FindAsync(id);
+        if (device == null) return NotFound();
+
+        // 1. Cấu hình điểm đo (sensors) từ Device.Config hoặc từ RoiPoints nếu là camera
+        var roiPoints = await _db.RoiPoints.Where(r => r.DeviceId == id).ToListAsync();
+        
+        // 2. Rules liên quan đến thiết bị này (hoặc trạm của nó)
+        var rules = await _db.Rules
+            .Where(r => r.StationId == device.StationId && (r.RuleSet == device.Name || r.RuleSet == "Global"))
+            .ToListAsync();
+
+        // 3. Alerts gần đây
+        var alerts = await _db.Alerts
+            .Where(a => a.DeviceId == id)
+            .OrderByDescending(a => a.TriggeredAt)
+            .Take(10)
+            .ToListAsync();
+
+        // 4. Boundaries (PD/ROI)
+        var boundaries = await _db.Boundaries
+            .Where(b => b.DeviceId == id)
+            .ToListAsync();
+
+        // 5. Công việc bảo trì
+        var maintenance = await _db.MaintenanceTasks
+            .Where(m => m.DeviceId == id && m.Status != "completed")
+            .ToListAsync();
+
+        return Ok(new
+        {
+            device = new { device.Id, device.Name, device.Type, device.Status },
+            roiPoints,
+            rules,
+            recentAlerts = alerts,
+            boundaries,
+            maintenance
+        });
+    }
+
+    /// <summary>
+    /// Lấy thông tin mapping vùng quang học (VisibleValidRect) trong ảnh nhiệt Hikvision.
+    /// Dùng để căn chỉnh overlay giữa luồng nhiệt và luồng quang học trên frontend.
+    /// Trả về mặc định { x, y, width, height } nếu camera không hỗ trợ.
+    /// </summary>
     [HttpGet("devices/{deviceId}/thermal-mapping")]
     public async Task<IActionResult> GetThermalMapping(Guid deviceId)
     {
@@ -571,10 +696,10 @@ public class DevicesController : ControllerBase
                 appendData.TryGetProperty("VisibleValidRect", out var rect))
             {
                 return Ok(new {
-                    x = rect.GetProperty("x").GetDouble(),
-                    y = rect.GetProperty("y").GetDouble(),
-                    width = rect.GetProperty("width").GetDouble(),
-                    height = rect.GetProperty("height").GetDouble()
+                    x = double.Parse(rect.GetProperty("x").ToString()),
+                    y = double.Parse(rect.GetProperty("y").ToString()),
+                    width = double.Parse(rect.GetProperty("width").ToString()),
+                    height = double.Parse(rect.GetProperty("height").ToString())
                 });
             }
         }

@@ -25,6 +25,7 @@ _acoustic_analyzers: dict = {}
 
 @router.get("/health")
 async def health():
+    """Trả về trạng thái hoạt động và số lượng analyzer đang chạy."""
     return {
         "status": "ok",
         "thermal": len(_thermal_analyzers),
@@ -42,15 +43,15 @@ def mjpeg_stream(stream_id: str):
     Frontend có thể nhúng: <img src="http://localhost:8100/stream/camera_152_thermal">
     """
     import cv2
-    from services.thermal.thermal_analyzer import get_annotated_frame as get_thermal
     from services.detection.line_detector import get_annotated_frame as get_detection
 
     def generate():
+        """Sinh liên tục các JPEG frame dưới dạng multipart response cho MJPEG."""
         import time
         import numpy as np
         from services.detection.pd_region_analyzer import get_annotated_frame as get_pd
         while True:
-            frame = get_thermal(stream_id) or get_detection(stream_id) or get_pd(stream_id)
+            frame = get_detection(stream_id) or get_pd(stream_id)
 
             if frame is None:
                 # Placeholder frame khi chưa có dữ liệu
@@ -72,6 +73,7 @@ def mjpeg_stream(stream_id: str):
 
 
 def _placeholder_frame(label: str):
+    """Tạo frame đen có chữ "No signal" dùng khi chưa có luồng video."""
     import numpy as np
     import cv2
     frame = np.zeros((192, 256, 3), dtype=np.uint8)
@@ -205,10 +207,144 @@ async def reload_all_pd_regions():
     return {"ok": True, "reloaded": count}
 
 
+# ── Thermal live query (gọi từ Backend proxy, không gọi trực tiếp từ Frontend) ──
+
+import time as _time
+import httpx
+import numpy as np
+import json as _json
+
+_thermal_matrix_cache: dict[str, dict] = {}  # camera_ip -> {matrix, w, h, mapping, ts}
+_thermal_clients: dict[str, httpx.AsyncClient] = {}  # camera_ip -> httpx.AsyncClient
+
+async def _get_thermal_client(camera_ip: str) -> httpx.AsyncClient:
+    """Trả về AsyncClient được tái sử dụng cho một camera IP nhất định."""
+    if camera_ip not in _thermal_clients:
+        _thermal_clients[camera_ip] = httpx.AsyncClient(timeout=4.0)
+    return _thermal_clients[camera_ip]
+
+async def _read_matrix_cached(camera_ip: str, username: str, password: str):
+    now = _time.time()
+    cached = _thermal_matrix_cache.get(camera_ip)
+    if cached and now - cached["ts"] < 0.2:
+        return cached
+
+    client = await _get_thermal_client(camera_ip)
+    
+    for ch in [2, 1]:
+        url = f"http://{camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/jpegPicWithAppendData?format=json"
+        try:
+            resp = await client.get(url, auth=httpx.DigestAuth(username, password))
+            if resp.status_code != 200:
+                continue
+            content = resp.content
+            ct = resp.headers.get("content-type", "")
+            boundary = b"--boundary"
+            if "boundary=" in ct:
+                boundary = ("--" + ct.split("boundary=")[-1].strip()).encode()
+
+            parts = content.split(boundary)
+            w, h, data_len = 384, 288, 442368
+            mapping = {"x": 0.20, "y": 0.084, "width": 0.63, "height": 0.841}
+
+            for part in parts:
+                if b"application/json" in part:
+                    hend = part.find(b"\r\n\r\n")
+                    if hend != -1:
+                        try:
+                            info = _json.loads(part[hend+4:].decode("utf-8", "ignore").strip())
+                            meta = info.get("JpegPictureWithAppendData", {})
+                            w = meta.get("jpegPicWidth", w)
+                            h = meta.get("jpegPicHeight", h)
+                            data_len = meta.get("p2pDataLen") or (w * h * 4)
+                            if "VisibleValidRect" in meta:
+                                vvr = meta["VisibleValidRect"]
+                                mapping = {
+                                    "x":      vvr.get("x", mapping["x"]),
+                                    "y":      vvr.get("y", mapping["y"]),
+                                    "width":  vvr.get("width", mapping["width"]),
+                                    "height": vvr.get("height", mapping["height"]),
+                                }
+                        except Exception:
+                            pass
+
+            for part in parts:
+                if b"application/octet-stream" in part:
+                    hend = part.find(b"\r\n\r\n")
+                    if hend != -1:
+                        raw = part[hend+4:][:data_len]
+                        if len(raw) >= w * h * 4:
+                            matrix = np.frombuffer(raw, dtype=np.float32).reshape(h, w).copy()
+                            bad = ~np.isfinite(matrix) | (matrix < -50) | (matrix > 500)
+                            if bad.any():
+                                matrix[bad] = np.nan
+                            result = {"matrix": matrix, "w": w, "h": h, "mapping": mapping, "ts": now}
+                            _thermal_matrix_cache[camera_ip] = result
+                            return result
+        except Exception:
+            pass
+    return None
+
+class ThermalQueryPoint(BaseModel):
+    id: str
+    x: float   # 0-1 normalized trên thermal frame
+    y: float
+
+class ThermalQueryRoi(BaseModel):
+    id: str
+    x1: float; y1: float
+    x2: float; y2: float
+
+class ThermalQueryBody(BaseModel):
+    camera_ip:  str
+    username:   str
+    password:   str
+    points:     list[ThermalQueryPoint] = []
+    rois:       list[ThermalQueryRoi]   = []
+
+@router.post("/thermal/query-temps")
+async def thermal_query_temps(body: ThermalQueryBody):
+    """
+    Query nhiệt độ tức thời tại các tọa độ chỉ định.
+    Gọi bởi Backend proxy — không expose trực tiếp ra Frontend.
+    """
+    import numpy as np
+    data = await _read_matrix_cached(body.camera_ip, body.username, body.password)
+    if data is None:
+        return {"temps": [], "rois": [], "mapping": None, "error": "camera_unreachable"}
+
+    matrix: np.ndarray = data["matrix"]
+    w, h = data["w"], data["h"]
+    mapping = data["mapping"]
+
+    temps = []
+    for pt in body.points:
+        px = max(0, min(w - 1, int(pt.x * w)))
+        py = max(0, min(h - 1, int(pt.y * h)))
+        val = float(matrix[py, px])
+        temps.append({"id": pt.id, "temp": round(val, 2) if np.isfinite(val) else None})
+
+    rois = []
+    for roi in body.rois:
+        x1 = max(0, min(w - 1, int(roi.x1 * w)))
+        y1 = max(0, min(h - 1, int(roi.y1 * h)))
+        x2 = max(0, min(w - 1, int(roi.x2 * w)))
+        y2 = max(0, min(h - 1, int(roi.y2 * h)))
+        sub = matrix[min(y1,y2):max(y1,y2)+1, min(x1,x2):max(x1,x2)+1]
+        valid = sub[np.isfinite(sub)]
+        if valid.size > 0:
+            rois.append({"id": roi.id, "max": round(float(np.max(valid)), 2), "min": round(float(np.min(valid)), 2), "avg": round(float(np.mean(valid)), 2)})
+        else:
+            rois.append({"id": roi.id, "max": None, "min": None, "avg": None})
+
+    return {"temps": temps, "rois": rois, "mapping": mapping}
+
+
 # ── Status ────────────────────────────────────────────────────
 
 @router.get("/status")
 async def status():
+    """Trả về danh sách chi tiết tất cả analyzer đang hoạt động."""
     return {
         "thermal": [
             {
@@ -243,6 +379,7 @@ CSV_FILE = f"{DATA_DIR}/ai_history_v2.csv"
 PD_CSV_FILE = f"{DATA_DIR}/pd_history_v2.csv"
 
 def get_last_csv_records(filename: str, n: int = 100) -> list:
+    """Đọc n dòng cuối cùng của file CSV và trả về danh sách dict theo header."""
     import os, csv
     if not os.path.exists(filename):
         return []
@@ -281,6 +418,7 @@ def get_last_csv_records(filename: str, n: int = 100) -> list:
 @router.post("/api/prediction")
 @router.get("/api/prediction")
 async def receive_prediction(data: dict = None):
+    """Nhận dự đoán nhiệt độ từ mô hình AI và lưu vào CSV lịch sử."""
     import os, csv, time
     os.makedirs(DATA_DIR, exist_ok=True)
     
@@ -319,6 +457,7 @@ async def receive_prediction(data: dict = None):
 @router.post("/pd-data")
 @router.get("/api/pd-prediction")
 async def receive_pd_prediction(data: dict = {}):
+    """Nhận dữ liệu phóng điện (dB, Hz) từ cảm biến và lưu vào CSV lịch sử."""
     import os, csv, time
     os.makedirs(DATA_DIR, exist_ok=True)
     
@@ -342,10 +481,12 @@ async def receive_pd_prediction(data: dict = {}):
 
 @router.get("/api/ai-predictions")
 async def get_predictions():
+    """Trả về 100 bản ghi dự đoán nhiệt độ gần nhất từ CSV."""
     return get_last_csv_records(CSV_FILE, 100)
 
 @router.get("/api/pd-predictions")
 async def get_pd_predictions():
+    """Trả về 100 bản ghi dữ liệu phóng điện gần nhất từ CSV."""
     return get_last_csv_records(PD_CSV_FILE, 100)
 
 
@@ -357,9 +498,10 @@ _pd_monitor_state: dict = {}
 
 
 def _get_or_create_state(device_id: str) -> dict:
+    """Lấy hoặc khởi tạo dict trạng thái realtime cho một device."""
     if device_id not in _pd_monitor_state:
         _pd_monitor_state[device_id] = {
-            "db": None, "hz": None, "ts": "—",
+            "db": 0.0, "hz": 0.0, "ts": "—",
             "detection": None, "active_boundary": None,
             "connected": False, "events": [], "boundaries": [],
         }
@@ -367,6 +509,7 @@ def _get_or_create_state(device_id: str) -> dict:
 
 
 def _update_pd_state(device_id: str, **kwargs) -> None:
+    """Cập nhật một hoặc nhiều trường trong dict trạng thái realtime của device."""
     s = _get_or_create_state(device_id)
     s.update(kwargs)
 
@@ -381,6 +524,7 @@ async def pd_monitor_page(
     request: Request,
     token: str = Query(default=""),
     backend: str = Query(default="http://localhost:5000"),
+    theme: str = Query(default="dark"),
 ):
     """
     HTML page giống test_cam153_boundaries.py.
@@ -395,8 +539,14 @@ async def pd_monitor_page(
     camera_ip   = ""
     stream_id   = device_id
 
+    # Thử lấy stream_id từ analyzer đang chạy trước (ưu tiên cache local)
+    for sid, a in _acoustic_analyzers.items():
+        if a.device_id == device_id:
+            stream_id = sid
+            break
+
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=2.0) as client:
             headers = {"Authorization": f"Bearer {token}"} if token else {}
             r = await client.get(f"{backend}/api/v1/devices/{device_id}", headers=headers)
             if r.status_code == 200:
@@ -407,7 +557,7 @@ async def pd_monitor_page(
                     import json as _json
                     cfg_raw = _json.loads(cfg_raw)
                 camera_ip = cfg_raw.get("ip", "")
-                stream_id = cfg_raw.get("go2rtc_id", device_id)
+                stream_id = cfg_raw.get("go2rtc_id", stream_id)
     except Exception:
         pass
 
@@ -422,6 +572,7 @@ async def pd_monitor_page(
         ai_engine_url=ai_engine_url,
         token=token,
         backend_url=backend,
+        theme=theme,
     )
     return HTMLResponse(content=html)
 
@@ -665,6 +816,7 @@ async def pd_monitor_state(
                 import math as _math
 
                 def parse_vertices(polygon_json):
+                    """Chuyển đổi chuỗi JSON polygon 0-1 thành danh sách dict tọa độ 0-100."""
                     try:
                         arr = _json.loads(polygon_json or "[]")
                         return [{"x": p[0]*100, "y": p[1]*100} for p in arr]
@@ -672,6 +824,7 @@ async def pd_monitor_state(
                         return []
 
                 def parse_thresholds(thr_json):
+                    """Trích xuất ngưỡng cảnh báo và thông số hiển thị từ chuỗi JSON thresholds."""
                     try:
                         t = _json.loads(thr_json or "{}")
                         return (

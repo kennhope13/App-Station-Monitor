@@ -27,6 +27,7 @@ _pd_annotated_frames: dict[str, np.ndarray] = {}
 
 
 def get_annotated_frame(stream_id: str) -> np.ndarray | None:
+    """Trả về frame đã annotate mới nhất của stream, hoặc None nếu chưa có."""
     return _pd_annotated_frames.get(stream_id)
 
 
@@ -71,7 +72,7 @@ class PdRegionAnalyzer:
         """Nhận diện vị trí đốm PD (blob) từ frame bằng OpenCV."""
         import cv2
         h, w = img.shape[:2]
-        scale = 640.0 / float(w)
+        scale = 320.0 / float(w)
         small_w, small_h = int(w * scale), int(h * scale)
         small = cv2.resize(img, (small_w, small_h))
         
@@ -144,8 +145,10 @@ class PdRegionAnalyzer:
         self._flash_counter = (self._flash_counter + 1) % 10
         self._flash_state = self._flash_counter < 5
 
-        # Detect hotspot (chỉ cần chạy 1 lần cho mỗi frame)
-        hotspot = self._detect_hotspot(frame)
+        # Tải/cập nhật đốm nhiệt (hotspot) mỗi 5 frames để tiết kiệm 80% CPU
+        if not hasattr(self, '_cached_hotspot') or self._flash_counter % 5 == 0:
+            self._cached_hotspot = self._detect_hotspot(frame)
+        hotspot = self._cached_hotspot
 
         for region in regions_snapshot:
             verts = region.vertices
@@ -162,8 +165,8 @@ class PdRegionAnalyzer:
             is_alarm = current_db >= region.alarm_threshold or current_db >= 35.0
             is_warning = current_db >= region.warning_threshold
 
-            # CHỈ ĐỔI MÀU & BÁO ĐỘNG KHI CÓ HOTSPOT NẰM TRONG VÙNG VÀ ĐẠT NGƯỠNG CẢNH BÁO/BÁO ĐỘNG!
-            if hotspot and self._point_in_polygon(hotspot, verts) and (is_alarm or is_warning):
+            # CHỈ ĐỔI MÀU & BÁO ĐỘNG KHI CÓ HOTSPOT NẰM TRONG VÙNG
+            if hotspot and self._point_in_polygon(hotspot, verts):
                 level = "alarm" if is_alarm else "warning"
                 # Màu đỏ cho Alarm (0, 0, 255), màu cam cho Warning (0, 165, 255)
                 color = (0, 0, 255) if is_alarm else (0, 165, 255)
@@ -173,11 +176,14 @@ class PdRegionAnalyzer:
                 # Chỉ gửi thông báo thực tế (còi báo động, popup) khi ở mức độ Đỏ (Alarm)
                 if is_alarm:
                     self._maybe_send_alert(region, current_db, "alarm", annotated)
+                
+                # Luôn cập nhật UI state (chớp đỏ/cam) khi có đốm nằm trong vùng
                 self._update_ui_state(region.name, current_db, current_hz, level, hotspot)
             else:
-                # XANH LÁ — Trạng thái bình thường (không có hotspot hoặc chưa đạt ngưỡng)
+                # XANH LÁ — Trạng thái bình thường (không có hotspot)
                 color = (0, 255, 0) # Xanh lá cây
                 fill_alpha = 0.0     # Hoàn toàn trong suốt
+                border_thickness = region.border_thickness
                 self._clear_ui_state(region.name)
 
             # Vẽ fill mờ (alpha blend)
@@ -194,47 +200,30 @@ class PdRegionAnalyzer:
             for pt in pts_arr:
                 cv2.circle(annotated, tuple(pt), 2, color, -1, cv2.LINE_AA)
 
-            # Tính centroid và bounding box để định vị tên
             M = cv2.moments(pts_arr)
             if M["m00"] != 0:
                 cx = int(M["m10"] / M["m00"])
                 cy = int(M["m01"] / M["m00"])
-                
-                # Lấy bounding box của polygon
-                rx, ry, rw, rh = cv2.boundingRect(pts_arr)
-                
-                # Cấu hình kích thước chữ động
-                font_scale = max(0.4, min(1.2, region.font_size / 20.0))
-                thickness = 2 if region.font_size >= 16 else 1
-                
-                # Quyết định vị trí của chữ theo name_position
-                pos = (cx, cy) # mặc định center
-                center_text = True
-                
-                pos_setting = region.name_position.lower()
-                if pos_setting == "top":
-                    pos = (cx, max(15, ry - 8))
-                elif pos_setting == "bottom":
-                    pos = (cx, min(h - 10, ry + rh + 18))
-                elif pos_setting == "left":
-                    # Vẽ căn lề trái của bounding box
-                    pos = (max(10, rx - 8), cy)
-                    center_text = False # Vẽ từ trái qua
-                elif pos_setting == "right":
-                    pos = (min(w - 10, rx + rw + 8), cy)
-                    center_text = False
-                
-                # Cựu OpenCV text drawing đã được chuyển lên Frontend SVG để hỗ trợ hiển thị Font chữ hiện đại, đẹp mắt và sắc nét hơn
-                # _draw_text_no_bg(
-                #     annotated,
-                #     region.name,
-                #     pos,
-                #     color=(255, 255, 255), # Chữ trắng tinh khiết
-                #     font_scale=font_scale,
-                #     thickness=thickness,
-                #     center=center_text
-                # )
+            else:
+                cx, cy = pts_arr[0][0], pts_arr[0][1]
 
+            label_pos = getattr(region, "name_position", "top")
+            font_sz = getattr(region, "font_size", 14)
+            scale = font_sz / 20.0
+            
+            text_x, text_y = cx, cy
+            x, y, w_bb, h_bb = cv2.boundingRect(pts_arr)
+            if label_pos == "top":
+                text_y = y - int(10 * scale)
+            elif label_pos == "bottom":
+                text_y = y + h_bb + int(20 * scale)
+            elif label_pos == "left":
+                text_x = x - int(10 * scale)
+            elif label_pos == "right":
+                text_x = x + w_bb + int(10 * scale)
+
+            cv2.putText(annotated, region.name, (text_x - 10, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, scale, color, max(1, int(scale*2)), cv2.LINE_AA)
 
         _pd_annotated_frames[self.stream_id] = annotated
         return annotated
@@ -279,6 +268,7 @@ class PdRegionAnalyzer:
                         font_size=fsize,
                         name_position=pos
                     ))
+                    regions[-1].label_pos = pos
                 
                 self.update_regions(regions)
                 logger.info("[PdRegion] Loaded %d regions from backend for %s", len(regions), self.device_id)

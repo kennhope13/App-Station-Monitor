@@ -48,10 +48,8 @@ class AcousticAnalyzer:
         """Khởi động toàn bộ luồng xử lý âm thanh & hình ảnh"""
         self._running = True
 
-        # 1. Khởi động RTSP reader cho preview hình ảnh (Kết nối trực tiếp giống test_cam153)
-        import urllib.parse
-        safe_pass = urllib.parse.quote(self.password)
-        rtsp_url = f"rtsp://{self.username}:{safe_pass}@{self.camera_ip}:554/Streaming/Channels/101"
+        # 1. Khởi động RTSP reader qua proxy go2rtc (Không kết nối trực tiếp camera để tránh lag và 401)
+        rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
         self._reader = RtspReader(rtsp_url, self.stream_id)
         self._reader.start()
 
@@ -105,14 +103,8 @@ class AcousticAnalyzer:
         else:
             annotated = frame.copy()
 
-        # Bước 2: HUD dB/Hz ở góc trên trái
-        color_hud = (0, 255, 0) if db_val < 20.0 else (0, 165, 255) if db_val < 45.0 else (0, 0, 255)
-        label_text = f"PD: {db_val:.1f} dB  |  {freq_val:.0f} Hz"
-        # Nền đen mờ cho HUD
-        (tw, th), _ = cv2.getTextSize(label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(annotated, (6, 6), (tw + 14, th + 14), (0, 0, 0), -1)
-        cv2.putText(annotated, label_text, (10, th + 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color_hud, 1, cv2.LINE_AA)
+        # HUD drawing removed to make stream clean and beautiful, as information is already displayed elegantly in frontend UI.
+        pass
 
         # Lưu frame đã annotate → MJPEG endpoint dùng
         _pd_annotated_frames[self.stream_id] = annotated
@@ -127,6 +119,7 @@ class AcousticAnalyzer:
         last_csv_write = 0
 
         def extract_tag(xml_str, tag):
+            """Trích xuất nội dung của thẻ XML đầu tiên khớp tên tag."""
             m = re.search(rf'<{tag}>(.*?)</{tag}>', xml_str, re.DOTALL)
             return m.group(1).strip() if m else None
 
@@ -142,6 +135,12 @@ class AcousticAnalyzer:
                         if not chunk:
                             continue
                         buf += chunk
+                        
+                        now = time.time()
+                        if now - getattr(self, '_last_raw_log', 0) > 5.0:
+                            logger.info("[Acoustic] Raw ISAPI buffer length: %d, snippet: %s", len(buf), buf[:100])
+                            self._last_raw_log = now
+
                         while b"</EventNotificationAlert>" in buf:
                             end = buf.find(b"</EventNotificationAlert>") + len(b"</EventNotificationAlert>")
                             block = buf[:end]
@@ -151,23 +150,26 @@ class AcousticAnalyzer:
                                 continue
                             try:
                                 xml_str = block[xs:].decode(errors="replace")
-                                alarm_type = extract_tag(xml_str, "alarmType")
+                                alarm_type = extract_tag(xml_str, "eventType") or extract_tag(xml_str, "alarmType")
                                 now = time.time()
                                 updated = False
                                 
-                                if alarm_type == "audioDecibel":
-                                    val = extract_tag(xml_str, "audioDecibel")
-                                    if val:
-                                        with self._state_lock:
-                                            self.live_db = float(val)
-                                        updated = True
-                                        
-                                elif alarm_type == "frequency":
-                                    val = extract_tag(xml_str, "frequency")
-                                    if val:
-                                        with self._state_lock:
-                                            self.live_freq = float(val)
-                                        updated = True
+                                # Log to see what we receive
+                                if now - getattr(self, '_last_xml_log', 0) > 2.0:
+                                    logger.info("[Acoustic] Received ISAPI Event: type=%s, xml=%s", alarm_type, xml_str[:300].replace('\n', ' '))
+                                    self._last_xml_log = now
+                                
+                                val_db = extract_tag(xml_str, "audioDecibel")
+                                if val_db:
+                                    with self._state_lock:
+                                        self.live_db = float(val_db)
+                                    updated = True
+                                    
+                                val_freq = extract_tag(xml_str, "frequency")
+                                if val_freq:
+                                    with self._state_lock:
+                                        self.live_freq = float(val_freq)
+                                    updated = True
                                 
                                 if updated:
                                     # Push vào pd_monitor_state → frontend poll được realtime
@@ -211,6 +213,7 @@ class AcousticAnalyzer:
                 time.sleep(10)
 
     def _parse_json(self, json_str: str, pending: dict) -> dict:
+        """Phân tích chuỗi JSON và gộp các trường vào dict pending (hỗ trợ nested)."""
         try:
             data = json.loads(json_str)
             def flatten(d):
@@ -225,6 +228,7 @@ class AcousticAnalyzer:
         return pending
 
     def _parse_xml(self, xml_str: str, pending: dict) -> dict:
+        """Phân tích chuỗi XML và gộp nội dung thẻ con vào dict pending."""
         try:
             root = ET.fromstring(xml_str)
             for el in root.iter():
@@ -236,6 +240,7 @@ class AcousticAnalyzer:
         return pending
 
     def _ingest_realtime(self, db: float, freq: float) -> None:
+        """Gửi giá trị dB và Hz tức thời về backend để lưu DB và phát SignalR."""
         try:
             payload = [
                 {"deviceId": self.device_id, "pointId": "phong_dien", "value": db, "unit": "dB"},
@@ -249,6 +254,7 @@ class AcousticAnalyzer:
             logger.debug("[Acoustic] Ingest failed: %s", ex)
 
     def _trigger_discharge_alert(self, db: float) -> None:
+        """Gửi cảnh báo phóng điện cùng ảnh annotated snapshot về backend."""
         xml_data = (
             f'<EventNotificationAlert version="2.0">'
             f'<ipAddress>{self.camera_ip}</ipAddress>'
@@ -287,6 +293,7 @@ class AcousticAnalyzer:
             logger.debug("[Acoustic] Alert trigger failed: %s", e)
 
     def _save_prediction_history(self, db: float, freq: float) -> None:
+        """Ghi bản ghi dữ liệu dB/Hz kèm dự báo mượt mà vào CSV lịch sử phóng điện."""
         try:
             os.makedirs(self.data_dir, exist_ok=True)
             csv_path = os.path.join(self.data_dir, "pd_history_v2.csv")

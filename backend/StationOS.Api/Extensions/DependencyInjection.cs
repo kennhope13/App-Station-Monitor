@@ -24,6 +24,10 @@ namespace StationOS.Api.Extensions;
 
 public static class DependencyInjection
 {
+    /// <summary>Đăng ký toàn bộ dịch vụ của StationOS vào DI container: database, Hangfire, authentication JWT, SignalR, rate limiting, Swagger và tất cả background workers.</summary>
+    /// <param name="services">IServiceCollection để đăng ký dịch vụ.</param>
+    /// <param name="configuration">Cấu hình ứng dụng (appsettings.json).</param>
+    /// <returns>IServiceCollection để hỗ trợ method chaining.</returns>
     public static IServiceCollection AddStationOSServices(this IServiceCollection services, IConfiguration configuration)
     {
         // ── QuestPDF license ──────────────────────────────────────
@@ -64,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<AutoDiscoveryService>();
         services.AddScoped<ProtocolConnectionTester>();
         services.AddScoped<SupabaseService>();
+        services.AddScoped<StationOS.Services.Recording.EventRecordingService>();
         services.AddSingleton<LicenseService>();          // License key + concurrent sessions
         services.AddSingleton<CredentialEncryptionService>(); // AES-256-GCM cho device password
 
@@ -83,6 +88,7 @@ public static class DependencyInjection
         services.AddHostedService<Iec104Worker>();
         services.AddHostedService<CloudSyncWorker>();
         services.AddHostedService<DeviceHealthCheckWorker>();
+        services.AddHostedService<StationOS.Workers.Recording.RtspRecorderWorker>();
 
         // ── Device Handlers (plugin pattern) ──────────────────────
         // Mỗi loại thiết bị có handler riêng. Registry tự dispatch theo device.Type.
@@ -104,15 +110,23 @@ public static class DependencyInjection
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
+                var signingKeys = new List<SecurityKey>
+                {
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes("StationOS_SuperSecret_Key_2026_ChangeInProduction!")),
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes("StationMonitor_SuperSecret_Key_2026_ChangeInProduction!")),
+                    new SymmetricSecurityKey(Encoding.UTF8.GetBytes("CHANGE_ME_min_32_chars_random_secret_key"))
+                };
+
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
                     ValidateAudience = true,
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true,
-                    ValidIssuer = configuration["Jwt:Issuer"],
-                    ValidAudience = configuration["Jwt:Audience"],
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+                    ValidIssuers = new[] { configuration["Jwt:Issuer"], "StationOS", "StationMonitor" },
+                    ValidAudiences = new[] { configuration["Jwt:Audience"], "StationOSApp", "StationMonitorApp" },
+                    IssuerSigningKeys = signingKeys
                 };
                 
                 // SignalR cần đọc token từ query string
