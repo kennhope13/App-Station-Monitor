@@ -41,10 +41,8 @@ const Stepper = ({ value, onChange, min = 1, max = 60, unit = 'px' }: any) => (
 const PosBtn = ({ pos, active, onClick }: { pos: 'top'|'bottom'|'left'|'right'; active: boolean; onClick: () => void }) => (
   <button onClick={onClick}
     title={pos === 'top' ? 'Trên' : pos === 'bottom' ? 'Dưới' : pos === 'left' ? 'Trái' : 'Phải'}
-    style={{ width: 24, height: 24, fontSize: '.7rem', borderRadius: 3, cursor: 'pointer',
-      border: `1px solid ${active ? 'var(--admin-accent)' : 'var(--admin-border)'}`,
-      background: active ? 'var(--admin-accent)' : 'var(--admin-layer-2)',
-      color: active ? 'var(--admin-text-on-accent)' : 'var(--admin-text-muted)' }}>
+    className={`btn-industrial btn-sm ${active ? 'btn-primary' : ''}`}
+    style={{ width: 26, padding: 0 }}>
     {pos === 'top' ? '↑' : pos === 'bottom' ? '↓' : pos === 'left' ? '←' : '→'}
   </button>
 );
@@ -211,11 +209,11 @@ export default function SldEditPanel({ stationId, sldRef, refreshTick, selectedN
 
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={onClearSelection}
-                style={{ flex: 1, padding: '5px 0', fontSize: '.65rem', fontWeight: 800, borderRadius: 3, border: 'none', background: 'var(--admin-accent)', color: 'var(--admin-text-on-accent)', cursor: 'pointer' }}>
+                className="btn-industrial btn-sm btn-primary" style={{ flex: 1 }}>
                 Xong
               </button>
               <button onClick={handleDeleteNode}
-                style={{ padding: '5px 10px', fontSize: '.65rem', fontWeight: 700, borderRadius: 3, border: '1px solid var(--admin-tag-danger-bg)', background: 'var(--admin-tag-danger-bg)', color: 'var(--admin-tag-danger-text)', cursor: 'pointer' }}>
+                className="btn-industrial btn-sm btn-danger">
                 Xóa node
               </button>
             </div>
@@ -232,7 +230,8 @@ export default function SldEditPanel({ stationId, sldRef, refreshTick, selectedN
                   <input type="file" accept=".svg" style={{ display: 'none' }} onChange={e => setUploadFile(e.target.files?.[0] ?? null)} />
                 </label>
                 <button onClick={handleUpload} disabled={!uploadFile || uploading}
-                  style={{ flexShrink: 0, padding: '5px 10px', fontSize: '.68rem', fontWeight: 700, borderRadius: 3, cursor: uploadFile ? 'pointer' : 'default', border: '1px solid var(--admin-accent)', background: uploadFile ? 'var(--admin-accent)' : 'transparent', color: uploadFile ? 'var(--admin-text-on-accent)' : 'var(--admin-text-muted)' }}>
+                  className={`btn-industrial btn-sm ${uploadFile ? 'btn-primary' : ''}`}
+                  style={{ flexShrink: 0 }}>
                   {uploading ? '...' : 'Upload'}
                 </button>
               </div>
@@ -276,7 +275,7 @@ export default function SldEditPanel({ stationId, sldRef, refreshTick, selectedN
                   </div>
                 </div>
                 <button onClick={handleApplyAll}
-                  style={{ padding: '5px 0', fontSize: '.65rem', fontWeight: 800, borderRadius: 3, border: 'none', background: 'var(--admin-accent)', color: 'var(--admin-text-on-accent)', cursor: 'pointer' }}>
+                  className="btn-industrial btn-sm btn-primary" style={{ width: '100%' }}>
                   Áp dụng cho tất cả node
                 </button>
               </div>

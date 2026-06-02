@@ -1,0 +1,45 @@
+/* =================================================================
+   soft-light.css - Soft/Warm Light Theme
+   ================================================================= */
+
+.theme-soft-light {
+  --admin-bg: #f8f9fa;         /* Warm white */
+  --admin-panel: #ffffff;      /* Pure white */
+  --admin-border: #e2e8f0;     /* Soft slate border */
+  --admin-border-light: rgba(0, 0, 0, 0.05); 
+  --admin-text: #334155;       /* Soft charcoal text */
+  --admin-text-muted: #64748b; /* Slate-500 */
+  --admin-accent: #6366f1;     /* Indigo accent */
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-danger: #ef4444;
+  --admin-hover: rgba(99, 102, 241, 0.05);
+  --admin-overlay: rgba(255, 255, 255, 0.98);
+  --admin-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  --admin-card-bg: #ffffff;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #ffffff;
+  --admin-btn-secondary-bg: #f1f5f9;
+  --admin-btn-secondary-border: #e2e8f0;
+  --admin-btn-secondary-text: #4f46e5;
+  --admin-btn-secondary-hover: #e2e8f0;
+
+  --admin-info-bg: rgba(99, 102, 241, 0.06);
+  --admin-info-border: rgba(99, 102, 241, 0.2);
+  --admin-info-text: #4f46e5;
+
+  --admin-tag-success-bg: rgba(16, 185, 129, 0.1);
+  --admin-tag-success-text: #059669;
+  --admin-tag-warning-bg: rgba(245, 158, 11, 0.1);
+  --admin-tag-warning-text: #d97706;
+  --admin-tag-danger-bg: rgba(239, 68, 68, 0.1);
+  --admin-tag-danger-text: #dc2626;
+
+  /* Layering */
+  --admin-layer-1: rgba(0,0,0,.02);
+  --admin-layer-2: rgba(0,0,0,.04);
+  --admin-layer-3: rgba(0,0,0,.05);
+  --admin-layer-4: rgba(99, 102, 241, .1);
+  --admin-surface-btn: #f1f5f9;
+}

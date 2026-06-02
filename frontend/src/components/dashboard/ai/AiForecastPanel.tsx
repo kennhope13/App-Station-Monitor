@@ -85,12 +85,14 @@ export default function AiForecastPanel() {
     const lastPoint = history[history.length - 1];
     
     return targets.map(t => {
-      const actual = Number(currentPoint ? currentPoint[`${t}_actual`] : 0);
-      const pred = Number(lastPoint ? lastPoint[`${t}_pred`] : 0);
-      const diff = pred - actual;
-      const isRising = diff > 0.2;
-      const isFalling = diff < -0.2;
-      const isAlert = actual > 80 || pred > 80;
+      const actual = currentPoint ? Number(currentPoint[`${t}_actual`]) : 0;
+      const predRaw = lastPoint ? lastPoint[`${t}_pred`] : null;
+      const pred = (predRaw !== null && predRaw !== undefined && predRaw !== '') ? Number(predRaw) : null;
+      
+      const diff = (pred !== null) ? pred - actual : 0;
+      const isRising = (pred !== null) && diff > 0.2;
+      const isFalling = (pred !== null) && diff < -0.2;
+      const isAlert = actual > 80 || (pred !== null && pred > 80);
 
       return { id: t, actual, pred, diff, isRising, isFalling, isAlert };
     });
@@ -287,7 +289,7 @@ export default function AiForecastPanel() {
               <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: 3 }}>
                 <span style={{ fontSize: 6, fontWeight: 700, color: '#93C5FD', transform: 'scale(0.8)', transformOrigin: 'left' }}>DỰ</span>
                 <span style={{ fontSize: 11, fontWeight: 900, color: '#93C5FD', lineHeight: 1 }}>
-                  {m.pred.toFixed(1)}°
+                  {m.pred !== null ? `${m.pred.toFixed(1)}°` : '--'}
                 </span>
               </div>
             </div>

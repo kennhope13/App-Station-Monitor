@@ -1,0 +1,39 @@
+/* =================================================================
+   silver.css - Professional Silver & Corporate Blue
+   Tông màu sáng xám kim loại, chuyên nghiệp và tinh tế.
+   ================================================================= */
+
+.theme-silver {
+  --admin-bg: #e2e8f0;         /* Light Silver / Slate */
+  --admin-panel: #f8fafc;      /* Near white panel */
+  --admin-border: #cbd5e1;     /* Slate border */
+  --admin-border-light: rgba(0, 0, 0, 0.08); 
+  --admin-text: #1e293b;       /* Slate-900 text */
+  --admin-text-muted: #64748b; /* Slate-500 */
+  --admin-accent: #0f172a;     /* Deep Navy Accent */
+  --admin-success: #059669;
+  --admin-warning: #d97706;
+  --admin-danger: #dc2626;
+  --admin-hover: rgba(15, 23, 42, 0.05);
+  --admin-overlay: rgba(226, 232, 240, 0.96);
+  --admin-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  --admin-card-bg: #ffffff;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #ffffff;
+  --admin-btn-secondary-bg: #cbd5e1;
+  --admin-btn-secondary-border: #94a3b8;
+  --admin-btn-secondary-text: #0f172a;
+  --admin-btn-secondary-hover: #94a3b8;
+
+  --admin-info-bg: rgba(15, 23, 42, 0.06);
+  --admin-info-border: rgba(15, 23, 42, 0.2);
+  --admin-info-text: #0f172a;
+
+  /* Layering */
+  --admin-layer-1: rgba(0,0,0,.03);
+  --admin-layer-2: rgba(0,0,0,.06);
+  --admin-layer-3: rgba(0,0,0,.08);
+  --admin-layer-4: rgba(15, 23, 42, .12);
+  --admin-surface-btn: #cbd5e1;
+}

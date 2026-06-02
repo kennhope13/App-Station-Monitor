@@ -23,17 +23,23 @@ export default function ReportsPage() {
   }, []);
 
   return (
-    <div className="alerts-history-page" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 8, background: 'var(--admin-bg)', boxSizing: 'border-box', gap: 8 }}>
+    <div className="admin-page-container">
       {/* TOOLBAR & TAB BAR */}
       <div className="page-toolbar-row">
         <div className="page-title-cell">
           <h2>BÁO CÁO</h2>
         </div>
         <div className="page-toolbar-group">
-          <button onClick={() => setActiveTab('export')} className={`btn-industrial${activeTab === 'export' ? ' btn-primary' : ''}`} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+          <button 
+            onClick={() => setActiveTab('export')} 
+            className={`btn-industrial ${activeTab === 'export' ? 'btn-primary' : ''}`} 
+          >
             Xuất dữ liệu
           </button>
-          <button onClick={() => setActiveTab('report')} className={`btn-industrial${activeTab === 'report' ? ' btn-primary' : ''}`} style={{ height: 34, padding: '0 16px', fontSize: '.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.5px' }}>
+          <button 
+            onClick={() => setActiveTab('report')} 
+            className={`btn-industrial ${activeTab === 'report' ? 'btn-primary' : ''}`} 
+          >
             Báo cáo phân tích
           </button>
         </div>

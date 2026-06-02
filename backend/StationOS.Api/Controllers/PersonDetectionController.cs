@@ -30,27 +30,31 @@ public class PersonDetectionController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<PersonDetectionController> _logger;
     private readonly string _rootPath;
+    private readonly Microsoft.Extensions.DependencyInjection.IServiceScopeFactory _scopeFactory;
 
     public PersonDetectionController(
         AppDbContext db,
         IRealtimeNotifier notifier,
         IWebHostEnvironment env,
-        ILogger<PersonDetectionController> logger)
+        ILogger<PersonDetectionController> logger,
+        Microsoft.Extensions.DependencyInjection.IServiceScopeFactory scopeFactory)
     {
         _db = db;
         _notifier = notifier;
         _env = env;
         _logger = logger;
+        _scopeFactory = scopeFactory;
         _rootPath = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
     }
 
     /// <summary>Nhận webhook sự kiện phát hiện người từ thiết bị Jetson Orin Nano. Lưu ảnh, tạo Alert, DetectionEvent và đẩy thông báo realtime qua SignalR.</summary>
     /// <param name="image">Ảnh chụp màn hình từ camera tại thời điểm phát hiện (multipart/form-data, tùy chọn).</param>
-    /// <param name="metadata">JSON metadata: timestamp, camera_ip, person_count, boxes (multipart/form-data).</param>
+    /// <param name="video">Video clip sự kiện (multipart/form-data, tùy chọn).</param>
+    /// <param name="metadata">JSON metadata: timestamp, camera_ip, person_count, alert_type, boxes (multipart/form-data).</param>
     /// <returns>Thông báo thành công kèm alertId, hoặc lỗi nếu metadata không hợp lệ.</returns>
     [HttpPost]
     [AllowAnonymous]
-    public async Task<IActionResult> Receive([FromForm] IFormFile? image, [FromForm] string? metadata)
+    public async Task<IActionResult> Receive([FromForm] IFormFile? image, [FromForm] IFormFile? video, [FromForm] string? metadata)
     {
         _logger.LogInformation("[PersonDetection] Nhận request webhook từ Jetson Orin Nano");
 
@@ -79,7 +83,96 @@ public class PersonDetectionController : ControllerBase
 
         // 1. Phân tích IP camera và thời gian
         var camIp = metadataDto.Camera_Ip;
-        _logger.LogInformation("[PersonDetection] Camera IP: {ip}, Số lượng người: {count}", camIp, metadataDto.Person_Count);
+        var alertType = metadataDto.Alert_Type ?? "person_detected";
+        _logger.LogInformation("[PersonDetection] Camera IP: {ip}, Loại sự kiện: {type}", camIp, alertType);
+
+        // 2. Xử lý tải lên Video (Cấu trúc 2)
+        if (alertType == "person_detection_video")
+        {
+            if (video == null || video.Length == 0)
+            {
+                _logger.LogWarning("[PersonDetection] Thiếu file video trong request.");
+                return BadRequest("Missing video file");
+            }
+
+            // Lưu video tạm
+            string videosDir = Path.Combine(_rootPath, "media", "videos");
+            if (!Directory.Exists(videosDir)) Directory.CreateDirectory(videosDir);
+
+            var tempFname = $"{Guid.NewGuid()}_temp_{Path.GetFileName(video.FileName)}";
+            var tempPath = Path.Combine(videosDir, tempFname);
+
+            using (var stream = new FileStream(tempPath, FileMode.Create))
+            {
+                await video.CopyToAsync(stream);
+            }
+
+            // Chuyển mã (Transcode) sang H.264 để trình duyệt có thể đọc được
+            var fname = $"{Guid.NewGuid()}_h264.mp4";
+            var fullPath = Path.Combine(videosDir, fname);
+            
+            try 
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = $"-y -i \"{tempPath}\" -c:v libx264 -preset fast -crf 28 -c:a aac -b:a 128k \"{fullPath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process != null)
+                {
+                    await process.WaitForExitAsync();
+                }
+                
+                // Xóa file tạm
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[PersonDetection] Lỗi khi transcode video sang H.264. Bỏ qua transcode.");
+                // Fallback: Nếu ffmpeg lỗi, dùng luôn file gốc
+                if (System.IO.File.Exists(tempPath)) System.IO.File.Move(tempPath, fullPath);
+            }
+
+            var videoUrl = $"/media/videos/{fname}";
+            _logger.LogInformation("[PersonDetection] Đã lưu và xử lý video thành công: {path}", fullPath);
+
+            // Tìm camera
+            var cam = await FindCameraAsync(camIp);
+            if (cam != null)
+            {
+                // Tìm Alert "open" gần nhất của camera này để gắn video vào
+                var latestAlert = await _db.Alerts
+                    .Where(a => a.DeviceId == cam.Id && a.Status == "open" && a.Source == "ai_detection")
+                    .OrderByDescending(a => a.TriggeredAt)
+                    .FirstOrDefaultAsync();
+
+                if (latestAlert != null)
+                {
+                    latestAlert.VideoUrl = videoUrl;
+                    await _db.SaveChangesAsync();
+
+                    // Đánh tín hiệu để giao diện biết có Video và hiện nút Play (Dùng AlertUpdated để cập nhật alert đã tồn tại)
+                    await _notifier.SendAlertUpdatedAsync(new { id = latestAlert.Id, videoUrl });
+                    _logger.LogInformation("[PersonDetection] Đã ghim video vào Alert {alertId}", latestAlert.Id);
+                }
+                else
+                {
+                     _logger.LogWarning("[PersonDetection] Không tìm thấy Alert mở gần nhất để ghim video cho camera {ip}", camIp);
+                }
+            }
+            return Ok(new { success = true, message = "Successfully saved event video" });
+        }
+
+        // 3. Xử lý báo động tức thì (Cấu trúc 1)
+        if (alertType != "person_detected")
+        {
+            return BadRequest($"Unknown alert_type: {alertType}");
+        }
 
         DateTime detectedAt = DateTime.UtcNow;
         if (DateTime.TryParseExact(metadataDto.Timestamp, "yyyy-MM-dd HH:mm:ss",
@@ -93,7 +186,6 @@ public class PersonDetectionController : ControllerBase
             detectedAt = dt2.ToUniversalTime();
         }
 
-        // 2. Tìm camera và Station tương ứng
         var device = await FindCameraAsync(camIp);
         var stationId = device?.StationId ?? await FirstStationIdAsync();
 
@@ -115,8 +207,7 @@ public class PersonDetectionController : ControllerBase
             return StatusCode(500, new { error = "Không tìm thấy camera hợp lệ để lưu sự kiện" });
         }
 
-        // 3. Đảm bảo thư mục lưu trữ tồn tại và lưu ảnh
-        // ... (phần lưu ảnh giữ nguyên)
+        // Đảm bảo thư mục lưu trữ tồn tại và lưu ảnh
         string mediaRootDir = Path.Combine(_rootPath, "media");
         string detDir = Path.Combine(mediaRootDir, "detections");
         if (!Directory.Exists(detDir))
@@ -143,7 +234,7 @@ public class PersonDetectionController : ControllerBase
             _logger.LogWarning("[PersonDetection] Request không chứa file ảnh hợp lệ");
         }
 
-        // 4. Tạo cảnh báo (Alert)
+        // Tạo cảnh báo (Alert)
         var message = $"🚨 Phát hiện {metadataDto.Person_Count} người xâm nhập tại khu vực camera {(device?.Name ?? camIp)}!";
         var alert = new Alert
         {
@@ -169,7 +260,7 @@ public class PersonDetectionController : ControllerBase
             ChangedAt = DateTime.UtcNow
         });
 
-        // 5. Tạo DetectionEvent
+        // Tạo DetectionEvent
         var confidence = metadataDto.Boxes.Count > 0 ? metadataDto.Boxes.Max(b => b.Score) : 0f;
         var evt = new DetectionEvent
         {
@@ -196,7 +287,7 @@ public class PersonDetectionController : ControllerBase
 
         _logger.LogInformation("[PersonDetection] Đã lưu sự kiện thành công vào DB (AlertId: {alertId})", alert.Id);
 
-        // 6. Gửi tín hiệu Realtime qua SignalR
+        // Gửi tín hiệu Realtime qua SignalR
         try
         {
             var pushPayload = new

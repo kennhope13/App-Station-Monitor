@@ -98,7 +98,7 @@ export default function ThermalAnalyticsTab() {
             <div style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', fontFamily: 'Consolas,monospace' }}>CAMERA ĐANG CHỌN</div>
             <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-text)', marginTop: 4 }}>Cam Nhiệt Tủ Hạ Thế (TC-01)</div>
           </div>
-          <button style={{ background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', color: 'var(--admin-text)', padding: '6px 12px', borderRadius: 4, fontSize: '.7rem', cursor: 'pointer', fontFamily: 'Consolas,monospace' }}>
+          <button className="btn-industrial">
             ĐỔI CAMERA ▾
           </button>
         </div>

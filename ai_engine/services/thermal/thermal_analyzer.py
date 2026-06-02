@@ -25,8 +25,8 @@ class ThermalPoint:
     id:          str           # "P1", "P2", ...
     x:           float         # tỉ lệ 0.0-1.0 theo chiều ngang frame
     y:           float         # tỉ lệ 0.0-1.0 theo chiều dọc frame
-    pre_alarm:   float = 50.0  # Ngưỡng cảnh báo sớm (°C)
-    alarm:       float = 70.0  # Ngưỡng nguy hiểm (°C)
+    pre_alarm:   float = 0.0   # 0.0 = Vô hiệu hóa
+    alarm:       float = 0.0
     label:       str = ""      # Nhãn hiển thị (tự sinh từ id nếu bỏ trống)
 
     def __post_init__(self):
@@ -39,8 +39,8 @@ class ThermalZone:
     """Một vùng (polygon) đo nhiệt độ trên camera."""
     id:          str
     polygon:     list[list[float]]  # Danh sách điểm [[x,y], [x,y], ...] (0.0-1.0)
-    pre_alarm:   float = 50.0
-    alarm:       float = 70.0
+    pre_alarm:   float = 0.0
+    alarm:       float = 0.0
     label:       str = ""
 
     def __post_init__(self):
@@ -82,6 +82,9 @@ class ThermalAnalyzer:
         """Cập nhật cấu hình các điểm và vùng đo nhiệt."""
         self.points = points
         self.zones = zones
+        # Ép gửi dữ liệu sang Jetson và đồng bộ lịch sử ngay lập tức khi có thay đổi cấu hình
+        self._last_jetson_push = 0.0
+        self._last_history_save = 0.0
 
     # ── Main process (gọi định kỳ từ scheduler) ──────────────
 
@@ -130,100 +133,55 @@ class ThermalAnalyzer:
                     "x": float(max_x / w),
                     "y": float(max_y / h)
                 }
-                # logger.debug("[Thermal] Zone %s: max=%.1f", zn.label, max_val)
 
-        if zone_results:
-            logger.info("[Thermal] Processed %d zones for device %s", len(zone_results), self.device_id)
-
-        # Lưu cache nhiệt độ thời gian thực để các module khác (ví dụ: ExternalPusher) có thể sử dụng
+        # Lưu cache nhiệt độ thời gian thực
         self.last_point_temps = point_temps
         self.last_zone_results = zone_results
 
         # 4. Gửi nhiệt độ thực tế về backend
         await self._ingest_measurements(point_temps, zone_results)
 
-        # 4.3 Tự động gửi nhiệt độ thực tế sang Jetson đối tác mỗi 30 giây (Theo yêu cầu đồng bộ)
-        import time
-        now = time.time()
-        if now - self._last_jetson_push >= 30.0:
-            self._last_jetson_push = now
-            try:
-                from datetime import datetime
-                import requests
-                
-                jetson_points = []
-                for pt in self.points:
-                    temp = point_temps.get(pt.id)
-                    if temp is not None:
-                        jetson_points.append({
-                            "id": pt.id,  # Đúng ID gốc của điểm đo từ camera (ví dụ P1, P2...)
-                            "temperature": temp
-                        })
-                
-                if jetson_points:
-                    jetson_payload = {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "points": jetson_points
-                    }
-                    JETSON_DATA_URL = "http://192.168.10.104:8080/api/thermal-data"
-                    try:
-                        requests.post(JETSON_DATA_URL, json=jetson_payload, timeout=3.0)
-                        logger.info("[ThermalAnalyzer] Đã đẩy nhiệt độ thực tế sang Jetson đối tác (%s) thành công (30s/lần).", JETSON_DATA_URL)
-                    except Exception as ex_partner:
-                        logger.warning("[ThermalAnalyzer] Không thể đẩy nhiệt độ sang Jetson đối tác (%s): %s", JETSON_DATA_URL, ex_partner)
-            except Exception as ex:
-                logger.error("[ThermalAnalyzer] Lỗi khi chuẩn bị dữ liệu gửi Jetson đối tác: %s", ex)
-
-        # 4.5 Tự động đẩy dữ liệu sang pipeline dự báo AI cục bộ (mỗi 5 phút = 300 giây)
-        if now - self._last_history_save >= 300.0:
-            self._last_history_save = now
-            try:
-                from services.thermal.thermal_forecaster import process_thermal_payload
-                from datetime import datetime
-                
-                points_payload = []
-                # Points
-                for pt in self.points:
-                    temp = point_temps.get(pt.id)
-                    if temp is not None:
-                        points_payload.append({
-                            "id": pt.label or pt.id,
-                            "temperature": temp
-                        })
-                # Zones
-                for zn in self.zones:
-                    res = zone_results.get(zn.id)
-                    if res is not None:
-                        points_payload.append({
-                            "id": zn.label or zn.id,
-                            "temperature": res["max"]
-                        })
-                
-                if points_payload:
-                    payload = {
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "points": points_payload
-                    }
-                    process_thermal_payload(payload)
-                    logger.info("[ThermalAnalyzer] Tự động đồng bộ dữ liệu vào pipeline Dự báo AI cục bộ (Mỗi 5 phút).")
-                    
-                    # Tự động đẩy trực tiếp sang Jetson đối tác (192.168.10.104) để dự phòng
-                    import os
+        # 4.3 Đẩy dữ liệu sang Jetson đối tác mỗi 5 phút (Chỉ lấy camera nhiệt chính làm chuẩn)
+        if self.stream_id == "cam_192_168_10_152_thermal":
+            import time
+            now = time.time()
+            if now - self._last_jetson_push >= 300.0:
+                self._last_jetson_push = now  # Cập nhật ngay lập tức để tránh retry liên tục (retry storm) khi bị timeout hoặc lỗi kết nối
+                try:
+                    from datetime import datetime
                     import requests
-                    EXTERNAL_API_URL = os.getenv("EXTERNAL_API_URL", "http://192.168.10.104:8080/config/thermal")
-                    try:
-                        requests.post(EXTERNAL_API_URL, json=payload, timeout=3.0)
-                        logger.info("[ThermalAnalyzer] Đã đẩy dữ liệu ảnh nhiệt sang Jetson đối tác (%s) thành công.", EXTERNAL_API_URL)
-                    except Exception as ex_partner:
-                        logger.warning("[ThermalAnalyzer] Không thể đẩy dữ liệu sang Jetson đối tác (%s): %s", EXTERNAL_API_URL, ex_partner)
-            except Exception as ex:
-                logger.error("[ThermalAnalyzer] Lỗi tự động đồng bộ Dự báo AI cục bộ: %s", ex)
+                    # Hợp nhất cả điểm đo (points) và vùng đo (zones) sử dụng tên nhãn hiển thị (label)
+                    jetson_points = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
+                    jetson_points += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
+                    
+                    if jetson_points:
+                        payload = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": jetson_points}
+                        # Đẩy đồng thời đến cả hai Endpoint của Jetson để tương thích hoàn toàn
+                        logger.info("[ThermalAnalyzer] Sending unified master sync packet (points & zones) to Jetson partner at 192.168.10.104:8080...")
+                        r1 = requests.post("http://192.168.10.104:8080/api/thermal-data", json=payload, timeout=5.0)
+                        r2 = requests.post("http://192.168.10.104:8080/config/thermal", json=payload, timeout=5.0)
+                        logger.info("[ThermalAnalyzer] Jetson push status - /api/thermal-data: %d, /config/thermal: %d", r1.status_code, r2.status_code)
+                except Exception as ex:
+                    logger.error("[ThermalAnalyzer] Error pushing unified data to Jetson: %s", ex)
 
-        # 5. Annotate và Serve MJPEG
+
+            # 4.5 Pipeline dự báo AI cục bộ (mỗi 5 phút = 300 giây)
+            if now - self._last_history_save >= 300.0:
+                try:
+                    from services.thermal.thermal_forecaster import process_thermal_payload
+                    from datetime import datetime
+                    p_payload = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
+                    p_payload += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
+                    if p_payload:
+                        process_thermal_payload({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": p_payload})
+                        self._last_history_save = now # Chỉ cập nhật khi đã lưu thành công
+                except Exception: pass
+
+
+        # 5. Serve MJPEG
         frame = self._reader.latest_frame if self._reader else None
         if frame is not None:
-            annotated = self._annotate(frame, point_temps, zone_results)
-            _annotated_frames[self.stream_id] = annotated
+            _annotated_frames[self.stream_id] = self._annotate(frame, point_temps, zone_results)
 
         # 6. Check alert
         await self._check_and_alert(point_temps, zone_results)
@@ -231,222 +189,120 @@ class ThermalAnalyzer:
     async def _ingest_measurements(self, point_temps: dict[str, float], zone_results: dict[str, dict]) -> None:
         """Gửi các giá trị nhiệt độ tức thời về backend."""
         payload = []
-        # Points
         for pt in self.points:
             temp = point_temps.get(pt.id)
             if temp is None: continue
-            payload.append({
-                "deviceId": self.device_id,
-                "pointId": pt.id,
-                "value": temp,
-                "unit": "°C",
-                "tx": pt.x, "ty": pt.y
-            })
-        
-        # Zones (chỉ gửi giá trị Max)
+            payload.append({"deviceId": self.device_id, "pointId": pt.id, "value": temp, "unit": "°C", "tx": pt.x, "ty": pt.y})
         for zn in self.zones:
             res = zone_results.get(zn.id)
             if not res: continue
-            payload.append({
-                "deviceId": self.device_id,
-                "pointId": zn.id,
-                "value": res["max"],
-                "unit": "°C",
-                "tx": res["x"], "ty": res["y"],
-                "isZone": True
-            })
-
-        if not payload:
-            return
-        
+            payload.append({"deviceId": self.device_id, "pointId": zn.id, "value": res["max"], "unit": "°C", "tx": res["x"], "ty": res["y"], "isZone": True})
+        if not payload: return
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                await client.post(
-                    f"{cfg.backend_url}/api/v1/measurements/ingest",
-                    json=payload,
-                    headers={"Content-Type": "application/json"}
-                )
-        except Exception:
-            pass
-
-    # ── Đọc nhiệt độ từ Hikvision ISAPI ─────────────────────
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(f"{cfg.backend_url}/api/v1/measurements/ingest", json=payload)
+        except Exception: pass
 
     async def _read_thermal_matrix(self) -> tuple[np.ndarray, int, int] | None:
-        """Trả về (floats_matrix, width, height)."""
-        if not self.points and not self.zones:
-            return None
-
+        if not self.points and not self.zones: return None
         now = time.time()
-        if now < self._auth_cooldown_until:
-            return None
-
+        if now < self._auth_cooldown_until: return None
         async with httpx.AsyncClient(timeout=5.0) as client:
             for ch in [2, 1]:
                 url = f"http://{self.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/jpegPicWithAppendData?format=json"
                 try:
-                    resp = await client.get(
-                        url,
-                        auth=httpx.DigestAuth(self.username, self.password),
-                    )
+                    resp = await client.get(url, auth=httpx.DigestAuth(self.username, self.password))
                     if resp.status_code == 401:
                         self._consecutive_auth_failures += 1
-                        if self._consecutive_auth_failures >= 3:
-                            self._auth_cooldown_until = now + 300
+                        if self._consecutive_auth_failures >= 3: self._auth_cooldown_until = now + 300
                         break
-
                     if resp.status_code == 200:
                         self._consecutive_auth_failures = 0
                         content = resp.content
                         boundary = b'--boundary'
                         ct = resp.headers.get("content-type", "")
-                        if "boundary=" in ct:
-                            b_str = ct.split("boundary=")[-1].strip()
-                            boundary = f"--{b_str}".encode('ascii')
-
+                        if "boundary=" in ct: boundary = f"--{ct.split('boundary=')[-1].strip()}".encode('ascii')
                         parts = content.split(boundary)
                         w, h, data_len = 256, 192, 196608
                         for part in parts:
                             if b'application/json' in part:
-                                header_end = part.find(b'\r\n\r\n')
-                                if header_end != -1:
+                                h_end = part.find(b'\r\n\r\n')
+                                if h_end != -1:
                                     import json
-                                    json_data = json.loads(part[header_end+4:].decode('utf-8', errors='ignore').strip())
-                                    info = json_data.get("JpegPictureWithAppendData", {})
-                                    w = info.get("jpegPicWidth", 256)
-                                    h = info.get("jpegPicHeight", 192)
+                                    info = json.loads(part[h_end+4:].decode('utf-8', errors='ignore').strip()).get("JpegPictureWithAppendData", {})
+                                    w, h = info.get("jpegPicWidth", 256), info.get("jpegPicHeight", 192)
                                     data_len = info.get("p2pDataLen") or (w * h * 4)
-                                        
                         for part in parts:
                             if b'application/octet-stream' in part:
-                                header_end = part.find(b'\r\n\r\n')
-                                if header_end != -1:
-                                    matrix_bytes = part[header_end+4:][:data_len]
+                                h_end = part.find(b'\r\n\r\n')
+                                if h_end != -1:
+                                    matrix_bytes = part[h_end+4:][:data_len]
                                     if len(matrix_bytes) >= w * h * 4:
-                                        floats = np.frombuffer(matrix_bytes, dtype=np.float32)
-                                        return floats, w, h
+                                        return np.frombuffer(matrix_bytes, dtype=np.float32), w, h
                         break
-                except Exception:
-                    pass
+                except Exception: pass
         return None
 
-    # ── Vẽ annotations lên frame ─────────────────────────────
-
     def _annotate(self, frame: np.ndarray, point_temps: dict[str, float], zone_results: dict[str, dict]) -> np.ndarray:
-        """Vẽ points + zones + nhãn nhiệt độ."""
         out = frame.copy()
         h, w = out.shape[:2]
         font = cv2.FONT_HERSHEY_SIMPLEX
-
-        # 1. Vẽ Zones
         for zn in self.zones:
             res = zone_results.get(zn.id)
             if not res: continue
-
-            poly_pts = np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)
             temp = res["max"]
-
-            # Màu theo mức nhiệt độ
-            if temp >= zn.alarm: color = (0, 0, 255)
-            elif temp >= zn.pre_alarm: color = (0, 165, 255)
-            else: color = (0, 255, 0)
-
-            # Vẽ polygon rỗng + điểm nóng nhất
-            cv2.polylines(out, [poly_pts], True, color, 1)
-            
-            mx, my = int(res["x"]*w), int(res["y"]*h)
-            cv2.drawMarker(out, (mx, my), color, cv2.MARKER_CROSS, 10, 1)
-
-            # Nhãn tại đỉnh đầu tiên của polygon
-            lx, ly = poly_pts[0]
-            label = f"{zn.label}: {temp:.1f}C"
-            cv2.putText(out, label, (lx, ly - 5), font, 0.45, color, 1, cv2.LINE_AA)
-
-        # 2. Vẽ Points (giữ nguyên logic cũ)
+            color = (0, 0, 255) if (zn.alarm > 0 and temp >= zn.alarm) else (0, 165, 255) if (zn.pre_alarm > 0 and temp >= zn.pre_alarm) else (0, 255, 0)
+            cv2.polylines(out, [np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)], True, color, 1)
+            cv2.drawMarker(out, (int(res["x"]*w), int(res["y"]*h)), color, cv2.MARKER_CROSS, 10, 1)
+            cv2.putText(out, f"{zn.label}: {temp:.1f}C", (int(zn.polygon[0][0]*w), int(zn.polygon[0][1]*h) - 5), font, 0.45, color, 1, cv2.LINE_AA)
         for pt in self.points:
             temp = point_temps.get(pt.id)
             if temp is None: continue
-
+            color = (0, 0, 255) if (pt.alarm > 0 and temp >= pt.alarm) else (0, 165, 255) if (pt.pre_alarm > 0 and temp >= pt.pre_alarm) else (0, 255, 0)
             cx, cy = int(pt.x * w), int(pt.y * h)
-            if temp >= pt.alarm: color = (0, 0, 255)
-            elif temp >= pt.pre_alarm: color = (0, 165, 255)
-            else: color = (0, 255, 0)
-
-            cv2.circle(out, (cx, cy), 12, color, 2)
-            cv2.circle(out, (cx, cy), 3,  color, -1)
+            cv2.drawMarker(out, (cx, cy), color, cv2.MARKER_CROSS, 12, 2)
             cv2.putText(out, pt.label, (cx + 15, cy - 4), font, 0.45, color, 1, cv2.LINE_AA)
             cv2.putText(out, f"{temp:.1f}C", (cx + 15, cy + 12), font, 0.5, color, 1, cv2.LINE_AA)
-
         return out
-
-    # ── Gửi alert về backend ─────────────────────────────────
 
     async def _check_and_alert(self, point_temps: dict[str, float], zone_results: dict[str, dict]) -> None:
         now = time.time()
-        
-        # Check Points
         for pt in self.points:
             temp = point_temps.get(pt.id)
-            if temp is None: continue
-            level = "alarm" if temp >= pt.alarm else "pre_alarm" if temp >= pt.pre_alarm else None
+            if temp is None or temp > 500.0: continue
+            level = "alarm" if (pt.alarm > 0 and temp >= pt.alarm) else "pre_alarm" if (pt.pre_alarm > 0 and temp >= pt.pre_alarm) else None
             if level:
-                cooldown_key = f"{pt.id}:{level}"
-                if now - self._last_alert.get(cooldown_key, 0) >= cfg.alert_cooldown:
-                    self._last_alert[cooldown_key] = now
+                key = f"{pt.id}:{level}"
+                if now - self._last_alert.get(key, 0) >= cfg.alert_cooldown:
+                    self._last_alert[key] = now
+                    logger.warning("[ThermalAlert] %s trigger for %s: %.1f", level, pt.label, temp)
                     await self._send_webhook(pt.label, self.camera_ip, temp, level)
-
-        # Check Zones
         for zn in self.zones:
             res = zone_results.get(zn.id)
-            if not res: continue
+            if not res or res["max"] > 500.0: continue
             temp = res["max"]
-            level = "alarm" if temp >= zn.alarm else "pre_alarm" if temp >= zn.pre_alarm else None
+            level = "alarm" if (zn.alarm > 0 and temp >= zn.alarm) else "pre_alarm" if (zn.pre_alarm > 0 and temp >= zn.pre_alarm) else None
             if level:
-                cooldown_key = f"{zn.id}:{level}"
-                if now - self._last_alert.get(cooldown_key, 0) >= cfg.alert_cooldown:
-                    self._last_alert[cooldown_key] = now
+                key = f"{zn.id}:{level}"
+                if now - self._last_alert.get(key, 0) >= cfg.alert_cooldown:
+                    self._last_alert[key] = now
+                    logger.warning("[ThermalAlert] %s trigger for zone %s: %.1f", level, zn.label, temp)
                     await self._send_webhook(zn.label, self.camera_ip, temp, level)
 
     async def _send_webhook(self, label: str, ip: str, temp: float, level: str) -> None:
         event_type = "temperaturealarm" if level == "alarm" else "thermalexception"
-        xml = (
-            f'<EventNotificationAlert version="2.0">'
-            f'<ipAddress>{ip}</ipAddress>'
-            f'<eventType>{event_type}</eventType>'
-            f'<eventState>active</eventState>'
-            f'<channelID>2</channelID>'
-            f'<dateTime>{_now_iso()}</dateTime>'
-            f'<maxTemp>{temp:.2f}</maxTemp>'
-            f'<eventDescription>Vùng/Điểm {label}: {temp:.1f}°C</eventDescription>'
-            f'</EventNotificationAlert>'
-        )
-
-        # Đính kèm ảnh snapshot nếu có
+        xml = f'<EventNotificationAlert version="2.0"><ipAddress>{ip}</ipAddress><eventType>{event_type}</eventType><eventState>active</eventState><channelID>2</channelID><dateTime>{_now_iso()}</dateTime><maxTemp>{temp:.2f}</maxTemp><eventDescription>Vùng/Điểm {label}: {temp:.1f}°C</eventDescription></EventNotificationAlert>'
         files = {"event": (None, xml, "application/xml")}
         frame = get_annotated_frame(self.stream_id)
-        if frame is None and self._reader:
-            frame = self._reader.latest_frame
-        
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 if frame is not None:
-                    _, buffer = cv2.imencode(".jpg", frame)
-                    files["snapshot"] = ("snapshot.jpg", buffer.tobytes(), "image/jpeg")
+                    _, buf = cv2.imencode(".jpg", frame); files["snapshot"] = ("snapshot.jpg", buf.tobytes(), "image/jpeg")
                     await client.post(f"{cfg.backend_url}/api/v1/camera-webhook", files=files)
                 else:
                     await client.post(f"{cfg.backend_url}/api/v1/camera-webhook", content=xml, headers={"Content-Type": "application/xml"})
-        except Exception as ex:
-            logger.warning("[Thermal] Webhook failed: %s", ex)
+        except Exception: pass
 
-
-# ── Shared annotated frame store ─────────────────────────────
-# Dùng để MJPEG endpoint lấy frame đã có annotations
 _annotated_frames: dict[str, np.ndarray] = {}
-
-
-def get_annotated_frame(stream_id: str) -> np.ndarray | None:
-    return _annotated_frames.get(stream_id)
-
-
-def _now_iso() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def get_annotated_frame(stream_id: str) -> np.ndarray | None: return _annotated_frames.get(stream_id)
+def _now_iso() -> str: from datetime import datetime, timezone; return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

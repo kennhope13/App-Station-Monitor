@@ -26,7 +26,7 @@
 .license-header h1 {
   font-size: 22px;
   font-weight: 800;
-  color: #fff;
+  color: var(--admin-text);
   margin: 0 0 4px;
   letter-spacing: .5px;
 }
@@ -44,7 +44,7 @@
   margin-bottom: 20px;
   border: 1px solid var(--admin-border-light);
 }
-.status-box.valid { border-color: rgba(68,255,136,0.25); }
+.status-box.valid { border-color: var(--admin-success); }
 .status-box.expired { border-color: rgba(239,68,68,0.25); }
 
 .status-row {
@@ -82,7 +82,7 @@
   font-size: 11px;
   font-weight: 800;
 }
-.status-badge.valid   { background: rgba(68,255,136,0.12); color: #44ff88; border: 1px solid rgba(68,255,136,0.25); }
+.status-badge.valid   { background: var(--admin-tag-success-bg); color: var(--admin-tag-success-text); border: 1px solid var(--admin-success); }
 .status-badge.expired { background: rgba(239,68,68,0.12);  color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
 .status-badge.demo    { background: rgba(251,191,36,0.12);  color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
 
@@ -90,7 +90,7 @@
 .license-activate-section h3 {
   font-size: 14px;
   font-weight: 800;
-  color: #fff;
+  color: var(--admin-text);
   margin: 0 0 6px;
   text-transform: uppercase;
 }
@@ -105,7 +105,7 @@
   border-radius: 0px;
   font-family: monospace;
   font-size: 11px;
-  color: #44ff88;
+  color: var(--admin-accent);
 }
 .license-input-row {
   display: flex;
@@ -126,7 +126,7 @@
 }
 .license-input:focus {
   outline: none;
-  border-color: #44ff88;
+  border-color: var(--admin-accent);
 }
 .btn-license-activate {
   padding: 10px 18px;
@@ -141,7 +141,7 @@
   transition: background 0.2s;
   text-transform: uppercase;
 }
-.btn-license-activate:hover { background: #0369a1; border-color: #44ff88; }
+.btn-license-activate:hover { background: #0369a1; border-color: var(--admin-accent); }
 .btn-license-activate:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .license-error {
@@ -154,9 +154,9 @@
   margin-bottom: 10px;
 }
 .license-success {
-  background: rgba(68,255,136,0.08);
-  border: 1px solid rgba(68,255,136,0.25);
-  color: #44ff88;
+  background: var(--admin-tag-success-bg);
+  border: 1px solid var(--admin-success);
+  color: var(--admin-tag-success-text);
   padding: 8px 12px;
   border-radius: 0px;
   font-size: 12.5px;

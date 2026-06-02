@@ -201,8 +201,17 @@ public class CredentialEncryptionService
                     p.Name.Equals("api_key",  StringComparison.OrdinalIgnoreCase) ||
                     p.Name.Equals("secret",   StringComparison.OrdinalIgnoreCase))
                 {
-                    var val = p.Value.GetString();
-                    dict[p.Name] = string.IsNullOrEmpty(val) ? "" : "***";
+                    var encryptedVal = p.Value.GetString();
+                    if (string.IsNullOrEmpty(encryptedVal)) 
+                    {
+                        dict[p.Name] = "";
+                    }
+                    else 
+                    {
+                        // Decrypt to get the actual length, then mask it
+                        var decrypted = Decrypt(encryptedVal);
+                        dict[p.Name] = new string('*', decrypted.Length);
+                    }
                 }
                 else
                 {

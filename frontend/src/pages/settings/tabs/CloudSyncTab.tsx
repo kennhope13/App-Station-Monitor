@@ -91,9 +91,9 @@ export default function CloudSyncTab() {
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <button className="btn-industrial btn-primary" onClick={handleTriggerSync} disabled={triggeringSync}>
-          {triggeringSync ? 'Đang đồng bộ...' : '⬆ Sync ngay'}
+          {triggeringSync ? 'ĐANG ĐỒNG BỘ...' : '⬆ SYNC NGAY'}
         </button>
-        <button className="btn-industrial" onClick={loadSyncStatus}>↻ Làm mới</button>
+        <button className="btn-industrial" onClick={loadSyncStatus}>↻ LÀM MỚI</button>
         {syncActionStatus && (
           <span style={{ fontSize: '.82rem', color: syncActionStatus.startsWith('Lỗi') ? 'var(--admin-danger)' : 'var(--admin-success)' }}>
             {syncActionStatus}

@@ -162,7 +162,7 @@ export default function MaintenancePage() {
 
         <div className="page-toolbar-group">
           {/* Filter tabs */}
-          <div className="page-toolbar-cell" style={{ gap: 0, padding: '0 4px' }}>
+          <div className="page-toolbar-cell" style={{ gap: 0, padding: '0 4px', height: 28 }}>
             <span className="page-cell-label" style={{ marginRight: 6 }}>LỌC:</span>
             {FILTERS.map(({ f, lbl }) => (
               <button
@@ -177,7 +177,7 @@ export default function MaintenancePage() {
                   fontSize: '.65rem',
                   padding: '2px 8px',
                   cursor: 'pointer',
-                  height: 22,
+                  height: 20,
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -187,19 +187,19 @@ export default function MaintenancePage() {
           </div>
 
           <button
-            className="btn-industrial btn-primary btn-sm"
-            style={{ height: 22, padding: '0 10px', fontSize: '.65rem' }}
+            className="btn-industrial btn-primary"
+            style={{ height: 32, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
             onClick={() => openModal()}
           >
-            + Tạo lịch mới
+            + TẠO LỊCH MỚI
           </button>
 
           <button
-            className="btn-industrial btn-sm"
-            style={{ height: 22, padding: '0 8px', fontSize: '.65rem' }}
+            className="btn-industrial"
+            style={{ height: 32, padding: '0 10px', fontSize: '.75rem', fontWeight: 700 }}
             onClick={() => loadData(stationId)}
           >
-            ↺ Làm mới
+            ↺ LÀM MỚI
           </button>
         </div>
       </div>

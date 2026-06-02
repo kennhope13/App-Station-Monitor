@@ -209,8 +209,8 @@ export default function ThermalConfigPage() {
     }
   };
 
-  if (loading) return <div style={{ padding: 20, color: '#fff' }}>Đang tải...</div>;
-  if (!device) return <div style={{ padding: 20, color: '#fff' }}>Không tìm thấy thiết bị</div>;
+  if (loading) return <div style={{ padding: 20, color: 'var(--admin-text)' }}>Đang tải...</div>;
+  if (!device) return <div style={{ padding: 20, color: 'var(--admin-text)' }}>Không tìm thấy thiết bị</div>;
 
   const cfg = device.config || {};
   
@@ -223,17 +223,17 @@ export default function ThermalConfigPage() {
   const streamUrl = streamSrc ? `${GO2RTC_URL}/api/stream.mp4?src=${encodeURIComponent(streamSrc)}` : '';
 
   return (
-    <div style={{ padding: '20px', maxWidth: 1200, margin: '0 auto', color: '#e2e8f0' }}>
+    <div style={{ padding: '20px', maxWidth: 1200, margin: '0 auto', color: 'var(--admin-text)' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
         <button onClick={() => navigate('/device-management')} className="btn-industrial" style={{ marginRight: 15 }}>← Trở lại</button>
         <h2 style={{ flex: 1, margin: 0, fontWeight: 800 }}>🌡️ CẤU HÌNH NHIỆT - {device.name}</h2>
         <button onClick={() => openEditor()} className="btn-industrial btn-primary">+ Thêm điểm</button>
       </div>
 
-      <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--admin-panel)', border: '1px solid var(--admin-border)', borderRadius: 10, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
-            <tr style={{ background: '#0b0f18', color: '#475569', fontSize: 11, textTransform: 'uppercase' }}>
+            <tr style={{ background: 'var(--admin-layer-2)', color: 'var(--admin-text-muted)', fontSize: 11, textTransform: 'uppercase' }}>
               <th style={{ padding: '12px 14px' }}>Tên điểm</th>
               <th style={{ padding: '12px 14px' }}>Thermal (Tx, Ty)</th>
               <th style={{ padding: '12px 14px' }}>Optical (Ox, Oy)</th>
@@ -243,12 +243,12 @@ export default function ThermalConfigPage() {
           </thead>
           <tbody>
             {points.length === 0 ? (
-              <tr><td colSpan={5} style={{ padding: 30, textAlign: 'center', color: '#64748b' }}>Chưa có điểm đo nào</td></tr>
+              <tr><td colSpan={5} style={{ padding: 30, textAlign: 'center', color: 'var(--admin-text-muted)' }}>Chưa có điểm đo nào</td></tr>
             ) : points.map(pt => (
-              <tr key={pt.id} style={{ borderTop: '1px solid #1e293b' }}>
+              <tr key={pt.id} style={{ borderTop: '1px solid var(--admin-border)' }}>
                 <td style={{ padding: '12px 14px', fontWeight: 'bold' }}>{pt.name}</td>
-                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12, color: '#94a3b8' }}>{pt.tx.toFixed(4)}, {pt.ty.toFixed(4)}</td>
-                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12, color: '#94a3b8' }}>{pt.ox.toFixed(4)}, {pt.oy.toFixed(4)}</td>
+                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12, color: 'var(--admin-text-muted)' }}>{pt.tx.toFixed(4)}, {pt.ty.toFixed(4)}</td>
+                <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12, color: 'var(--admin-text-muted)' }}>{pt.ox.toFixed(4)}, {pt.oy.toFixed(4)}</td>
                 <td style={{ padding: '12px 14px', fontSize: 13 }}>
                   <span style={{ color: '#fbbf24' }}>{pt.preAlarmThreshold}°C</span> / <span style={{ color: '#ef4444' }}>{pt.alarmThreshold}°C</span>
                 </td>
@@ -264,20 +264,20 @@ export default function ThermalConfigPage() {
 
       {isEditing && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#0d1117', border: '1px solid #1e293b', borderRadius: 12, width: 800, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between' }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>{editingId ? 'Chỉnh sửa điểm' : 'Thêm điểm mới'}</h3>
+          <div style={{ background: 'var(--admin-panel)', border: '1px solid var(--admin-border)', borderRadius: 12, width: 800, maxWidth: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0, fontSize: 16, color: 'var(--admin-text)' }}>{editingId ? 'Chỉnh sửa điểm' : 'Thêm điểm mới'}</h3>
             </div>
-            
+
             <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
               {/* Left Column - Picker */}
-              <div style={{ flex: 2, padding: 20, borderRight: '1px solid #1e293b', overflowY: 'auto' }}>
+              <div style={{ flex: 2, padding: 20, borderRight: '1px solid var(--admin-border)', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-                  <button onClick={() => setPickerMode('thermal')} className="btn-industrial" style={{ flex: 1, borderColor: pickerMode === 'thermal' ? '#3b82f6' : '#1e293b', color: pickerMode === 'thermal' ? '#3b82f6' : '#fff' }}>Thermal</button>
-                  <button onClick={() => setPickerMode('optical')} className="btn-industrial" style={{ flex: 1, borderColor: pickerMode === 'optical' ? '#3b82f6' : '#1e293b', color: pickerMode === 'optical' ? '#3b82f6' : '#fff' }}>Optical</button>
+                  <button onClick={() => setPickerMode('thermal')} className="btn-industrial" style={{ flex: 1, borderColor: pickerMode === 'thermal' ? 'var(--admin-accent)' : 'var(--admin-border)', color: pickerMode === 'thermal' ? 'var(--admin-accent)' : 'var(--admin-text)' }}>Thermal</button>
+                  <button onClick={() => setPickerMode('optical')} className="btn-industrial" style={{ flex: 1, borderColor: pickerMode === 'optical' ? 'var(--admin-accent)' : 'var(--admin-border)', color: pickerMode === 'optical' ? 'var(--admin-accent)' : 'var(--admin-text)' }}>Optical</button>
                 </div>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 12, color: '#94a3b8' }}>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 12, color: 'var(--admin-text-muted)' }}>
                   <label>Zoom: {zoomLevel}%</label>
                   <label>Opacity: {overlayOpacity}%</label>
                 </div>
@@ -286,7 +286,7 @@ export default function ThermalConfigPage() {
                   <input type="range" min="0" max="100" value={overlayOpacity} onChange={e => setOverlayOpacity(parseInt(e.target.value))} style={{ flex: 1 }} />
                 </div>
 
-                <div style={{ background: '#050a10', border: '1px solid #1e293b', borderRadius: 8, height: 400, overflow: 'auto', position: 'relative', cursor: 'crosshair' }} onWheel={handleWheel}>
+                <div style={{ background: '#000', border: '1px solid var(--admin-border)', borderRadius: 8, height: 400, overflow: 'auto', position: 'relative', cursor: 'crosshair' }} onWheel={handleWheel}>
                   <div ref={wrapperRef} onClick={handleImageClick} style={{ position: 'relative', width: `${zoomLevel}%`, transformOrigin: 'top left' }}>
                     {streamUrl ? (
                       <video src={streamUrl} autoPlay loop muted playsInline style={{ display: 'block', width: '100%', opacity: overlayOpacity / 100, pointerEvents: 'none' }} />
@@ -313,47 +313,47 @@ export default function ThermalConfigPage() {
               {/* Right Column - Form */}
               <div style={{ flex: 1, padding: 20, display: 'flex', flexDirection: 'column', gap: 15 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                  <label style={{ fontSize: 12, color: '#94a3b8' }}>Tên điểm</label>
-                  <input type="text" value={pointName} onChange={e => setPointName(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#fff', padding: 8, borderRadius: 6 }} placeholder="VD: Đầu cáp" />
+                  <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Tên điểm</label>
+                  <input type="text" value={pointName} onChange={e => setPointName(e.target.value)} className="form-input" placeholder="VD: Đầu cáp" />
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Tx</label>
-                    <input type="text" value={tx} onChange={e => setTx(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#fff', padding: 8, borderRadius: 6 }} />
+                    <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Tx</label>
+                    <input type="text" value={tx} onChange={e => setTx(e.target.value)} className="form-input" />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Ty</label>
-                    <input type="text" value={ty} onChange={e => setTy(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#fff', padding: 8, borderRadius: 6 }} />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Ox</label>
-                    <input type="text" value={ox} onChange={e => setOx(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#fff', padding: 8, borderRadius: 6 }} />
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Oy</label>
-                    <input type="text" value={oy} onChange={e => setOy(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#fff', padding: 8, borderRadius: 6 }} />
+                    <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Ty</label>
+                    <input type="text" value={ty} onChange={e => setTy(e.target.value)} className="form-input" />
                   </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Ngưỡng Vàng (°C)</label>
-                    <input type="number" value={preAlarm} onChange={e => setPreAlarm(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#fbbf24', padding: 8, borderRadius: 6 }} />
+                    <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Ox</label>
+                    <input type="text" value={ox} onChange={e => setOx(e.target.value)} className="form-input" />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <label style={{ fontSize: 12, color: '#94a3b8' }}>Ngưỡng Đỏ (°C)</label>
-                    <input type="number" value={alarm} onChange={e => setAlarm(e.target.value)} style={{ background: '#050a10', border: '1px solid #1e293b', color: '#ef4444', padding: 8, borderRadius: 6 }} />
+                    <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Oy</label>
+                    <input type="text" value={oy} onChange={e => setOy(e.target.value)} className="form-input" />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Ngưỡng Vàng (°C)</label>
+                    <input type="number" value={preAlarm} onChange={e => setPreAlarm(e.target.value)} className="form-input" style={{ color: 'var(--admin-warning)' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <label style={{ fontSize: 12, color: 'var(--admin-text-muted)' }}>Ngưỡng Đỏ (°C)</label>
+                    <input type="number" value={alarm} onChange={e => setAlarm(e.target.value)} className="form-input" style={{ color: 'var(--admin-danger)' }} />
                   </div>
                 </div>
 
               </div>
             </div>
 
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button onClick={() => setIsEditing(false)} className="btn-industrial">Hủy</button>
               <button onClick={savePoint} className="btn-industrial btn-primary">Lưu điểm</button>
             </div>

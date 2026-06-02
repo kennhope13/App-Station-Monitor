@@ -5,11 +5,11 @@
 
 import { invalidateColorCache } from './theme-colors';
 
-export type Theme = 'dark' | 'light' | 'blue';
+export type Theme = 'dark' | 'light' | 'soft-light' | 'silver' | 'blue' | 'industrial' | 'hightech' | 'cyberpunk';
 
 const STORAGE_KEY = 'station-theme';
-const DEFAULT_THEME: Theme = 'dark';
-const VALID_THEMES: Theme[] = ['dark', 'light', 'blue'];
+const DEFAULT_THEME: Theme = 'light';
+const VALID_THEMES: Theme[] = ['dark', 'light', 'soft-light', 'silver', 'blue', 'industrial', 'hightech', 'cyberpunk'];
 
 // Đọc theme đã lưu từ localStorage.
 export function getStoredTheme(): Theme {
@@ -34,7 +34,7 @@ export function getCurrentTheme(): Theme {
 export function setTheme(theme: Theme): void {
   if (!VALID_THEMES.includes(theme)) return;
   document.documentElement.dataset.theme = theme;
-  document.documentElement.classList.remove('theme-dark', 'theme-light', 'theme-blue');
+  document.documentElement.classList.remove('theme-dark', 'theme-light', 'theme-blue', 'theme-industrial', 'theme-hightech', 'theme-matrix', 'theme-cyberpunk', 'theme-retro');
   document.documentElement.classList.add('theme-' + theme);
   invalidateColorCache();
   try {
@@ -51,12 +51,10 @@ export function setTheme(theme: Theme): void {
 }
 
 // Áp dụng theme ngay khi tải trang, trước khi React mount.
-// Chỉ set attribute + meta — KHÔNG dispatch event hay invalidate cache
-// (component chưa mount nên không cần)
 export function applyStoredTheme(): void {
   const theme = getStoredTheme();
   document.documentElement.dataset.theme = theme;
-  document.documentElement.classList.remove('theme-dark', 'theme-light', 'theme-blue');
+  document.documentElement.classList.remove('theme-dark', 'theme-light', 'theme-blue', 'theme-industrial', 'theme-hightech', 'theme-matrix', 'theme-cyberpunk', 'theme-retro');
   document.documentElement.classList.add('theme-' + theme);
   const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
   if (meta) {

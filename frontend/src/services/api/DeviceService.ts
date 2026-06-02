@@ -65,8 +65,8 @@ export class DeviceService {
   }
 
   /** Kiểm tra kết nối giao thức (ONVIF, Modbus, ...) trước khi tạo thiết bị. */
-  async testProtocolConnection(ip: string, port: number, protocol: string): Promise<{ success: boolean; message: string; latencyMs?: number }> {
-    return apiMutate('POST', '/protocols/test-connection', { ip, port, protocol });
+  async testProtocolConnection(ip: string, port: number, protocol: string, config?: string): Promise<{ success: boolean; message: string; latencyMs?: number }> {
+    return apiMutate('POST', '/protocols/test-connection', { protocol, config: config || JSON.stringify({ ip, port }) });
   }
 
   /** Phát hiện và lấy thông tin camera Hikvision theo IP. */

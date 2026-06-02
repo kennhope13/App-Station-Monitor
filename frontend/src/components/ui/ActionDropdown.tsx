@@ -33,7 +33,7 @@ export default function ActionDropdown({ children }: ActionDropdownProps) {
         style={{ 
           width: 30, height: 24, padding: 0, 
           background: 'transparent', border: '1px solid var(--admin-border)',
-          borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--admin-text-muted)'
         }} 
         onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
@@ -51,7 +51,7 @@ export default function ActionDropdown({ children }: ActionDropdownProps) {
             left: menuRef.current?.getBoundingClientRect().right ? menuRef.current.getBoundingClientRect().right - 140 : 0,
             background: 'var(--admin-panel)',
             border: '1px solid var(--admin-border)',
-            borderRadius: 6,
+            borderRadius: 0,
             boxShadow: '0 10px 25px rgba(0, 0, 0, 0.4)',
             zIndex: 9999,
             minWidth: 140,
@@ -98,7 +98,7 @@ export function ActionDropdownItem({ icon, label, onClick, danger }: ActionDropd
         display: 'flex', alignItems: 'center', gap: icon ? 10 : 0,
         padding: '8px 12px', border: 'none', background: 'transparent',
         width: '100%', textAlign: 'left', cursor: 'pointer',
-        fontSize: '0.78rem', fontWeight: 600, borderRadius: 4,
+        fontSize: '0.78rem', fontWeight: 600, borderRadius: 0,
         color: danger ? 'var(--admin-danger)' : 'var(--admin-text)',
         transition: 'background 0.15s'
       }} 

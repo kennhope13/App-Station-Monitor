@@ -20,12 +20,6 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
   const { stationName, isEditMode, onToggleEditMode, onFit, onRotate, showLabels, onToggleLabels, onColorChange, filters, onFilterChange } = props;
   const [isOpen, setIsOpen] = useState(false);
 
-  const btnStyle = (active: boolean) => ({
-    background: active ? 'var(--admin-accent)' : 'var(--admin-btn-secondary-bg)', 
-    border: '1px solid ' + (active ? 'var(--admin-accent)' : 'var(--admin-btn-secondary-border)'),
-    color: active ? 'var(--admin-text-on-accent)' : 'var(--admin-btn-secondary-text)', borderRadius: 5, padding: '3px 9px', fontSize: '0.68rem', cursor: 'pointer'
-  });
-
   return (
     <div
       id="sldToolbar"
@@ -88,14 +82,20 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
           <div style={{ width: 1, height: 18, background: 'var(--admin-border-light)' }}></div>
           
           {/* Actions */}
-          <button onClick={onFit} style={btnStyle(false)}>⊞ Fit</button>
-          <button onClick={onRotate} style={btnStyle(false)}>Xoay</button>
-          <button onClick={onToggleEditMode} style={{...btnStyle(isEditMode), color: isEditMode ? '#fbbf24' : 'var(--admin-text)'}}>
-            {isEditMode ? 'Đang chỉnh' : 'Chỉnh sơ đồ'}
+          <button onClick={onFit} className="btn-industrial btn-sm">FIT</button>
+          <button onClick={onRotate} className="btn-industrial btn-sm">XOAY</button>
+          <button 
+            onClick={onToggleEditMode} 
+            className={`btn-industrial btn-sm ${isEditMode ? 'btn-primary' : ''}`}
+          >
+            {isEditMode ? 'ĐANG CHỈNH' : 'CHỈNH SƠ ĐỒ'}
           </button>
           
-          <button onClick={onToggleLabels} style={btnStyle(showLabels)}>
-            {showLabels ? 'Ẩn tên' : 'Hiện tên'}
+          <button 
+            onClick={onToggleLabels} 
+            className={`btn-industrial btn-sm ${showLabels ? 'btn-primary' : ''}`}
+          >
+            {showLabels ? 'ẨN TÊN' : 'HIỆN TÊN'}
           </button>
 
           <label title="Màu đường nét" style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', color: 'var(--admin-text-muted)', fontSize: 10 }}>

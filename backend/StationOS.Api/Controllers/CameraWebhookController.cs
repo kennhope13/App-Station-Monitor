@@ -381,9 +381,10 @@ public class CameraWebhookController : ControllerBase
 
     private static (string detType, string level, bool alert) MapType(string t) => t switch
     {
-        "thermalexception"      => ("thermal_hotspot",   "alarm",   true),
+        "thermalexception"      => ("thermal_hotspot",   "warning", true),
         "temperaturedetection"  => ("thermal_hotspot",   "alarm",   true),
         "temperaturealarm"      => ("thermal_hotspot",   "alarm",   true),
+        "temperaturewarning"    => ("thermal_hotspot",   "warning", true),
         "firedetection"         => ("fire",              "alarm",   true),
         "firealarm"             => ("fire",              "alarm",   true),
         "smokedetection"        => ("smoke",             "alarm",   true),

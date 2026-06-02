@@ -281,8 +281,12 @@ export default function RuleEnginePage() {
           <h2>RULE ENGINE</h2>
         </div>
         <div className="page-toolbar-group">
-          <button className="btn-industrial btn-primary" onClick={() => openAddModal()}>
-            + Thêm quy tắc mới
+          <button 
+            className="btn-industrial btn-primary" 
+            style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
+            onClick={() => openAddModal()}
+          >
+            + THÊM QUY TẮC MỚI
           </button>
         </div>
       </div>

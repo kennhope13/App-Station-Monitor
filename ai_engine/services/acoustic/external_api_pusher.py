@@ -43,44 +43,10 @@ class ExternalApiPusher(threading.Thread):
         
         last_ai_send = 0.0
         while self.running:
-            # ── PHẦN 1: ĐO ĐẠC VÀ ĐẨY DỮ LIỆU ĐIỂM NHIỆT (MỖI 5 PHÚT = 300 GIÂY) ──
-            now = time.time()
-            if now - last_ai_send >= 300.0:
-                try:
-                    from api.routes import _thermal_analyzers
-                    
-                    points_list = []
-                    
-                    # Gom dữ liệu nhiệt độ từ tất cả các analyzer đang chạy
-                    for analyzer in list(_thermal_analyzers.values()):
-                        last_temps = getattr(analyzer, "last_point_temps", {})
-                        for pt in analyzer.points:
-                            val = last_temps.get(pt.id)
-                            if val is not None:
-                                points_list.append({
-                                    "id": pt.label or pt.id,
-                                    "temperature": val
-                                })
-                        
-                        last_zones = getattr(analyzer, "last_zone_results", {})
-                        for zn in analyzer.zones:
-                            res = last_zones.get(zn.id)
-                            if res is not None:
-                                points_list.append({
-                                    "id": zn.label or zn.id,
-                                    "temperature": res["max"]
-                                })
-                    
-                    if points_list:
-                        payload = {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "points": points_list
-                        }
-                        resp = session.post(EXTERNAL_API_URL, json=payload, timeout=5.0)
-                        logger.info("[ExternalPusher] Sent thermal points to partner Jetson (%s), Status: %d", EXTERNAL_API_URL, resp.status_code)
-                        last_ai_send = now
-                except Exception as e:
-                    logger.error("[ExternalPusher] Error pushing thermal data to partner: %s", e)
+            # ── PHẦN 1: ĐO ĐẠC VÀ ĐẨY DỮ LIỆU ĐIỂM NHIỆT (ĐÃ DI TRÚ SANG CAMERA NHIỆT CHÍNH LÀM CHUẨN) ──
+            # Việc đẩy dữ liệu điểm nhiệt đã được hợp nhất và xử lý đồng bộ bởi luồng camera nhiệt chính
+            # để tránh gửi so le chênh lệch giây.
+
                 
             # Mô phỏng dữ liệu phóng điện + tần số dựa trên cảm biến thực tế thu được từ luồng camera 153
             try:
@@ -135,7 +101,7 @@ class ExternalApiPusher(threading.Thread):
         try:
             requests.post(
                 f"{self.backend_url}/api/v1/camera-webhook",
-                content=xml_data,
+                data=xml_data,
                 headers={"Content-Type": "application/xml"},
                 timeout=3.0
             )

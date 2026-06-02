@@ -32,8 +32,8 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const ScreenLoader = () => {
-  const bg = '#090e1a';
-  const text = '#edf2fc';
+  const bg = '#f1f5f9';
+  const text = '#0f172a';
   return (
     <div style={{
       position: 'fixed',

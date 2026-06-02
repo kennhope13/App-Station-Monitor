@@ -132,7 +132,7 @@ public class ThermalEvidenceService
         return null;
     }
 
-    private async Task<string?> TryRecordClipAsync(
+    public async Task<string?> TryRecordClipAsync(
         string? streamId,
         string? ip,
         string user,

@@ -14897,7 +14897,7 @@ body.has-critical-banner .panels-grid {
 }
 
 .sb-logo__text {
-  font-size: 0.62rem;
+  font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 2px;
   color: var(--admin-text-muted);
@@ -14928,16 +14928,16 @@ body.has-critical-banner .panels-grid {
 .sb-group { display: flex; flex-direction: column; }
 
 .sb-group__label {
-  font-size: 0.55rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 1.8px;
+  letter-spacing: 2.2px;
   color: var(--admin-text-muted);
   text-transform: uppercase;
   font-family: var(--admin-font, 'Inter', system-ui, sans-serif);
-  padding: 8px 14px 4px;
+  padding: 12px 14px 6px;
   white-space: nowrap;
   overflow: hidden;
-  max-height: 24px;
+  max-height: 32px;
   opacity: 1;
   transition: max-height 0.18s, opacity 0.15s, padding 0.18s;
 }

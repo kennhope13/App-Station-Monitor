@@ -82,9 +82,11 @@ class PdRegionAnalyzer:
         m_oy   = cv2.inRange(hsv, (15, 120, 150), (35, 255, 255))
         mask = m_red1 | m_red2 | m_oy
         
-        mask[:, int(small_w * 0.92):] = 0
-        mask[:int(small_h * 0.05), :] = 0
-        mask[int(small_h * 0.92):, :] = 0
+        # Cắt bớt lề cực mỏng để tránh detect nhầm text overlay ở sát biên,
+        # nhưng vẫn giữ lại vùng làm việc tối đa cho heatmap.
+        mask[:, int(small_w * 0.97):] = 0
+        mask[:int(small_h * 0.03), :] = 0
+        mask[int(small_h * 0.97):, :] = 0
         
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
@@ -95,10 +97,10 @@ class PdRegionAnalyzer:
         candidates = []
         for c in contours:
             area = float(cv2.contourArea(c))
-            if area < 10: continue
+            if area < 5: continue # Giảm ngưỡng diện tích để nhạy hơn
             x, y, cw, ch = cv2.boundingRect(c)
             ar = max(cw, ch) / max(1, min(cw, ch))
-            if ar > 4.5: continue
+            if ar > 6.0: continue # Nới lỏng tỷ lệ khung hình
             candidates.append((area, c))
         if not candidates: return None
         _, largest = max(candidates, key=lambda t: t[0])
@@ -165,21 +167,18 @@ class PdRegionAnalyzer:
             is_alarm = current_db >= region.alarm_threshold
             is_warning = current_db >= region.warning_threshold
 
-            # CHỈ ĐỔI MÀU & BÁO ĐỘNG KHI CÓ HOTSPOT NẰM TRONG VÙNG
-            if hotspot and self._point_in_polygon(hotspot, verts):
+            # Chỉ báo động khi acoustic overlay blob nằm trong vùng VÀ dB vượt ngưỡng
+            if hotspot and self._point_in_polygon(hotspot, verts) and (is_alarm or is_warning):
                 level = "alarm" if is_alarm else "warning"
-                # Màu đỏ cho Alarm (0, 0, 255), màu cam cho Warning (0, 165, 255)
                 color = (0, 0, 255) if is_alarm else (0, 165, 255)
                 fill_alpha = 0.35 if self._flash_state else 0.15
                 border_thickness = region.border_thickness + 1
-                
-                # Luôn cập nhật UI state (chớp đỏ/cam) khi có đốm nằm trong vùng
                 self._update_ui_state(region.name, current_db, current_hz, level, hotspot)
             else:
-                # XANH LÁ — Trạng thái bình thường (không có hotspot)
+                # XANH LÁ — Trạng thái bình thường (không có hotspot trong vùng)
                 level = "normal"
-                color = (0, 255, 0) # Xanh lá cây
-                fill_alpha = 0.0     # Hoàn toàn trong suốt
+                color = (0, 255, 0)
+                fill_alpha = 0.0
                 border_thickness = region.border_thickness
                 self._clear_ui_state(region.name)
 
@@ -254,9 +253,9 @@ class PdRegionAnalyzer:
                         t = _json.loads(r.get("Thresholds") or "{}")
                         warn  = float(t.get("warn", 20.0))
                         alarm = float(t.get("alarm", 45.0))
-                        thick = int(t.get("borderThickness", 1))
+                        thick = int(t.get("strokeWidth") or t.get("borderThickness", 1))
                         fsize = int(t.get("fontSize", 14))
-                        pos   = str(t.get("namePosition", "top"))
+                        pos   = str(t.get("labelPos") or t.get("namePosition", "top"))
                     except:
                         warn, alarm, thick, fsize, pos = 20.0, 45.0, 1, 14, "top"
 

@@ -44,6 +44,7 @@ def mjpeg_stream(stream_id: str):
     """
     import cv2
     from services.detection.line_detector import get_annotated_frame as get_detection
+    from services.thermal.thermal_analyzer import get_annotated_frame as get_thermal
 
     def generate():
         """Sinh liên tục các JPEG frame dưới dạng multipart response cho MJPEG."""
@@ -51,7 +52,8 @@ def mjpeg_stream(stream_id: str):
         import numpy as np
         from services.detection.pd_region_analyzer import get_annotated_frame as get_pd
         while True:
-            frame = get_detection(stream_id) or get_pd(stream_id)
+            # Check all possible annotated frame sources for this stream_id
+            frame = get_thermal(stream_id) or get_detection(stream_id) or get_pd(stream_id)
 
             if frame is None:
                 # Placeholder frame khi chưa có dữ liệu
@@ -571,8 +573,11 @@ async def receive_prediction(data: dict = None, request: Request = None):
         pred_dict[f"{t}_pred"] = pred_val
 
     # 5. Save the prediction to both new system files
-    save_prediction(pred_dict, targets)
-    append_prediction_history(pred_dict, targets)
+    merged_pred = save_prediction(pred_dict, targets)
+    append_prediction_history(merged_pred, targets)
+    
+    # Update AI status timestamp
+    _model_status["last_updated"] = ts_now
     
     # 6. Legacy code backward-compatibility write
     points_map = {}
@@ -625,6 +630,8 @@ async def receive_pd_prediction(data: dict = {}):
         if not file_exists:
             writer.writerow(['Timestamp', 'Id', 'PredictedValue', 'frequency', 'audioDecibel', 'frequency_ai', 'Status', 'ForecastTime'])
         writer.writerow([ts, pd_id, pd_val, freq, s_db, freq_ai, status, forecast_ts])
+    
+    _model_status["last_updated"] = ts
         
     return {"success": True}
 
@@ -979,9 +986,9 @@ async def pd_monitor_state(
                         return (
                             t.get("warn", 20),
                             t.get("alarm", 45),
-                            int(t.get("borderThickness", 1)),
+                            int(t.get("strokeWidth") or t.get("borderThickness", 1)),
                             int(t.get("fontSize", 14)),
-                            str(t.get("namePosition", "top")),
+                            str(t.get("labelPos") or t.get("namePosition", "top")),
                         )
                     except Exception:
                         return 20, 45, 1, 14, "top"
@@ -1044,7 +1051,7 @@ MODEL_CONFIG_FILE = "model/config.json"
 # Trạng thái huấn luyện ngầm
 _model_status = {
     "status": "Idle",  # "Idle" hoặc "Training..."
-    "last_updated": "2026-05-30 09:20:00"
+    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 }
 
 def load_or_create_model_config():
@@ -1149,6 +1156,8 @@ async def receive_thermal_data(body: ThermalDataPayload):
     result = process_thermal_payload(payload_dict)
     if not result["success"]:
         raise HTTPException(status_code=422, detail=result.get("error", "Validation failed"))
+    
+    _model_status["last_updated"] = body.timestamp or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
     # 2. Ingest measurements to .NET Gateway (port 5000) so frontend overlays render temperatures
     try:
@@ -1225,9 +1234,9 @@ async def trigger_retrain(background_tasks: BackgroundTasks):
 @router.get("/api/prediction")
 async def get_latest_prediction():
     """
-    Trả về dự báo mới nhất.
+    Trả về dự báo mới nhất từ Jetson đối tác.
     - Nếu đã có dữ liệu thực (live_predictions.csv): đọc từ CSV.
-    - Fallback: sinh ngẫu nhiên (chế độ demo khi chưa có camera).
+    - Không có fallback demo để đảm bảo tính xác thực.
     """
     config  = load_or_create_model_config()
     targets = config.get("targets", ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"])
@@ -1235,19 +1244,27 @@ async def get_latest_prediction():
     from services.thermal.thermal_forecaster import load_latest_prediction
     real_pred = load_latest_prediction(targets)
     if real_pred:
+        try:
+            from datetime import datetime, timedelta
+            issued_str = real_pred.get("issued_at") or real_pred.get("input_timestamp")
+            if issued_str:
+                issued_dt = datetime.strptime(issued_str, "%Y-%m-%d %H:%M:%S")
+                if datetime.now() - issued_dt > timedelta(minutes=5, seconds=30):
+                    real_pred = None
+        except Exception:
+            pass
+            
+    if real_pred:
         return {"success": True, "prediction": real_pred, "source": "live"}
 
-    # Fallback demo
-    ts_now = datetime.now()
-    pred_data = generate_prediction_data(ts_now, targets)
-    return {"success": True, "prediction": pred_data, "source": "demo"}
+    return {"success": True, "prediction": None, "source": "none"}
 
 @router.get("/api/prediction/history")
 async def get_prediction_history():
     """
     Trả về chuỗi lịch sử + dự báo cho biểu đồ đường đôi.
-    - Nếu có dữ liệu thực (live_thermal_history.csv): đọc từ CSV.
-    - Fallback: sinh ngẫu nhiên (chế độ demo).
+    - Chỉ sử dụng dữ liệu thực từ CSV.
+    - Không có fallback demo.
     """
     config      = load_or_create_model_config()
     targets     = config.get("targets", ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"])
@@ -1256,9 +1273,9 @@ async def get_prediction_history():
 
     from services.thermal.thermal_forecaster import load_history_for_chart, HISTORY_CSV
     if HISTORY_CSV.exists():
-        history = load_history_for_chart(targets, window_minutes=30, horizon=horizon)
+        history = load_history_for_chart(targets, window_points=12, horizon=horizon)
         if history:
-            # DYNAMIC INJECTION: Lấy nhiệt độ thực tế tức thời từ RAM để cập nhật ngay lập tức cho UI
+            # DYNAMIC INJECTION: Lấy nhiệt độ thực tế tức thời từ RAM
             live_temps = {}
             for analyzer in _thermal_analyzers.values():
                 for pt in getattr(analyzer, "points", []):
@@ -1272,23 +1289,30 @@ async def get_prediction_history():
                     if name and res is not None and "max" in res:
                         live_temps[name] = res["max"]
 
-            # Lấy dự báo tức thời mới nhất nếu có sẵn
+            # Lấy dự báo tức thời mới nhất nếu có sẵn (từ Jetson)
             from services.thermal.thermal_forecaster import load_latest_prediction
             latest_pred = load_latest_prediction(targets) or {}
+            if latest_pred:
+                try:
+                    from datetime import datetime, timedelta
+                    issued_str = latest_pred.get("issued_at") or latest_pred.get("input_timestamp")
+                    if issued_str:
+                        issued_dt = datetime.strptime(issued_str, "%Y-%m-%d %H:%M:%S")
+                        if datetime.now() - issued_dt > timedelta(minutes=5, seconds=30):
+                            latest_pred = {}
+                except Exception:
+                    pass
 
-            # Inject các giá trị tức thời này vào phần tử "Hiện tại" (boundary) trước thềm dự báo tương lai
+            # Inject các giá trị tức thời này vào phần tử "Hiện tại"
             boundary_idx = len(history) - horizon - 1
             if 0 <= boundary_idx < len(history):
                 for t in targets:
-                    # Nếu thiếu hoặc là null trong CSV lịch sử, điền ngay nhiệt độ tức thời từ RAM
                     if history[boundary_idx].get(f"{t}_actual") is None and t in live_temps:
                         history[boundary_idx][f"{t}_actual"] = live_temps[t]
-                    # Điền dự báo dự phòng tức thời
+                    # Chỉ điền dự báo nếu THỰC SỰ có dữ liệu từ Jetson
                     if history[boundary_idx].get(f"{t}_pred") is None:
                         if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
                             history[boundary_idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
-                        elif t in live_temps:
-                            history[boundary_idx][f"{t}_pred"] = live_temps[t]
 
             # Điền dự phòng cho các mốc thời gian tương lai (forecast points) của các điểm đo mới thêm vào
             for idx in range(len(history) - horizon, len(history)):
@@ -1296,28 +1320,7 @@ async def get_prediction_history():
                     if history[idx].get(f"{t}_pred") is None:
                         if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
                             history[idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
-                        elif t in live_temps:
-                            history[idx][f"{t}_pred"] = live_temps[t]
 
             return {"success": True, "history": history, "targets": targets, "source": "live"}
 
-    # Fallback demo (dữ liệu ngẫu nhiên) — giữ lại để UI không bị trống
-    now = datetime.now()
-    history = []
-    for offset in range(-30, horizon + 1):
-        ts = now + timedelta(minutes=offset)
-        random.seed(int(ts.timestamp()) // 60)
-        point_data = {"timestamp": ts.strftime("%H:%M")}
-        for i, target in enumerate(targets):
-            base_temp = 35.0 + (i * 2.5) % 15.0
-            if offset <= 0:
-                actual_val = base_temp + random.uniform(-1.0, 2.0) + (math.sin(ts.minute / 5.0) * 1.2)
-                point_data[f"{target}_actual"] = round(actual_val, 1)
-            else:
-                point_data[f"{target}_actual"] = None
-            ts_pred_gen = ts - timedelta(minutes=horizon)
-            random.seed(int(ts_pred_gen.timestamp()) // 60)
-            pred_val = base_temp + random.uniform(-1.5, 2.5) + (math.sin(ts_pred_gen.minute / 5.0) * 1.5)
-            point_data[f"{target}_pred"] = round(pred_val, 1)
-        history.append(point_data)
-    return {"success": True, "history": history, "targets": targets, "source": "demo"}
+    return {"success": True, "history": [], "targets": targets, "source": "none"}

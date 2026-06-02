@@ -21,13 +21,25 @@ const THEME_OPTIONS = [
     bg: '#f1f5f9', panel: '#ffffff', sidebar: '#ffffff',
     border: '#cbd5e1', accent: '#2563eb', text: '#0f172a',
   },
+  {
+    key: 'soft-light',
+    label: 'Sáng dịu mắt',
+    bg: '#f8f9fa', panel: '#ffffff', sidebar: '#f1f5f9',
+    border: '#e2e8f0', accent: '#6366f1', text: '#334155',
+  },
+  {
+    key: 'silver',
+    label: 'Bạc tinh tế',
+    bg: '#e2e8f0', panel: '#f8fafc', sidebar: '#cbd5e1',
+    border: '#cbd5e1', accent: '#0f172a', text: '#1e293b',
+  },
 ];
 
 export default function ThemeTab() {
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState('industrial');
 
   useEffect(() => {
-    setTheme(localStorage.getItem('station-theme') || 'dark');
+    setTheme(localStorage.getItem('station-theme') || 'industrial');
   }, []);
 
   const handleSaveTheme = () => {

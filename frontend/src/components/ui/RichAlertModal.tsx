@@ -11,6 +11,11 @@ interface RichAlertModalProps {
 export default function RichAlertModal({ alert, onClose }: RichAlertModalProps) {
   const navigate = useNavigate();
   
+  const isAlarm = alert.level === 'alarm';
+  const color = isAlarm ? 'var(--admin-danger)' : 'var(--admin-warning)';
+  const shadowColor = isAlarm ? 'rgba(239, 68, 68, 0.3)' : 'rgba(245, 158, 11, 0.3)';
+  const headerText = isAlarm ? 'BÁO ĐỘNG MỚI' : 'CẢNH BÁO MỚI';
+
   // Parse metadata
   let meta: any = {};
   if (typeof alert.metadata === 'string') {
@@ -35,8 +40,8 @@ export default function RichAlertModal({ alert, onClose }: RichAlertModalProps) 
       style={{ 
         position: 'fixed', top: 80, right: 20, zIndex: 100005,
         width: 380, background: 'var(--admin-bg)',
-        border: '2px solid var(--admin-danger)', 
-        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(239, 68, 68, 0.3)',
+        border: `2px solid ${color}`, 
+        boxShadow: `0 10px 40px rgba(0, 0, 0, 0.6), 0 0 20px ${shadowColor}`,
         borderRadius: 8, overflow: 'hidden',
         cursor: 'pointer',
         animation: 'sideAlertIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)'
@@ -45,13 +50,13 @@ export default function RichAlertModal({ alert, onClose }: RichAlertModalProps) 
     >
       {/* Header báo động */}
       <div style={{ 
-        background: 'var(--admin-danger)', 
+        background: color, 
         color: '#fff', padding: '10px 16px', 
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <AlertTriangle size={18} fill="#fff" color="var(--admin-danger)" />
-          <span style={{ fontWeight: 900, fontSize: '0.85rem', letterSpacing: 1 }}>BÁO ĐỘNG MỚI</span>
+          <AlertTriangle size={18} fill="#fff" color={color} />
+          <span style={{ fontWeight: 900, fontSize: '0.85rem', letterSpacing: 1 }}>{headerText}</span>
         </div>
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }} 

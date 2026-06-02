@@ -465,10 +465,95 @@ export default function RealtimeMonitorPage() {
       );
     });
 
+    // 3. PD Boundary Labels (Được hiển thị trực quan kèm chỉ số phóng điện dB)
+    const pdList = pdBoundaries[baseDeviceId] || [];
+    pdList.forEach(b => {
+      let poly: [number, number][] = [];
+      try { poly = JSON.parse(b.polygon); } catch { return; }
+      if (poly.length < 1) return;
+
+      const minX = Math.min(...poly.map(p => p[0]));
+      const maxX = Math.max(...poly.map(p => p[0]));
+      const minY = Math.min(...poly.map(p => p[1]));
+      const maxY = Math.max(...poly.map(p => p[1]));
+      const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+      const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+
+      let rx = cx, ry = cy;
+      let labelPos = 'bottom';
+      let fontSize = 12;
+      try {
+        if (b.thresholds) {
+          const t = JSON.parse(b.thresholds);
+          if (t.labelPos) labelPos = t.labelPos;
+          if (t.fontSize) fontSize = parseInt(t.fontSize) || 12;
+        }
+      } catch {}
+
+      if (labelPos === 'top')         { ry = minY; }
+      else if (labelPos === 'bottom') { ry = maxY; }
+      else if (labelPos === 'left')   { rx = minX; }
+      else if (labelPos === 'right')  { rx = maxX; }
+
+      const lookupId = b.id.toLowerCase();
+      const pdValue = readings[lookupId] ?? 
+                      (b.name ? readings[b.name.toLowerCase()] : undefined) ??
+                      readings[b.name] ??
+                      readings["phong_dien"] ??
+                      readings["db"];
+
+      const isAlarm = b.severityLevel === 'alarm' || (pdValue !== undefined && pdValue >= 45);
+      const color = isAlarm ? '#ef4444' : '#10b981';
+
+      const labelTransform =
+        labelPos === 'bottom' ? 'translate(-50%, 0)'    :
+        labelPos === 'left'   ? 'translate(-100%, -50%)':
+        labelPos === 'right'  ? 'translate(0, -50%)'    :
+        /* top */               'translate(-50%, -100%)';
+
+      labels.push(
+        <div
+          key={`label-pd-${b.id}`}
+          style={{
+            position: 'absolute',
+            left: `${rx * 100}%`,
+            top: `${ry * 100}%`,
+            transform: labelTransform,
+            pointerEvents: 'none',
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              background: 'rgba(13, 17, 23, 0.95)',
+              backdropFilter: 'blur(4px)',
+              border: `1.5px solid ${color}`,
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: `${fontSize}px`,
+              color: '#fff',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: `0 4px 12px rgba(0,0,0,0.7), 0 0 10px ${color}44`,
+              fontFamily: 'var(--font-mono)',
+              animation: pdValue !== undefined ? 'pulse-subtle 2s infinite' : 'none'
+            }}
+          >
+            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>⚡ {b.name}</span>
+            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+              {pdValue !== undefined ? `${pdValue.toFixed(1)} dB` : '-- dB'}
+            </span>
+          </div>
+        </div>
+      );
+    });
+
     return labels;
   };
 
-  /** Render các polygon SVG vùng PD (phóng điện) với nhãn tên lên overlay. */
+  /** Render các polygon SVG vùng PD (phóng điện) lên overlay. */
   const renderOverlayPdBoundaries = (cam: CameraDevice) => {
     const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const boundaries = pdBoundaries[baseDeviceId] || [];
@@ -481,31 +566,6 @@ export default function RealtimeMonitorPage() {
       const pointsStr = poly.map(([x, y]) => `${x * 100},${y * 100}`).join(' ');
       const color = b.severityLevel === 'alarm' ? '#ef4444' : '#10b981';
 
-      let labelPos = 'bottom';
-      let fontSize = 12;
-      try {
-        if (b.thresholds) {
-          const t = JSON.parse(b.thresholds);
-          if (t.labelPos) labelPos = t.labelPos;
-          if (t.fontSize) fontSize = parseInt(t.fontSize) || 12;
-        }
-      } catch {}
-
-      const minX = Math.min(...poly.map(p => p[0])) * 100;
-      const maxX = Math.max(...poly.map(p => p[0])) * 100;
-      const minY = Math.min(...poly.map(p => p[1])) * 100;
-      const maxY = Math.max(...poly.map(p => p[1])) * 100;
-      const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length * 100;
-      const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length * 100;
-
-      let textX = cx, textY = cy;
-      let anchor = 'middle', baseline = 'middle';
-      const svgFontSize = (fontSize / 4.0).toFixed(1);
-      if (labelPos === 'top')    { textY = minY - 2; baseline = 'auto'; }
-      else if (labelPos === 'bottom') { textY = maxY + 2; baseline = 'hanging'; }
-      else if (labelPos === 'left')   { textX = minX - 2; anchor = 'end'; }
-      else if (labelPos === 'right')  { textX = maxX + 2; anchor = 'start'; }
-
       return (
         <g key={b.id}>
           <polygon
@@ -517,14 +577,6 @@ export default function RealtimeMonitorPage() {
             vectorEffect="non-scaling-stroke"
             opacity={0.9}
           />
-          <text
-            x={textX} y={textY}
-            textAnchor={anchor as any} dominantBaseline={baseline as any}
-            fill="#fff" fontSize={svgFontSize} fontWeight="700"
-            style={{ pointerEvents: 'none', fontFamily: "'Inter','Segoe UI',sans-serif" } as any}
-          >
-            {b.name}
-          </text>
         </g>
       );
     });
@@ -719,7 +771,7 @@ export default function RealtimeMonitorPage() {
   return (
     <div className="rtm-page">
       {/* ── Toolbar ── */}
-      <div className="page-toolbar-row dash-header" style={{ padding: '4px 12px 12px 12px' }}>
+      <div className="page-toolbar-row dash-header">
         <div className="page-title-cell">
           <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>
         </div>

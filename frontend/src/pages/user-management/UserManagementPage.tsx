@@ -133,7 +133,13 @@ export default function UserManagementPage() {
           <h2>NGƯỜI DÙNG</h2>
         </div>
         <div className="page-toolbar-group">
-          <button className="btn-industrial btn-primary" onClick={openAddModal}>+ Thêm tài khoản</button>
+          <button 
+            className="btn-industrial btn-primary" 
+            style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
+            onClick={openAddModal}
+          >
+            + THÊM TÀI KHOẢN
+          </button>
         </div>
       </div>
       

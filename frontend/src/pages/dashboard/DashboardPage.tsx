@@ -34,11 +34,11 @@ export default function DashboardPage() {
   const [showLabels, setShowLabels] = useState(false);
   const [filters, setFilters] = useState({ thermal: true, pd: true, camera: true });
 
-  
+
   const [dashboardCam, setDashboardCam] = useState<string>(() => {
     return localStorage.getItem('dashboard_selected_cam') || '';
   });
-  
+
   const sldRef = useRef<SldCanvasRef>(null);
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [sldColorMatrix, setSldColorMatrix] = useState<string | undefined>(undefined);
@@ -73,7 +73,7 @@ export default function DashboardPage() {
     const camDeviceIds = new Set(devices
       .filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)))
       .map(d => d.id.toLowerCase()));
-    
+
     return alerts.filter(a => {
       if (a.status !== ALERT_STATUS.OPEN && a.status !== ALERT_STATUS.ACKED) return false;
       const did = (a.deviceId || '').toLowerCase();
@@ -86,7 +86,7 @@ export default function DashboardPage() {
     const camDeviceIds = new Set(devices
       .filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)))
       .map(d => d.id.toLowerCase()));
-    
+
     return sensors
       .filter(s => camDeviceIds.has(s.deviceId.toLowerCase()) && s.pointId !== PT_PD)
       .map(s => ({ pid: s.pointId.toUpperCase(), value: s.value }));
@@ -102,7 +102,7 @@ export default function DashboardPage() {
   // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
     if (stationId) return;
-    getFirstStationId().then(id => { if (id) setStationId(id); }).catch(() => {});
+    getFirstStationId().then(id => { if (id) setStationId(id); }).catch(() => { });
   }, [stationId, getFirstStationId]);
 
   /** Lưu camera đang chọn vào state và localStorage để giữ lại sau khi tải lại trang. */
@@ -117,7 +117,7 @@ export default function DashboardPage() {
     fetchStations().then(() => {
       const found = stations.find(s => s.id === stationId);
       if (found) setStationName(found.name);
-    }).catch(() => {});
+    }).catch(() => { });
   }, [stationId, stationName, fetchStations, stations]);
 
   // ── Fetch data khi stationId thay đổi ─────────────────────────
@@ -146,7 +146,7 @@ export default function DashboardPage() {
         };
       });
     },
-    onAlertNew:     () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
+    onAlertNew: () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
     onAlertUpdated: () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
   }, [stationId]);
 
@@ -154,7 +154,7 @@ export default function DashboardPage() {
   const handleFit = () => sldRef.current?.fitView();
   // Xoay sơ đồ SLD 90 độ
   const handleRotate = () => sldRef.current?.rotateView();
-  
+
   /** Chuyển mã màu hex thành feColorMatrix SVG để tô màu lại sơ đồ SLD. */
   const handleColorChange = (hex: string) => {
     const R = parseInt(hex.slice(1, 3), 16) / 255;
@@ -171,7 +171,7 @@ export default function DashboardPage() {
       const cfg = (cam as any).config || {};
       const zone = cfg.zone?.trim() || 'Khác';
       if (!groups[zone]) groups[zone] = [];
-      
+
       if (cam.type === 'camera_dual') {
         if (cfg.go2rtc_optical) groups[zone].push({ id: cfg.go2rtc_optical, label: `${cam.name} (Quang)` });
         if (cfg.go2rtc_thermal) groups[zone].push({ id: cfg.go2rtc_thermal, label: `${cam.name} (Nhiệt)` });
@@ -192,7 +192,7 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-page new-dash-theme" style={{ position: 'relative', overflow: 'hidden', height: '100%', background: 'var(--admin-bg)' }}>
-      
+
       <SldCanvas
         ref={sldRef}
         stationId={stationId}
@@ -220,10 +220,10 @@ export default function DashboardPage() {
         }}
       />
 
-      <DashboardToolbar 
+      <DashboardToolbar
         stationName={stationName || 'StationOS'}
-        isEditMode={isEditMode} 
-        onToggleEditMode={() => setIsEditMode(!isEditMode)} 
+        isEditMode={isEditMode}
+        onToggleEditMode={() => setIsEditMode(!isEditMode)}
         showLabels={showLabels}
         onToggleLabels={() => setShowLabels(!showLabels)}
         onFit={handleFit}
@@ -291,11 +291,11 @@ export default function DashboardPage() {
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-          <span style={{ width: 6, height: 6, background: plcOnline ? 'var(--admin-success)' : 'var(--admin-danger)', borderRadius: '50%', display: 'inline-block' }}></span> 
+          <span style={{ width: 6, height: 6, background: plcOnline ? 'var(--admin-success)' : 'var(--admin-danger)', borderRadius: '50%', display: 'inline-block' }}></span>
           PLC: {plcOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-          <span style={{ width: 6, height: 6, background: 'var(--admin-success)', borderRadius: '50%', display: 'inline-block' }}></span> 
+          <span style={{ width: 6, height: 6, background: 'var(--admin-success)', borderRadius: '50%', display: 'inline-block' }}></span>
           SignalR: Đã kết nối
         </span>
       </div>

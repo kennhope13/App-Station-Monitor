@@ -393,9 +393,9 @@ export default function AuditLogPage() {
           <h2>NHẬT KÝ</h2>
         </div>
 
-        {/* Right controls — all 34px tall, same row */}
+        {/* Right controls */}
         <div className="page-toolbar-group">
-          <div className="page-toolbar-cell">
+          <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">LOẠI:</span>
             <select
               value={activeTab}
@@ -410,7 +410,7 @@ export default function AuditLogPage() {
             </select>
           </div>
 
-          <div className="page-toolbar-cell">
+          <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">THỜI GIAN:</span>
             <select
               value={timeRange}
@@ -425,8 +425,12 @@ export default function AuditLogPage() {
             </select>
           </div>
 
-          <button className="btn-industrial btn-primary" onClick={loadData}>
-            ↻ Làm mới
+          <button 
+            className="btn-industrial btn-primary" 
+            style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
+            onClick={loadData}
+          >
+            ↻ LÀM MỚI
           </button>
         </div>
       </div>

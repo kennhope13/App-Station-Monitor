@@ -97,7 +97,7 @@ public static class DependencyInjection
         services.AddScoped<IDeviceHandler, ModbusRtuHandler>();
         services.AddScoped<IDeviceHandler, MqttHandler>();
         services.AddScoped<IDeviceHandler, Iec104Handler>();
-        // Camera handler tạm skip — chờ camera thật để test
+        services.AddScoped<IDeviceHandler, GenericCameraHandler>();
         services.AddScoped<DeviceHandlerRegistry>();
 
         // ── SignalR ───────────────────────────────────────────────

@@ -14,7 +14,7 @@
   box-shadow: none;
   margin-bottom: 16px; border: 1px solid var(--admin-border, var(--admin-border-light));
 }
-.toolbar-left h2 { margin: 0 0 12px 0; font-size: 1.3rem; color: #fff; font-weight: 800; letter-spacing: 0.5px; }
+.toolbar-left h2 { margin: 0 0 12px 0; font-size: 1.3rem; color: var(--admin-text); font-weight: 800; letter-spacing: 0.5px; }
 .toolbar-select-group { display: flex; gap: 12px; }
 .select-wrapper { display: flex; flex-direction: column; gap: 4px; }
 .select-wrapper label { font-size: 0.62rem; font-weight: 800; color: var(--admin-text-muted); opacity: 0.8; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -24,7 +24,7 @@
   padding: 8px 12px; border-radius: 0px; width: 200px; font-size: 0.85rem;
   cursor: pointer; font-weight: 600;
 }
-.audit-select:focus { border-color: #44ff88; outline: none; }
+.audit-select:focus { border-color: var(--admin-accent); outline: none; }
 
 /* Inline toolbar selects */
 .audit-log-container select option {
@@ -67,7 +67,7 @@
 .audit-footer { display: flex; justify-content: space-between; margin-top: 16px; color: var(--admin-text, var(--admin-text)); opacity: 0.5; font-size: 0.7rem; }
 
 .expanding-btn { color: var(--admin-accent); cursor: pointer; border: 1px solid var(--admin-border, var(--admin-border-light)); background: var(--admin-bg, #0b0f19); padding: 2px 6px; border-radius: 0px; color: var(--admin-text, var(--admin-text)); font-weight: 700; font-size: 0.7rem; }
-.expanding-btn:hover { background: var(--admin-hover); border-color: #44ff88; }
+.expanding-btn:hover { background: var(--admin-hover); border-color: var(--admin-accent); }
 
 .hidden { display: none; }
 

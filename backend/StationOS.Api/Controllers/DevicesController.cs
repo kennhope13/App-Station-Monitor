@@ -336,9 +336,11 @@ public class DevicesController : ControllerBase
 
             foreach (var p in newDoc.RootElement.EnumerateObject())
             {
+                var valStr = p.Value.GetString();
                 if (secretKeys.Contains(p.Name.ToLowerInvariant()) &&
                     p.Value.ValueKind == JsonValueKind.String &&
-                    p.Value.GetString() == "***")
+                    !string.IsNullOrEmpty(valStr) &&
+                    valStr.All(c => c == '*'))
                 {
                     // Keep old plain password
                     if (oldPlainDoc.RootElement.TryGetProperty(p.Name, out var oldVal) &&
@@ -408,6 +410,30 @@ public class DevicesController : ControllerBase
             await _deviceService.RegisterCameraStreamAsync(device);
 
         return Ok(device);
+    }
+
+    /// <summary>
+    /// Lấy credentials đã giải mã (username + password) của thiết bị.
+    /// CHỈ Admin/Manager được phép gọi endpoint này.
+    /// </summary>
+    [HttpGet("devices/{id}/credentials")]
+    [Authorize(Roles = "admin,manager")]
+    public async Task<IActionResult> GetCredentials(Guid id)
+    {
+        var device = await _db.Devices.FindAsync(id);
+        if (device == null) return NotFound();
+
+        try
+        {
+            using var doc = JsonDocument.Parse(device.Config ?? "{}");
+            var root = doc.RootElement;
+            var username = root.TryGetProperty("username", out var userEl) ? userEl.GetString() : "admin";
+            var rawPass = root.TryGetProperty("password", out var passEl) ? passEl.GetString() : "";
+            var password = _crypto.Decrypt(rawPass);
+
+            return Ok(new { username, password });
+        }
+        catch { return BadRequest("Không thể đọc cấu hình thiết bị."); }
     }
 
     /// <summary>
@@ -502,22 +528,30 @@ public class DevicesController : ControllerBase
             }
             else
             {
-                // 2. Nếu không có số, tự động lấy chỉ số lớn nhất hiện tại trong DB + 1
+                // 2. Nếu không có số, tự động lấy chỉ số nhỏ nhất còn trống bắt đầu từ 1
                 var existingPoints = await _db.RoiPoints
                     .Where(r => r.DeviceId == deviceId)
                     .ToListAsync();
-                int maxNum = 0;
+                
+                var usedIndices = new HashSet<int>();
                 foreach (var ep in existingPoints)
                 {
                     if (!string.IsNullOrEmpty(ep.PointId) && ep.PointId.StartsWith("P"))
                     {
                         if (int.TryParse(ep.PointId.Substring(1), out int val))
-                        {
-                            if (val > maxNum) maxNum = val;
-                        }
+                            usedIndices.Add(val);
+                    }
+                    else if (!string.IsNullOrEmpty(ep.Name))
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(ep.Name, @"\d+");
+                        if (m.Success && int.TryParse(m.Value, out int val))
+                            usedIndices.Add(val);
                     }
                 }
-                assignedPointId = $"P{maxNum + 1}";
+
+                int firstAvailable = 1;
+                while (usedIndices.Contains(firstAvailable)) firstAvailable++;
+                assignedPointId = $"P{firstAvailable}";
             }
         }
 

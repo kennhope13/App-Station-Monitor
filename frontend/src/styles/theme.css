@@ -4,4 +4,9 @@
 
 @import './themes/dark.css';
 @import './themes/light.css';
+@import './themes/soft-light.css';
+@import './themes/silver.css';
 @import './themes/blue.css';
+@import './themes/industrial.css';
+@import './themes/high-tech.css';
+@import './themes/cyberpunk.css';

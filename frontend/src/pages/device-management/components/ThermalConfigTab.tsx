@@ -37,6 +37,8 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
   const [cursor, setCursor] = useState<{temp:number, px:number, py:number}|null>(null);
   const [hoverPos, setHoverPos] = useState<{nx:number,ny:number}|null>(null);
 
+  const [activeSideTab, setActiveSideTab] = useState<'marker'|'roi'>('marker');
+
   const containerRef = useRef<HTMLDivElement>(null);
   const cursorTimer = useRef<any>(null);
 
@@ -169,6 +171,10 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
       const [tx,ty] = toThermal(nx,ny);
       const {ox,oy} = t2o(tx,ty,vvr);
       setMarkers(prev => prev.map(m => m.id===dragMkRef.current ? {...m,tx,ty,ox,oy} : m));
+      // Cập nhật cả tọa độ trong form đang mở
+      if (form.open && form.id === dragMkRef.current) {
+        setForm(f => ({ ...f, tx: tx.toFixed(4), ty: ty.toFixed(4) }));
+      }
     }
     
     // Live Cursor query
@@ -188,67 +194,55 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
     }
   };
 
-  // Auto-tạo điểm ngay khi click — không cần form
-  const autoPlaceMarker = async (tx:number, ty:number) => {
+  // Mở form để người dùng xác nhận trước khi lưu
+  const autoPlaceMarker = (tx:number, ty:number) => {
     const {ox,oy} = t2o(tx,ty,vvr);
     
-    // Quét tìm chỉ số lớn nhất hiện tại để cộng thêm 1, tránh bị trùng lặp ID khi xóa
-    let maxIdx = 0;
+    // Tìm chỉ số nhỏ nhất còn trống bắt đầu từ 1
+    const usedIndices = new Set<number>();
     mksRef.current.forEach(m => {
-      if (m.id.startsWith('__')) return;
       const match = m.name?.match(/\d+/) || m.shortName?.match(/\d+/);
-      if (match) {
-        const val = parseInt(match[0]);
-        if (val > maxIdx) maxIdx = val;
-      }
+      if (match) usedIndices.add(parseInt(match[0]));
     });
-    const idx = maxIdx + 1;
     
-    const tmpId = `__tmp_${Date.now()}`;
-    setMarkers(prev=>[...prev,{id:tmpId,name:`Điểm ${idx}`,shortName:`P${idx}`,tx,ty,ox,oy,preAlarm:50,alarm:70,markerSize:28,labelPos:'top',temp:null}]);
-    // Fetch nhiệt ngay lập tức
-    fetch(`/api/v1/devices/${did}/thermal/live-temps`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${authService.getToken()}`},body:JSON.stringify({points:[{id:tmpId,x:tx,y:ty}],rois:[]})})
-      .then(r=>r.json()).then(d=>{const t=d.temps?.[0];if(t?.temp!=null)setMarkers(prev=>prev.map(m=>m.id===tmpId?{...m,temp:t.temp}:m));}).catch(()=>{});
-    // Lưu DB, thay tempId bằng ID thật
-    try {
-      const saved:any = await stationApi.createRoiPoint(did,{label:`Điểm ${idx}`,name:`Điểm ${idx}`,pointId:`P${idx}`,tx,ty,ox,oy,x:tx*100,y:ty*100,sortOrder:28,warningThreshold:50,alarmThreshold:70} as any);
-      setMarkers(prev=>prev.map(m=>m.id===tmpId?{...m,id:saved.id}:m));
-      syncAI();
-    } catch { setMarkers(prev=>prev.filter(m=>m.id!==tmpId)); }
+    let idx = 1;
+    while (usedIndices.has(idx)) idx++;
+    
+    setForm({
+      ...EMPTY_FORM,
+      open: true, isNew: true, type: 'marker',
+      name: `Điểm ${idx}`, shortName: `P${idx}`,
+      tx: tx.toFixed(4), ty: ty.toFixed(4),
+      preAlarm: '50', alarm: '70', markerSize: '28'
+    });
+    setDrawMode('none');
   };
 
-  // Auto-tạo vùng ngay khi kéo xong — không cần form
-  const autoPlaceRoi = async (tx1:number,ty1:number,tx2:number,ty2:number) => {
-    // Quét tìm chỉ số lớn nhất hiện tại cho Vùng đo
-    let maxIdx = 0;
+  const autoPlaceRoi = (tx1:number,ty1:number,tx2:number,ty2:number) => {
+    const usedIndices = new Set<number>();
     roisRef.current.forEach(r => {
-      if (r.id.startsWith('__')) return;
       const match = r.name?.match(/\d+/);
-      if (match) {
-        const val = parseInt(match[0]);
-        if (val > maxIdx) maxIdx = val;
-      }
+      if (match) usedIndices.add(parseInt(match[0]));
     });
-    const idx = maxIdx + 1;
     
-    const tmpId = `__roi_${Date.now()}`;
-    setRois(prev=>[...prev,{id:tmpId,name:`Vùng ${idx}`,tx1,ty1,tx2,ty2,preAlarm:50,alarm:70,maxTemp:null,labelPos:'top',fontSize:11,borderWidth:0.5}]);
-    // Fetch nhiệt ngay lập tức
-    fetch(`/api/v1/devices/${did}/thermal/live-temps`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${authService.getToken()}`},body:JSON.stringify({points:[],rois:[{id:tmpId,x1:tx1,y1:ty1,x2:tx2,y2:ty2}]})})
-      .then(r=>r.json()).then(d=>{const t=d.rois?.[0];if(t?.max!=null)setRois(prev=>prev.map(r=>r.id===tmpId?{...r,maxTemp:t.max}:r));}).catch(()=>{});
-    // Lưu DB, thay tempId bằng ID thật
-    try {
-      const poly=JSON.stringify([[tx1,ty1],[tx2,ty1],[tx2,ty2],[tx1,ty2]]);
-      const saved:any = await stationApi.createBoundary(did,{name:`Vùng ${idx}`,type:'roi',polygon:poly,thresholds:JSON.stringify({warning:50,alarm:70,labelPos:'top',fontSize:11,borderWidth:0.5}),enabled:true,severityLevel:'warning'} as any);
-      setRois(prev=>prev.map(r=>r.id===tmpId?{...r,id:saved.id}:r));
-      syncAI();
-    } catch { setRois(prev=>prev.filter(r=>r.id!==tmpId)); }
+    let idx = 1;
+    while (usedIndices.has(idx)) idx++;
+    
+    setForm({
+      ...EMPTY_FORM,
+      open: true, isNew: true, type: 'roi',
+      name: `Vùng ${idx}`,
+      tx1: tx1.toFixed(4), ty1: ty1.toFixed(4),
+      tx2: tx2.toFixed(4), ty2: ty2.toFixed(4),
+      preAlarm: '50', alarm: '70', labelPos: 'top'
+    });
+    setDrawMode('none');
   };
 
-  const onUp = async (e:React.MouseEvent) => {
+  const onUp = (e:React.MouseEvent) => {
     if(dragMkRef.current) {
       const m = markers.find(x=>x.id===dragMkRef.current);
-      if(m) await stationApi.updateRoiPoint(did, m.id, { tx:m.tx, ty:m.ty, ox:m.ox, oy:m.oy, x:m.tx*100, y:m.ty*100 } as any).catch(()=>{});
+      if(m) stationApi.updateRoiPoint(did, m.id, { tx:m.tx, ty:m.ty, ox:m.ox, oy:m.oy, x:m.tx*100, y:m.ty*100 } as any).catch(()=>{});
       dragMkRef.current = null;
       syncAI();
       return;
@@ -258,7 +252,6 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
       const [tx,ty] = toThermal(nx,ny);
       if(viewMode==='op' && (nx<vvr.x||nx>vvr.x+vvr.width||ny<vvr.y||ny>vvr.y+vvr.height)) return;
       setHoverPos(null);
-      setDrawMode('none');
       autoPlaceMarker(tx, ty);
       return;
     }
@@ -268,24 +261,53 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
       if(Math.abs(ex-sx)<0.02 || Math.abs(ey-sy)<0.02) return;
       let tx1=sx,ty1=sy,tx2=ex,ty2=ey;
       if(viewMode==='op'){const tl=o2t(sx,sy,vvr);const br=o2t(ex,ey,vvr);tx1=tl.tx;ty1=tl.ty;tx2=br.tx;ty2=br.ty;}
-      setDrawMode('none');
       autoPlaceRoi(tx1,ty1,tx2,ty2);
     }
   };
 
-  // saveForm chỉ dùng để CẬP NHẬT (edit) — tạo mới dùng autoPlace
   const saveForm = async () => {
+    const isMarker = form.type === 'marker';
+    const actionLabel = form.isNew ? 'Thêm mới' : 'Cập nhật';
+    const typeLabel = isMarker ? 'điểm đo' : 'vùng đo';
+
+    if (!await confirmDialog({
+      title: `${actionLabel} ${typeLabel}`,
+      message: `Bạn có chắc chắn muốn ${actionLabel.toLowerCase()} ${typeLabel} này không?`,
+      confirmText: actionLabel
+    })) return;
+
     try {
-      if(form.type==='marker') {
-        const tx=parseFloat(form.tx),ty=parseFloat(form.ty);
+      if(isMarker) {
+        const tx=parseFloat(form.tx), ty=parseFloat(form.ty);
         const {ox:cox,oy:coy}=t2o(tx,ty,vvr);
-        await stationApi.updateRoiPoint(did,form.id,{label:form.name,name:form.name,pointId:form.shortName,tx,ty,ox:cox,oy:coy,x:tx*100,y:ty*100,sortOrder:parseInt(form.markerSize)||28,warningThreshold:parseFloat(form.preAlarm)||50,alarmThreshold:parseFloat(form.alarm)||70} as any);
-        setMarkers(prev=>prev.map(m=>m.id===form.id?{...m,name:form.name,shortName:form.shortName,preAlarm:parseFloat(form.preAlarm)||50,alarm:parseFloat(form.alarm)||70,markerSize:parseInt(form.markerSize)||28}:m));
+        const payload = {
+          name:form.name, pointId:form.shortName, 
+          tx, ty, ox:cox, oy:coy, x:tx*100, y:ty*100, 
+          sortOrder:parseInt(form.markerSize)||28, 
+          warningThreshold:parseFloat(form.preAlarm)||50, alarmThreshold:parseFloat(form.alarm)||70
+        };
+
+        if (form.isNew) {
+          await stationApi.createRoiPoint(did, payload as any);
+        } else {
+          await stationApi.updateRoiPoint(did, form.id, payload as any);
+        }
       } else {
-        await stationApi.updateBoundary(form.id,{name:form.name,thresholds:JSON.stringify({warning:parseFloat(form.preAlarm),alarm:parseFloat(form.alarm),labelPos:form.labelPos,fontSize:parseFloat(form.fontSize)||11,borderWidth:parseFloat(form.borderWidth)||0.5})} as any);
-        setRois(prev=>prev.map(r=>r.id===form.id?{...r,name:form.name,preAlarm:parseFloat(form.preAlarm)||50,alarm:parseFloat(form.alarm)||70,labelPos:form.labelPos,fontSize:parseFloat(form.fontSize)||11,borderWidth:parseFloat(form.borderWidth)||0.5}:r));
+        const tx1=parseFloat(form.tx1), ty1=parseFloat(form.ty1), tx2=parseFloat(form.tx2), ty2=parseFloat(form.ty2);
+        const poly=JSON.stringify([[tx1,ty1],[tx2,ty1],[tx2,ty2],[tx1,ty2]]);
+        const thresholds = JSON.stringify({
+          warning:parseFloat(form.preAlarm), alarm:parseFloat(form.alarm), 
+          labelPos:form.labelPos, fontSize:parseFloat(form.fontSize)||11, borderWidth:parseFloat(form.borderWidth)||0.5
+        });
+
+        if (form.isNew) {
+          await stationApi.createBoundary(did, { name: form.name, type: 'roi', polygon: poly, thresholds, enabled: true, severityLevel: 'warning' } as any);
+        } else {
+          await stationApi.updateBoundary(form.id, { name: form.name, thresholds } as any);
+        }
       }
       setForm(EMPTY_FORM); setFormTemp(null);
+      load(); // Reload data from DB
       syncAI();
     } catch(e) { alert("Lưu thất bại!"); }
   };
@@ -329,14 +351,14 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
 
           <div style={{ width:1, height:24, background:'var(--admin-border)' }} />
           
-          <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius:4, padding:2 }}>
+          <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius: 0, padding:2 }}>
             <button className={`btn-industrial btn-sm ${viewMode==='op'?'btn-primary':''}`} onClick={() => setViewMode('op')}>Ảnh quang học</button>
             <button className={`btn-industrial btn-sm ${viewMode==='th'?'btn-primary':''}`} onClick={() => setViewMode('th')}>Ảnh nhiệt độ</button>
           </div>
 
           <div style={{ width:1, height:24, background:'var(--admin-border)' }} />
 
-          <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius:4, padding:2 }}>
+          <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius: 0, padding:2 }}>
             <button className={`btn-industrial btn-sm ${drawMode==='point'?'btn-primary':''}`} onClick={() => setDrawMode(drawMode==='point'?'none':'point')}>📍 Chấm Điểm</button>
             <button className={`btn-industrial btn-sm ${drawMode==='rect'?'btn-primary':''}`} onClick={() => setDrawMode(drawMode==='rect'?'none':'rect')}>🟧 Vẽ Vùng</button>
             <button className={`btn-industrial btn-sm ${drawMode==='none'?'btn-primary':''}`} onClick={() => setDrawMode('none')}>✋ Di chuyển</button>
@@ -348,7 +370,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
         <div style={{ flex:1, position:'relative', background:'#000', overflow:'hidden' }} ref={containerRef}>
           {viewMode === 'op' && (
             <>
-              <iframe src={`/camera-stream.html?src=${encodeURIComponent(opSrc)}&mode=webrtcmode=webrtc&go2rtc=${GO2RTC_URL}&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none', zIndex:1 }} />
+              <iframe src={`/camera-stream.html?src=${encodeURIComponent(opSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none', zIndex:1 }} />
               {/* Overlay boundaries */}
               <div style={{ position:'absolute', left:pct(vvr.x), top:pct(vvr.y), width:pct(vvr.width), height:pct(vvr.height), border:'1px dashed rgba(255,255,255,0.3)', pointerEvents:'none', zIndex:5 }}>
                 <div style={{ position:'absolute', top:-20, left:0, color:'#fff', fontSize:10, opacity:0.5 }}>Khung nhiệt (VVR)</div>
@@ -383,7 +405,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                                   { bottom:'calc(100% + 3px)', left:0 };
               return (
                 <div key={r.id} style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:`${bw}px solid ${c}`, background:c+'10' }}>
-                  <div style={{ position:'absolute', ...labelStyle, background:'rgba(0,0,0,0.72)', padding:'1px 5px', borderRadius:2, color:'#fff', fontSize:fs, fontFamily:'monospace', whiteSpace:'nowrap' }}>
+                  <div style={{ position:'absolute', ...labelStyle, background:'rgba(0,0,0,0.72)', padding:'1px 5px', borderRadius: 0, color:'#fff', fontSize:fs, fontFamily:'monospace', whiteSpace:'nowrap' }}>
                     <b>{r.name}</b> <span style={{color:c}}>{r.maxTemp?.toFixed(1)??'--'}°C</span>
                   </div>
                 </div>
@@ -397,9 +419,18 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
               const c = clr(m.temp, m.preAlarm, m.alarm);
               const armLen = m.markerSize || 28;
               const labelOffset = Math.round(armLen / 2) + 5;
+              
+              // Chỉ cho phép tương tác (kéo) nếu đang mở đúng form sửa cho điểm này
+              const isBeingEdited = form.open && form.id === m.id;
+              const canDrag = isBeingEdited && drawMode === 'none';
+
               return (
-                <div key={m.id} style={{ position:'absolute', left:pct(nx), top:pct(ny), transform:'translate(-50%,-50%)', cursor:drawMode==='none'?'move':'crosshair', pointerEvents:drawMode==='none'?'auto':'none' }}
-                     onMouseDown={e=>{ if(drawMode==='none'&&e.button===0){ e.stopPropagation(); dragMkRef.current = m.id; }}}>
+                <div key={m.id} style={{ 
+                  position:'absolute', left:pct(nx), top:pct(ny), transform:'translate(-50%,-50%)', 
+                  cursor: canDrag ? 'move' : (drawMode !== 'none' ? 'crosshair' : 'default'), 
+                  pointerEvents: (drawMode !== 'none' || canDrag) ? 'auto' : 'none' 
+                }}
+                     onMouseDown={e=>{ if(canDrag && e.button===0){ e.stopPropagation(); dragMkRef.current = m.id; }}}>
                   {/* Ngang */}
                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:1.5, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 3px rgba(0,0,0,.9)' }} />
                   {/* Dọc */}
@@ -407,7 +438,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                   {/* Hit area */}
                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
                   {/* Label: Mã + nhiệt độ */}
-                  <div style={{ position:'absolute', top:0, left:labelOffset, transform:'translateY(-50%)', background:'rgba(8,8,12,.88)', borderRadius:3, padding:'1px 6px', display:'flex', flexDirection:'column', alignItems:'flex-start', whiteSpace:'nowrap', pointerEvents:'none' }}>
+                  <div style={{ position:'absolute', top:0, left:labelOffset, transform:'translateY(-50%)', background:'rgba(8,8,12,.88)', borderRadius: 0, padding:'1px 6px', display:'flex', flexDirection:'column', alignItems:'flex-start', whiteSpace:'nowrap', pointerEvents:'none' }}>
                     <span style={{fontSize:10, color:'#94a3b8', lineHeight:1.3}}>{m.shortName||m.name}</span>
                     <span style={{fontSize:11, fontWeight:800, color:c, fontFamily:'monospace', lineHeight:1.3}}>{m.temp?.toFixed(1)??'--'}°C</span>
                   </div>
@@ -435,7 +466,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
 
           {/* Live Cursor Temp overlay */}
           {cursor && viewMode==='th' && (
-            <div style={{ position:'absolute', left:cursor.px+14, top:cursor.py, transform:'translateY(-50%)', pointerEvents:'none', background:'rgba(0,0,0,.88)', border:'1px solid rgba(255,255,255,.15)', borderRadius:4, padding:'2px 8px', fontSize:11, fontFamily:'monospace', color:'#fff', whiteSpace:'nowrap', zIndex:20 }}>
+            <div style={{ position:'absolute', left:cursor.px+14, top:cursor.py, transform:'translateY(-50%)', pointerEvents:'none', background:'rgba(0,0,0,.88)', border:'1px solid rgba(255,255,255,.15)', borderRadius: 0, padding:'2px 8px', fontSize:11, fontFamily:'monospace', color:'#fff', whiteSpace:'nowrap', zIndex:20 }}>
               {cursor.temp.toFixed(1)}°C
             </div>
           )}
@@ -448,30 +479,43 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
         {form.open ? (
           <div style={{ display:'flex', flexDirection:'column', height:'100%', animation:'fadeIn .2s ease' }}>
             <div style={{ padding:'12px', borderBottom:'1px solid var(--admin-border)', display:'flex', justifyContent:'space-between', alignItems:'center', fontWeight:800, fontSize:'.85rem' }}>
-              <span>Chỉnh sửa {form.type==='marker'?'điểm':'vùng'}</span>
-              <button className="btn-industrial btn-sm" style={{ padding:'0 8px', height:22 }} onClick={()=>setForm(EMPTY_FORM)}><X size={12}/></button>
+              <span>{form.isNew ? 'Thêm mới' : 'Chỉnh sửa'} {form.type==='marker'?'điểm':'vùng'}</span>
+              <button className="btn-industrial btn-sm" style={{ padding:'0 8px', height:22, borderRadius:0 }} onClick={()=>setForm(EMPTY_FORM)}><X size={12}/></button>
             </div>
-            <div style={{ padding:14, display:'flex', flexDirection:'column', gap:10 }}>
-              <div className="form-group"><label>Tên *</label><input className="form-input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} autoFocus /></div>
+            <div style={{ padding:14, display:'flex', flexDirection:'column', gap:12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}><label>Tên thiết bị *</label><input className="form-input" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} autoFocus /></div>
+              
               {form.type==='marker' && (
                 <>
-                  <div className="form-group"><label>Mã</label><input className="form-input" value={form.shortName} onChange={e=>setForm(f=>({...f,shortName:e.target.value}))} placeholder="P1, P2..." /></div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6 }}>
-                    <div className="form-group"><label>Cỡ dấu +</label><input className="form-input" type="number" min="12" max="60" step="2" value={form.markerSize} onChange={e=>setForm(f=>({...f,markerSize:e.target.value}))} /></div>
-                    <div className="form-group"><label style={{color:'var(--admin-warning)'}}>Vàng °C</label><input className="form-input" type="number" value={form.preAlarm} onChange={e=>setForm(f=>({...f,preAlarm:e.target.value}))}/></div>
-                    <div className="form-group"><label style={{color:'var(--admin-danger)'}}>Đỏ °C</label><input className="form-input" type="number" value={form.alarm} onChange={e=>setForm(f=>({...f,alarm:e.target.value}))}/></div>
+                  <div className="form-group" style={{ marginBottom: 0 }}><label>Mã định danh (ID)</label><input className="form-input" value={form.shortName} onChange={e=>setForm(f=>({...f,shortName:e.target.value}))} placeholder="VD: P1, P2..." /></div>
+                  
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}><label>Cỡ dấu (+)</label><input className="form-input" type="number" min="12" max="60" step="2" value={form.markerSize} onChange={e=>setForm(f=>({...f,markerSize:e.target.value}))} /></div>
+                    <div className="form-group" style={{ marginBottom: 0 }}><label>Vị trí nhãn</label>
+                      <select className="form-input" value={form.labelPos} onChange={e=>setForm(f=>({...f,labelPos:e.target.value}))}>
+                        <option value="top">Trên</option>
+                        <option value="bottom">Dưới</option>
+                        <option value="left">Trái</option>
+                        <option value="right">Phải</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div className="form-group" style={{ marginBottom: 0, minWidth: 0 }}><label style={{color:'var(--admin-warning)', fontSize:'.62rem'}}>Cảnh báo sớm</label><input className="form-input" style={{ padding:'8px 10px', width: '100%', boxSizing: 'border-box' }} type="number" value={form.preAlarm} onChange={e=>setForm(f=>({...f,preAlarm:e.target.value}))}/></div>
+                    <div className="form-group" style={{ marginBottom: 0, minWidth: 0 }}><label style={{color:'var(--admin-danger)', fontSize:'.62rem'}}>Báo động</label><input className="form-input" style={{ padding:'8px 10px', width: '100%', boxSizing: 'border-box' }} type="number" value={form.alarm} onChange={e=>setForm(f=>({...f,alarm:e.target.value}))}/></div>
                   </div>
                 </>
               )}
-              {form.type==='roi' && (
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                  <div className="form-group"><label style={{color:'var(--admin-warning)'}}>Vàng (°C)</label><input className="form-input" type="number" value={form.preAlarm} onChange={e=>setForm(f=>({...f,preAlarm:e.target.value}))}/></div>
-                  <div className="form-group"><label style={{color:'var(--admin-danger)'}}>Đỏ (°C)</label><input className="form-input" type="number" value={form.alarm} onChange={e=>setForm(f=>({...f,alarm:e.target.value}))}/></div>
-                </div>
-              )}
+
               {form.type==='roi' && (
                 <>
-                  <div className="form-group">
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div className="form-group" style={{ marginBottom: 0, minWidth: 0 }}><label style={{color:'var(--admin-warning)', fontSize:'.62rem'}}>Cảnh báo sớm</label><input className="form-input" style={{ padding:'8px 10px', width: '100%', boxSizing: 'border-box' }} type="number" value={form.preAlarm} onChange={e=>setForm(f=>({...f,preAlarm:e.target.value}))}/></div>
+                    <div className="form-group" style={{ marginBottom: 0, minWidth: 0 }}><label style={{color:'var(--admin-danger)', fontSize:'.62rem'}}>Báo động</label><input className="form-input" style={{ padding:'8px 10px', width: '100%', boxSizing: 'border-box' }} type="number" value={form.alarm} onChange={e=>setForm(f=>({...f,alarm:e.target.value}))}/></div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Vị trí tên vùng</label>
                     <select className="form-input" value={form.labelPos} onChange={e=>setForm(f=>({...f,labelPos:e.target.value}))}>
                       <option value="top">Trên</option>
@@ -480,29 +524,24 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                       <option value="right">Phải</option>
                     </select>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                    <div className="form-group">
+
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div className="form-group" style={{ marginBottom: 0, minWidth: 0 }}>
                       <label>Cỡ chữ (px)</label>
-                      <input className="form-input" type="number" min="8" max="24" step="1" value={form.fontSize} onChange={e=>setForm(f=>({...f,fontSize:e.target.value}))} />
+                      <input className="form-input" style={{ padding:'8px 10px', width: '100%', boxSizing: 'border-box' }} type="number" min="8" max="24" step="1" value={form.fontSize} onChange={e=>setForm(f=>({...f,fontSize:e.target.value}))} />
                     </div>
-                    <div className="form-group">
-                      <label>Độ dày viền (px)</label>
-                      <input className="form-input" type="number" min="0.5" max="4" step="0.5" value={form.borderWidth} onChange={e=>setForm(f=>({...f,borderWidth:e.target.value}))} />
+                    <div className="form-group" style={{ marginBottom: 0, minWidth: 0 }}>
+                      <label>Viền (px)</label>
+                      <input className="form-input" style={{ padding:'8px 10px', width: '100%', boxSizing: 'border-box' }} type="number" min="0.5" max="4" step="0.5" value={form.borderWidth} onChange={e=>setForm(f=>({...f,borderWidth:e.target.value}))} />
                     </div>
                   </div>
                 </>
               )}
-              {form.type==='marker' && form.tx && (
-                <div style={{ fontSize:'.68rem', fontFamily:'monospace', padding:'6px 10px', background:'var(--admin-layer-2)', borderRadius:4, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                  <span style={{ color:'var(--admin-text-muted)' }}>T({parseFloat(form.tx).toFixed(3)}, {parseFloat(form.ty).toFixed(3)})</span>
-                  {formTemp != null ? <span style={{ fontWeight:800, fontSize:'.9rem', color: formTemp>=(parseFloat(form.alarm)||70)?'#ef4444':formTemp>=(parseFloat(form.preAlarm)||50)?'#f59e0b':'#10b981' }}>{formTemp.toFixed(1)}°C</span> : <span style={{ color:'var(--admin-text-muted)', fontSize:'.7rem' }}>đang đọc...</span>}
-                </div>
-              )}
               <div style={{ display:'flex', gap:10, marginTop:6 }}>
-                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:600 }} onClick={()=>{ setForm(EMPTY_FORM); setFormTemp(null); }}>
+                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:0, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:600 }} onClick={()=>{ setForm(EMPTY_FORM); setFormTemp(null); }}>
                   <X size={14}/> Hủy
                 </button>
-                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-accent)', border:'none', borderRadius:6, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:700, boxShadow:'0 2px 4px rgba(0,0,0,0.1)' }} onClick={saveForm}>
+                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-accent)', border:'none', borderRadius:0, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:700, boxShadow:'0 2px 4px rgba(0,0,0,0.1)' }} onClick={saveForm}>
                   <Save size={14}/> Lưu
                 </button>
               </div>
@@ -510,55 +549,96 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
           </div>
         ) : (
           <>
-            <div style={{ padding:'10px 12px', background:'var(--admin-layer-2)', borderBottom:'1px solid var(--admin-border)', fontSize:'.68rem', fontWeight:800, color:'var(--admin-text-muted)', textTransform:'uppercase', letterSpacing:'.8px' }}>Điểm đo ({markers.length})</div>
-            <div style={{ flex:1, overflowY:'auto', maxHeight:'50%' }}>
-              {markers.map(m => {
-                const c = clr(m.temp, m.preAlarm, m.alarm);
-                return (
-                  <div key={m.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
-                    <div style={{width:8, height:8, borderRadius:'50%', background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.shortName||m.name}</div>
-                      <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
-                        <span style={{fontWeight:800, color:c}}>{m.temp!=null?`${m.temp.toFixed(1)}°C`:'--°C'}</span>
-                        <span style={{opacity:0.25, fontWeight:100}}>|</span>
-                        <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {m.preAlarm}°</span>
-                        <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {m.alarm}°</span>
-                      </div>
-                    </div>
-                    <div style={{display:'flex', gap:6}}>
-                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:4}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'marker',id:m.id,name:m.name,shortName:m.shortName,markerSize:String(m.markerSize||28),preAlarm:String(m.preAlarm),alarm:String(m.alarm),tx:m.tx.toFixed(4),ty:m.ty.toFixed(4)})}><Edit2 size={13}/></button>
-                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'#fee2e2', border:'1px solid #fecaca', color:'#991b1b', borderRadius:4}} onClick={()=>delMarker(m.id)}><Trash2 size={13}/></button>
-                    </div>
-                  </div>
-                );
-              })}
+            <div style={{ display:'flex', borderBottom:'1px solid var(--admin-border)', background:'var(--admin-layer-2)', padding:'4px' }}>
+              <button 
+                onClick={()=>setActiveSideTab('marker')}
+                style={{ 
+                  flex:1, padding:'6px', border:'none', fontSize:'.68rem', fontWeight:800, cursor:'pointer',
+                  background: activeSideTab==='marker' ? 'var(--admin-accent)' : 'transparent',
+                  color: activeSideTab==='marker' ? '#fff' : 'var(--admin-text-muted)',
+                  textTransform:'uppercase'
+                }}
+              >
+                Điểm đo ({markers.length})
+              </button>
+              <button 
+                onClick={()=>setActiveSideTab('roi')}
+                style={{ 
+                  flex:1, padding:'6px', border:'none', fontSize:'.68rem', fontWeight:800, cursor:'pointer',
+                  background: activeSideTab==='roi' ? 'var(--admin-accent)' : 'transparent',
+                  color: activeSideTab==='roi' ? '#fff' : 'var(--admin-text-muted)',
+                  textTransform:'uppercase'
+                }}
+              >
+                Vùng đo ({rois.length})
+              </button>
             </div>
 
-            <div style={{ padding:'10px 12px', background:'var(--admin-layer-2)', borderBottom:'1px solid var(--admin-border)', borderTop:'1px solid var(--admin-border)', fontSize:'.68rem', fontWeight:800, color:'var(--admin-text-muted)', textTransform:'uppercase', letterSpacing:'.8px' }}>Vùng đo ({rois.length})</div>
-            <div style={{flex:1, overflowY:'auto'}}>
-              {rois.map(r => {
-                const c = clr(r.maxTemp, r.preAlarm, r.alarm);
-                return (
-                  <div key={r.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
-                    <div style={{width:8, height:8, background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.name}</div>
-                      <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
-                        <span style={{fontWeight:800, color:c}}>{r.maxTemp!=null?`Max ${r.maxTemp.toFixed(1)}°C`:'Max --°C'}</span>
-                        <span style={{opacity:0.25, fontWeight:100}}>|</span>
-                        <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {r.preAlarm}°</span>
-                        <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {r.alarm}°</span>
+            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--admin-border)' }}>
+              <button 
+                className="btn-industrial btn-primary" 
+                style={{ width: '100%', fontSize: '.7rem', height: 28 }}
+                onClick={() => setDrawMode(activeSideTab === 'marker' ? 'point' : 'rect')}
+              >
+                + Thêm {activeSideTab === 'marker' ? 'điểm đo' : 'vùng đo'}
+              </button>
+            </div>
+
+            {activeSideTab === 'marker' && (
+              <div style={{ flex:1, overflowY:'auto' }}>
+                {markers.length === 0 ? (
+                  <div style={{ padding:20, textAlign:'center', color:'var(--admin-text-muted)', fontSize:'.75rem' }}>Chưa có điểm đo</div>
+                ) : [...markers].sort((a, b) => (a.shortName || a.name).localeCompare(b.shortName || b.name, undefined, { numeric: true })).map(m => {
+                  const c = clr(m.temp, m.preAlarm, m.alarm);
+                  return (
+                    <div key={m.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
+                      <div style={{width:8, height:8, borderRadius:'50%', background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.shortName||m.name}</div>
+                        <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
+                          <span style={{fontWeight:800, color:c}}>{m.temp!=null?`${m.temp.toFixed(1)}°C`:'--°C'}</span>
+                          <span style={{opacity:0.25, fontWeight:100}}>|</span>
+                          <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {m.preAlarm}°</span>
+                          <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {m.alarm}°</span>
+                        </div>
+                      </div>
+                      <div style={{display:'flex', gap:6}}>
+                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'marker',id:m.id,name:m.name,shortName:m.shortName,markerSize:String(m.markerSize||28),preAlarm:String(m.preAlarm),alarm:String(m.alarm),tx:m.tx.toFixed(4),ty:m.ty.toFixed(4)})}><Edit2 size={13} style={{display:'block'}}/></button>
+                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.2)', color:'var(--admin-danger)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>delMarker(m.id)}><Trash2 size={13} style={{display:'block'}}/></button>
                       </div>
                     </div>
-                    <div style={{display:'flex', gap:6}}>
-                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:4}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'roi',id:r.id,name:r.name,labelPos:r.labelPos||'top',fontSize:String(r.fontSize||11),borderWidth:String(r.borderWidth||0.5),preAlarm:String(r.preAlarm),alarm:String(r.alarm),tx1:r.tx1.toFixed(4),ty1:r.ty1.toFixed(4),tx2:r.tx2.toFixed(4),ty2:r.ty2.toFixed(4)})}><Edit2 size={13}/></button>
-                      <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'#fee2e2', border:'1px solid #fecaca', color:'#991b1b', borderRadius:4}} onClick={()=>delRoi(r.id)}><Trash2 size={13}/></button>
+                  );
+                })}
+              </div>
+            )}
+
+            {activeSideTab === 'roi' && (
+              <div style={{flex:1, overflowY:'auto'}}>
+                {rois.length === 0 ? (
+                  <div style={{ padding:20, textAlign:'center', color:'var(--admin-text-muted)', fontSize:'.75rem' }}>Chưa có vùng đo</div>
+                ) : [...rois].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(r => {
+                  const c = clr(r.maxTemp, r.preAlarm, r.alarm);
+                  return (
+                    <div key={r.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
+                      <div style={{width:8, height:8, background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.name}</div>
+                        <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
+                          <span style={{fontWeight:800, color:c}}>{r.maxTemp!=null?`Max ${r.maxTemp.toFixed(1)}°C`:'Max --°C'}</span>
+                          <span style={{opacity:0.25, fontWeight:100}}>|</span>
+                          <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {r.preAlarm}°</span>
+                          <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {r.alarm}°</span>
+                        </div>
+                      </div>
+                      <div style={{display:'flex', gap:6}}>
+                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'roi',id:r.id,name:r.name,labelPos:r.labelPos||'top',fontSize:String(r.fontSize||11),borderWidth:String(r.borderWidth||0.5),preAlarm:String(r.preAlarm),alarm:String(r.alarm),tx1:r.tx1.toFixed(4),ty1:r.ty1.toFixed(4),tx2:r.tx2.toFixed(4),ty2:r.ty2.toFixed(4)})}><Edit2 size={13} style={{display:'block'}}/></button>
+                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.2)', color:'var(--admin-danger)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>delRoi(r.id)}><Trash2 size={13} style={{display:'block'}}/></button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
       </div>

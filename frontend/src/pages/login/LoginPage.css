@@ -21,12 +21,12 @@
 }
 .gm-logo {
   width: 80px; height: 80px; margin: 0 auto 16px;
-  filter: drop-shadow(0 0 10px rgba(68, 255, 136, 0.2));
+  filter: drop-shadow(0 0 10px rgba(2, 132, 199, 0.2));
 }
-.gm-glass-panel h2 { 
-  margin: 0 0 4px; font-size: 18px; font-weight: 800; 
-  text-transform: uppercase; letter-spacing: 1.5px;
-  color: #44ff88; text-shadow: 0 0 8px rgba(68, 255, 136, 0.3); 
+.gm-glass-panel h2 {
+  margin: 0 0 8px; font-size: 22px; font-weight: 900;
+  text-transform: uppercase; letter-spacing: 2px;
+  color: #0284c7; text-shadow: 0 0 15px rgba(2, 132, 199, 0.5);
 }
 .gm-slogan {
   margin: 0 0 20px;
@@ -47,8 +47,8 @@
   border-radius: 0px; color: white; font-size: 14px; transition: 0.2s;
 }
 .gm-input-group input:focus {
-  outline: none; border-color: #44ff88; background: rgba(0, 0, 0, 0.7);
-  box-shadow: 0 0 8px rgba(68, 255, 136, 0.2);
+  outline: none; border-color: #0284c7; background: rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 8px rgba(2, 132, 199, 0.2);
 }
 .gm-btn-login {
   width: 100%; padding: 12px;
@@ -59,7 +59,7 @@
   display: flex; align-items: center; justify-content: center; gap: 8px;
 }
 .gm-btn-login:hover {
-  background: #0369a1; border-color: #44ff88;
+  background: #0369a1; border-color: #0284c7;
 }
 .gm-btn-login:disabled {
   opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none;

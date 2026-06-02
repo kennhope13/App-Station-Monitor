@@ -145,14 +145,24 @@ export default function AppShell() {
     () => localStorage.getItem('sidebar-expanded') !== 'false'
   );
   const [theme, setThemeState] = useState<string>(
-    () => localStorage.getItem('station-theme') || 'dark'
+    () => localStorage.getItem('station-theme') || 'industrial'
   );
 
   /** Áp dụng theme mới và lưu vào localStorage, hiển thị toast xác nhận. */
   const handleSelectTheme = (newTheme: string) => {
     setThemeState(newTheme);
     setGlobalTheme(newTheme as any);
-    showToast(`Đã áp dụng giao diện ${newTheme === 'dark' ? 'Tối' : 'Sáng'}`, 'success');
+    
+    const themeNames: Record<string, string> = {
+      dark: 'Tối Tiêu chuẩn',
+      light: 'Trắng Tiêu chuẩn',
+      'soft-light': 'Sáng Dịu mắt',
+      silver: 'Bạc Tinh tế',
+      industrial: 'Xám Công nghiệp',
+      hightech: 'Xanh Hiện đại',
+      cyberpunk: 'Tím Neon'
+    };
+    showToast(`Đã áp dụng giao diện ${themeNames[newTheme] || newTheme}`, 'success');
   };
 
   useEffect(() => {
@@ -178,9 +188,9 @@ export default function AppShell() {
 
   useEffect(() => {
     // Áp dụng theme đã lưu ngay khi shell mount
-    const savedTheme = localStorage.getItem('station-theme') || 'dark';
+    const savedTheme = localStorage.getItem('station-theme') || 'industrial';
     document.documentElement.dataset.theme = savedTheme;
-    document.documentElement.classList.remove('theme-blue', 'theme-dark', 'theme-light');
+    document.documentElement.classList.remove('theme-blue', 'theme-dark', 'theme-light', 'theme-industrial', 'theme-hightech', 'theme-matrix', 'theme-cyberpunk', 'theme-retro');
     document.documentElement.classList.add(`theme-${savedTheme}`);
 
     const handleThemeChange = (e: Event) => {
@@ -311,36 +321,41 @@ export default function AppShell() {
                 
                 {/* Popover Menu — position:fixed để thoát overflow:hidden của sidebar */}
                 {showUserMenu && (
-                  <div className="sb-user-popover" style={{ position: 'fixed', bottom: popupPos.bottom, left: popupPos.left, top: 'auto' }}>
-                    <div style={{ display: 'flex', gap: 4, padding: '4px 8px 8px' }}>
-                      <button 
-                        onClick={() => handleSelectTheme('dark')}
-                        style={{ 
-                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, 
-                          padding: '6px', borderRadius: 4, border: '1px solid var(--admin-border)',
-                          background: theme === 'dark' ? 'var(--admin-accent)' : 'transparent',
-                          color: theme === 'dark' ? '#fff' : 'var(--admin-text-muted)',
-                          fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
-                        }}
-                      >
-                        <Moon size={14} /> Tối
-                      </button>
-                      <button 
-                        onClick={() => handleSelectTheme('light')}
-                        style={{ 
-                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, 
-                          padding: '6px', borderRadius: 4, border: '1px solid var(--admin-border)',
-                          background: theme === 'light' ? 'var(--admin-accent)' : 'transparent',
-                          color: theme === 'light' ? '#fff' : 'var(--admin-text-muted)',
-                          fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
-                        }}
-                      >
-                        <Sun size={14} /> Sáng
-                      </button>
+                  <div className="sb-user-popover" style={{ position: 'fixed', bottom: popupPos.bottom, left: popupPos.left, top: 'auto', width: 200, padding: '6px 0' }}>
+                    <div style={{ padding: '6px 12px 2px', fontSize: '0.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      GIAO DIỆN HỆ THỐNG
                     </div>
-                    <div className="sb-popover-sep" style={{ margin: '0 8px 4px' }} />
-                    <div className="sb-popover-item danger" onClick={() => { setShowLogoutModal(true); setShowUserMenu(false); }}>
-                      <LogOut size={15} strokeWidth={2} /> <span>Đăng xuất</span>
+                    <div style={{ padding: '6px 10px' }}>
+                      <select 
+                        value={theme} 
+                        onChange={(e) => handleSelectTheme(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: 4,
+                          border: '1px solid var(--admin-border)',
+                          background: 'var(--admin-layer-2)',
+                          color: 'var(--admin-text)',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          outline: 'none',
+                          boxSizing: 'border-box',
+                          height: 32,
+                        }}
+                      >
+                        <option value="dark" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>⚫ Tối Tiêu chuẩn</option>
+                        <option value="industrial" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>🔘 Xám Công nghiệp</option>
+                        <option value="hightech" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>🔵 Xanh Hiện đại</option>
+                        <option value="cyberpunk" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>🟣 Tím Neon</option>
+                        <option value="light" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>⚪ Trắng Tiêu chuẩn</option>
+                        <option value="soft-light" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>🟡 Sáng Dịu mắt</option>
+                        <option value="silver" style={{ background: 'var(--admin-panel)', color: 'var(--admin-text)' }}>🥈 Bạc Tinh tế</option>
+                      </select>
+                    </div>
+                    <div className="sb-popover-sep" style={{ margin: '4px 8px' }} />
+                    <div className="sb-popover-item danger" onClick={() => { setShowLogoutModal(true); setShowUserMenu(false); }} style={{ padding: '8px 12px' }}>
+                      <LogOut size={14} strokeWidth={2} /> <span>Đăng xuất</span>
                     </div>
                   </div>
                 )}

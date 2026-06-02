@@ -24,7 +24,7 @@ function ensureOverlay(): HTMLElement {
     <div id="custom-confirm-box" style="
       background: var(--admin-panel);
       border: 1px solid var(--admin-border);
-      border-radius: 12px;
+      border-radius: 0;
       box-shadow: var(--admin-shadow-lg, 0 10px 30px rgba(0,0,0,0.3));
       padding: 0;
       min-width: 320px;
@@ -52,7 +52,7 @@ function ensureOverlay(): HTMLElement {
             padding: 8px 18px;
             background: var(--admin-bg);
             border: 1px solid var(--admin-border);
-            border-radius: 7px;
+            border-radius: 0;
             color: var(--admin-text);
             font-size: 0.78rem;
             font-weight: 600;
@@ -64,7 +64,7 @@ function ensureOverlay(): HTMLElement {
           <button id="ccd-confirm" style="
             padding: 8px 18px;
             border: none;
-            border-radius: 7px;
+            border-radius: 0;
             font-size: 0.78rem;
             font-weight: 700;
             cursor: pointer;

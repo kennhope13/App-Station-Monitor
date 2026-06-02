@@ -39,7 +39,6 @@ public class AiConfigController : ControllerBase
 
         var roiPoints = await _db.RoiPoints
             .Where(r => r.DeviceId == cameraId)
-            .OrderBy(r => r.SortOrder)
             .ToListAsync();
 
         return Ok(new
@@ -49,16 +48,20 @@ public class AiConfigController : ControllerBase
             type = device.Type,
             // Giải mã mật khẩu để Jetson có thể login vào RTSP stream của camera
             config = _crypto.DecryptPasswordInConfigJson(device.Config),
-            boundaries = boundaries.Select(b => new {
-                b.Id, b.Name, b.Type,
-                polygon = b.PolygonJson,
-                thresholds = b.ThresholdsJson,
-                b.SeverityLevel
-            }),
-            roiPoints = roiPoints.Select(r => new {
-                r.Id, r.Name, r.Tx, r.Ty, r.Ox, r.Oy,
-                r.PointId, r.PreAlarmThreshold, r.AlarmThreshold
-            })
+            boundaries = boundaries
+                .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(b => new {
+                    b.Id, b.Name, b.Type,
+                    polygon = b.PolygonJson,
+                    thresholds = b.ThresholdsJson,
+                    b.SeverityLevel
+                }),
+            roiPoints = roiPoints
+                .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(r => new {
+                    r.Id, r.Name, r.Tx, r.Ty, r.Ox, r.Oy,
+                    r.PointId, r.PreAlarmThreshold, r.AlarmThreshold
+                })
         });
     }
 
@@ -83,16 +86,22 @@ public class AiConfigController : ControllerBase
             cameraName = c.Name,
             type = c.Type,
             config = _crypto.DecryptPasswordInConfigJson(c.Config),
-            boundaries = allBoundaries.Where(b => b.DeviceId == c.Id).Select(b => new {
-                b.Id, b.Name, b.Type,
-                polygon = b.PolygonJson,
-                thresholds = b.ThresholdsJson,
-                b.SeverityLevel
-            }),
-            roiPoints = allRoiPoints.Where(r => r.DeviceId == c.Id).Select(r => new {
-                r.Id, r.Name, r.Tx, r.Ty, r.Ox, r.Oy,
-                r.PointId, r.PreAlarmThreshold, r.AlarmThreshold
-            })
+            boundaries = allBoundaries
+                .Where(b => b.DeviceId == c.Id)
+                .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(b => new {
+                    b.Id, b.Name, b.Type,
+                    polygon = b.PolygonJson,
+                    thresholds = b.ThresholdsJson,
+                    b.SeverityLevel
+                }),
+            roiPoints = allRoiPoints
+                .Where(r => r.DeviceId == c.Id)
+                .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(r => new {
+                    r.Id, r.Name, r.Tx, r.Ty, r.Ox, r.Oy,
+                    r.PointId, r.PreAlarmThreshold, r.AlarmThreshold
+                })
         });
 
         return Ok(result);

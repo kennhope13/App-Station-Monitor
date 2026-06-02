@@ -44,6 +44,11 @@ const SLD_H = 612;
  * hỗ trợ kéo thả thiết bị vào sơ đồ khi ở chế độ chỉnh sửa.
  * Expose API ra ngoài qua forwardRef (fitView, rotateView, deleteNode, ...).
  */
+const DARK_MATRIX = '-0.161 0 0 0 0.220  -0.651 0 0 0 0.741  -0.808 0 0 0 0.973  0 0 0 1 0';
+const LIGHT_MATRIX = '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0';
+
+function getTheme() { return document.documentElement.dataset.theme || 'dark'; }
+
 const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
   ({ stationId, editMode = false, showLabels = false, colorMatrix, sensors = [], selectedNodeId, onNodeSelect, onPointsChanged, onNodeDropped }, ref) => {
     const viewportRef = useRef<HTMLDivElement>(null);
@@ -52,6 +57,13 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
     const [points, setPoints] = useState<SldPoint[]>([]);
     const [svgUrl, setSvgUrl] = useState<string | null>(null);
     const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+    const [themeId, setThemeId] = useState(getTheme);
+
+    useEffect(() => {
+      const h = (e: Event) => setThemeId((e as CustomEvent).detail?.theme || getTheme());
+      window.addEventListener('theme-changed', h);
+      return () => window.removeEventListener('theme-changed', h);
+    }, []);
 
     const [badgeCfgs, setBadgeCfgs] = useState<Record<string, BadgeConfig>>(() => {
       try { return JSON.parse(localStorage.getItem(`sld_badge_${stationId}`) || '{}'); } catch { return {}; }
@@ -288,13 +300,13 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
       return (
         <div style={{
           position: 'fixed', top: sy + 15, left: sx + 15, zIndex: 100,
-          background: 'rgba(13, 17, 23, 0.92)', backdropFilter: 'blur(8px)',
+          background: 'var(--admin-overlay)', backdropFilter: 'blur(8px)',
           border: '1px solid var(--admin-accent)', borderRadius: 4, padding: '6px 10px',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.5)', pointerEvents: 'none',
+          boxShadow: 'var(--admin-shadow)', pointerEvents: 'none',
           animation: 'tooltipFadeIn 0.15s ease-out'
         }}>
           <div style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', fontWeight: 800, textTransform: 'uppercase', marginBottom: 2 }}>{p.deviceType || 'Thiết bị'}</div>
-          <div style={{ fontSize: '.8rem', fontWeight: 700, color: '#fff', marginBottom: 4 }}>{p.label || p.pointId || 'Không có tên'}</div>
+          <div style={{ fontSize: '.8rem', fontWeight: 700, color: 'var(--admin-text)', marginBottom: 4 }}>{p.label || p.pointId || 'Không có tên'}</div>
           <div style={{ height: 1, background: 'var(--admin-border-light)', margin: '4px 0' }} />
           <div style={{ fontSize: '.75rem', fontWeight: 700, color: 'var(--admin-accent)' }}>
             Giá trị: {sensor ? `${Math.round(sensor.value * 10) / 10}${sensor.unit || ''}` : '--'}
@@ -312,7 +324,7 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
         <svg id="sld-canvas" style={{ width: '100%', height: '100%', display: 'block', backgroundColor: 'var(--admin-bg)' }} xmlns="http://www.w3.org/2000/svg">
           <defs>
             <filter id="sld-color-filter" colorInterpolationFilters="sRGB">
-              <feColorMatrix id="sld-color-matrix" type="matrix" values={colorMatrix || "-0.161 0 0 0 0.220  -0.651 0 0 0 0.741  -0.808 0 0 0 0.973  0 0 0 1 0"} />
+              <feColorMatrix id="sld-color-matrix" type="matrix" values={colorMatrix || (['light','soft-light','silver'].includes(themeId) ? LIGHT_MATRIX : DARK_MATRIX)} />
             </filter>
           </defs>
           <g id="sld-world" transform={`translate(${transform.vx},${transform.vy}) scale(${transform.vs}) rotate(${transform.vr}, ${SLD_W / 2}, ${SLD_H / 2})`}>
@@ -349,9 +361,13 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
                       strokeWidth={isSelected ? 2 : 0}
                     />
                     <g transform={`translate(${p.x + bx / transform.vs}, ${p.y + by / transform.vs}) scale(${1 / transform.vs})`}>
-                      <rect x={-bw / 2} y={-bh / 2} width={bw} height={bh} rx="4" fill="rgba(0,0,0,0.38)" />
+                      <rect x={-bw / 2} y={-bh / 2} width={bw} height={bh} rx="4"
+                        fill={['light','soft-light','silver'].includes(themeId) ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.38)'}
+                        stroke={['light','soft-light','silver'].includes(themeId) ? 'rgba(0,0,0,0.15)' : 'none'}
+                        strokeWidth={['light','soft-light','silver'].includes(themeId) ? 0.5 : 0}
+                      />
                       <text x="0" y={bh / 2 - 2} textAnchor="middle"
-                        fill={sensor ? cfg.color : 'rgba(255,255,255,0.55)'}
+                        fill={sensor ? cfg.color : (['light','soft-light','silver'].includes(themeId) ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)')}
                         fontSize={`${cfg.size}px`} fontWeight="800" style={{ pointerEvents: 'none' }}>{label}</text>
                     </g>
                     {showLabels && p.label && (

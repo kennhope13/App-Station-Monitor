@@ -32,20 +32,19 @@ cfg = get_settings()
 # ── Scheduler: xử lý định kỳ ─────────────────────────────────
 
 async def _process_loop() -> None:
-    """Gọi process() tuần tự cho tất cả analyzer nhiệt, line detector và acoustic theo chu kỳ."""
+    """Gọi process() SONG SONG cho tất cả analyzer để đảm bảo tần suất ổn định."""
     while True:
         try:
-            for analyzer in list(routes._thermal_analyzers.values()):
-                await analyzer.process()
-
-            for detector in list(routes._line_detectors.values()):
-                await detector.process()
-
-            for acoustic in list(routes._acoustic_analyzers.values()):
-                await acoustic.process()
+            tasks = []
+            for a in routes._thermal_analyzers.values(): tasks.append(a.process())
+            for d in routes._line_detectors.values():  tasks.append(d.process())
+            for c in routes._acoustic_analyzers.values(): tasks.append(c.process())
+            
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as ex:
-            logger.error("[Scheduler] Error: %s", ex)
+            logger.error("[Scheduler] Critical Loop Error: %s", ex)
 
         await asyncio.sleep(cfg.process_interval)
 
@@ -179,8 +178,8 @@ async def _load_config_from_backend() -> None:
                                 points.append(ThermalPoint(
                                     id=r.get("pointId") or f"P{r.get('sortOrder') or len(points)+1}",
                                     x=tx, y=ty,
-                                    pre_alarm=float(r.get("preAlarmThreshold") or 50.0),
-                                    alarm=float(r.get("alarmThreshold") or 70.0),
+                                    pre_alarm=float(r.get("preAlarmThreshold") or 0.0),
+                                    alarm=float(r.get("alarmThreshold") or 0.0),
                                     label=r.get("name", ""),
                                 ))
 
@@ -195,8 +194,8 @@ async def _load_config_from_backend() -> None:
                                     zones.append(ThermalZone(
                                         id=str(b["id"]),
                                         polygon=poly,
-                                        pre_alarm=thresholds.get("warning") or thresholds.get("preAlarm") or 50.0,
-                                        alarm=thresholds.get("alarm") or 70.0,
+                                        pre_alarm=thresholds.get("warning") or thresholds.get("preAlarm") or 0.0,
+                                        alarm=thresholds.get("alarm") or 0.0,
                                         label=b["name"]
                                     ))
                                 except Exception as json_err:

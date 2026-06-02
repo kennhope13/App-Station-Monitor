@@ -25,13 +25,13 @@
   border: 1px solid var(--admin-border-light);
 }
 .stab:hover {
-  color: #fff;
+  color: var(--admin-text);
   background: var(--admin-hover);
 }
 .stab.active {
-  color: #44ff88;
-  background: rgba(68,255,136,0.12);
-  border-color: rgba(68,255,136,0.3);
+  color: var(--admin-accent);
+  background: var(--admin-layer-2);
+  border-color: var(--admin-accent);
 }
 
 .stab-content {

@@ -227,7 +227,7 @@ export default function BoundaryTab({ cameras, initialCamera }: Props) {
         {cam && !isDrawing && !editingId && (
           <div style={{ padding:10 }}>
             <button className="btn-industrial btn-primary" style={{ width:'100%' }} onClick={() => setIsDrawing(true)}>
-              <Plus size={16}/> VẼ VÙNG MỚI
+              <Plus size={16} style={{ marginRight: 4 }}/> VẼ VÙNG MỚI
             </button>
           </div>
         )}
@@ -250,42 +250,42 @@ export default function BoundaryTab({ cameras, initialCamera }: Props) {
 
             {/* Drawing Toolbar Overlay */}
             {isDrawing && (
-              <div style={{ position:'absolute', top:10, left:10, background:'rgba(0,0,0,0.8)', padding:'8px 12px', borderRadius:4, display:'flex', gap:10, alignItems:'center', border:'1px solid #3b82f6' }}>
+              <div style={{ position:'absolute', top:10, left:10, background:'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', padding:'8px 12px', borderRadius:4, display:'flex', gap:10, alignItems:'center', border:'1px solid #3b82f6', boxShadow:'0 4px 20px rgba(0,0,0,0.5)' }}>
                 <span style={{ fontSize:'.8rem', color:'#3b82f6', fontWeight:700 }}>ĐANG VẼ POLYGON ({draftVertices.length} điểm)</span>
-                <button className="btn-industrial btn-primary" style={{ fontSize:'.75rem' }} onClick={finishDrawing} disabled={draftVertices.length < 3}>XÁC NHẬN</button>
-                <button className="btn-industrial" style={{ fontSize:'.75rem' }} onClick={cancelDrawing}>HỦY</button>
+                <button className="btn-industrial btn-primary" onClick={finishDrawing} disabled={draftVertices.length < 3}>XÁC NHẬN</button>
+                <button className="btn-industrial" onClick={cancelDrawing}>HỦY</button>
                 <div style={{ fontSize:'.7rem', opacity:.7 }}>Click để thêm điểm, Enter/Click nút để xong</div>
               </div>
             )}
 
             {/* Editing Form Overlay */}
             {editingId && (
-              <div style={{ position:'absolute', bottom:20, right:20, width:280, background:'var(--admin-card-bg)', border:'1px solid var(--admin-border)', padding:16, boxShadow:'0 10px 25px rgba(0,0,0,0.5)' }}>
-                <div style={{ fontSize:'.85rem', fontWeight:800, marginBottom:12 }}>THÔNG TIN VÙNG</div>
+              <div style={{ position:'absolute', bottom:20, right:20, width:280, background:'var(--admin-panel)', border:'1px solid var(--admin-border)', padding:16, boxShadow:'0 10px 25px rgba(0,0,0,0.5)', borderRadius: 4 }}>
+                <div style={{ fontSize:'.85rem', fontWeight:800, marginBottom:12, color:'var(--admin-accent)', letterSpacing: '.5px' }}>THÔNG TIN VÙNG</div>
                 <div style={{ marginBottom:10 }}>
-                  <label style={{ display:'block', fontSize:'.7rem', marginBottom:4, opacity:.7 }}>TÊN VÙNG</label>
-                  <input className="admin-input" style={{ width:'100%' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                  <label style={{ display:'block', fontSize:'.7rem', marginBottom:4, opacity:.7, fontWeight: 700 }}>TÊN VÙNG</label>
+                  <input className="form-input" style={{ width:'100%' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                 </div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
                   <div>
-                    <label style={{ display:'block', fontSize:'.7rem', marginBottom:4, opacity:.7 }}>LOẠI</label>
-                    <select className="admin-input" style={{ width:'100%' }} value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
+                    <label style={{ display:'block', fontSize:'.7rem', marginBottom:4, opacity:.7, fontWeight: 700 }}>LOẠI</label>
+                    <select className="form-select" style={{ width:'100%', padding: '4px 8px' }} value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})}>
                       <option value="pd">Phóng điện</option>
                       <option value="intrusion">Xâm nhập</option>
                       <option value="roi">Nhiệt (ROI)</option>
                     </select>
                   </div>
                   <div>
-                    <label style={{ display:'block', fontSize:'.7rem', marginBottom:4, opacity:.7 }}>MỨC ĐỘ</label>
-                    <select className="admin-input" style={{ width:'100%' }} value={formData.severity} onChange={e => setFormData({...formData, severity: e.target.value})}>
+                    <label style={{ display:'block', fontSize:'.7rem', marginBottom:4, opacity:.7, fontWeight: 700 }}>MỨC ĐỘ</label>
+                    <select className="form-select" style={{ width:'100%', padding: '4px 8px' }} value={formData.severity} onChange={e => setFormData({...formData, severity: e.target.value})}>
                       <option value="warning">Cảnh báo</option>
                       <option value="alarm">Báo động</option>
                     </select>
                   </div>
                 </div>
                 <div style={{ display:'flex', gap:8 }}>
-                  <button className="btn-industrial btn-primary" style={{ flex:1 }} onClick={handleSave}><Save size={14}/> LƯU</button>
-                  <button className="btn-industrial" onClick={() => setEditingId(null)}><X size={14}/> HỦY</button>
+                  <button className="btn-industrial btn-primary" style={{ flex:1 }} onClick={handleSave}><Save size={14} style={{ marginRight: 4 }}/> LƯU</button>
+                  <button className="btn-industrial" onClick={() => setEditingId(null)}><X size={14} style={{ marginRight: 4 }}/> HỦY</button>
                 </div>
               </div>
             )}

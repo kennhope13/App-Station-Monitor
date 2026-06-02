@@ -36,30 +36,32 @@ export const PdModal: React.FC<Props> = ({ isOpen, onClose, onSubmit, initial })
   };
 
   return (
-    <div className="modal-backdrop" style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-    }}>
-      <div className="modal-content" style={{
-        background: '#fff', borderRadius: 8, padding: 24, minWidth: 300,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
-      }}>
-        <h3 style={{ marginTop: 0, marginBottom: 16 }}>{initial ? 'Sửa vùng PD' : 'Thêm vùng PD'}</h3>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Tên vùng</label>
-          <input type="text" value={name} onChange={e => setName(e.target.value)} style={{ width: '100%' }} />
+    <div className="modal-overlay active">
+      <div className="modal-content" style={{ width: 360, background: 'var(--admin-panel)', borderRadius: 4, border: '1px solid var(--admin-border)', padding: 0 }}>
+        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 style={{ margin: 0, fontSize: '.85rem', fontWeight: 800, letterSpacing: '.5px' }}>
+            {initial ? 'SỬA VÙNG PHÓNG ĐIỆN' : 'THÊM VÙNG PHÓNG ĐIỆN'}
+          </h3>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Ngưỡng cảnh báo (dB)</label>
-          <input type="number" value={warning} onChange={e => setWarning(e.target.value)} style={{ width: '100%' }} />
+
+        <div className="modal-body" style={{ padding: 20 }}>
+          <div className="form-group">
+            <label>Tên vùng</label>
+            <input type="text" className="form-input" value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Ngưỡng cảnh báo (dB)</label>
+            <input type="number" className="form-input" value={warning} onChange={e => setWarning(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Ngưỡng cấp cao (dB)</label>
+            <input type="number" className="form-input" value={alarm} onChange={e => setAlarm(e.target.value)} />
+          </div>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', marginBottom: 4 }}>Ngưỡng cấp cao (dB)</label>
-          <input type="number" value={alarm} onChange={e => setAlarm(e.target.value)} style={{ width: '100%' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+
+        <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid var(--admin-border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn-industrial" onClick={onClose}>Hủy</button>
-          <button className="btn-industrial btn-primary" onClick={handleSubmit}>Lưu</button>
+          <button className="btn-industrial btn-primary" onClick={handleSubmit}>Lưu vùng</button>
         </div>
       </div>
     </div>

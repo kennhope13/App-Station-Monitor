@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { LayoutList, Trash2, Settings, Zap, Thermometer } from 'lucide-react';
+import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff } from 'lucide-react';
 import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
@@ -30,6 +30,7 @@ export default function DeviceManagementPage() {
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null); // null = đang thêm mới
   const [isSaving, setIsSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [testConnResult, setTestConnResult] = useState<{ show: boolean, success?: boolean, msg?: string, latency?: number }>({ show: false });
 
   // Dữ liệu form — dùng chung cho mọi loại thiết bị, field nào không dùng thì bỏ qua
@@ -132,6 +133,7 @@ export default function DeviceManagementPage() {
   const openDeviceModal = (d?: Device) => {
     setEditingId(d?.id ?? null);
     setTestConnResult({ show: false });
+    setShowPassword(false);
     if (d) {
       const cfg = d.config || {};
       setFormData({
@@ -223,16 +225,31 @@ export default function DeviceManagementPage() {
 
   /** Kiểm tra kết nối tới thiết bị đang chỉnh sửa và hiển thị kết quả trong modal. */
   const testModalConn = async () => {
-    if (editingId) {
-      setTestConnResult({ show: true, msg: 'Đang kiểm tra...' });
-      try {
-        const res = await stationApi.testConnection(editingId);
-        setTestConnResult({ show: true, success: res.success, msg: res.success ? `Kết nối thành công — ${res.latencyMs}ms` : res.message, latency: res.latencyMs });
-      } catch {
-        setTestConnResult({ show: true, success: false, msg: 'Lỗi kết nối' });
+    setTestConnResult({ show: true, msg: 'Đang kiểm tra...' });
+    try {
+      const configObj: any = { ip: formData.ip };
+      let protocol = 'rtsp';
+      
+      if (formData.type === 'plc_s7') {
+        protocol = 'snap7';
+        Object.assign(configObj, { rack: formData.rack, slot: formData.slot, db: formData.db, length: formData.length });
+      } else if (formData.type === 'camera_dual' || formData.type === 'camera_thermal' || formData.type.startsWith('camera')) {
+        protocol = 'rtsp';
+        let pwd = formData.password;
+        if ((pwd === '***' || pwd === '...') && editingId) {
+          const creds = await stationApi.getCredentials(editingId);
+          pwd = creds.password;
+        }
+        Object.assign(configObj, { username: formData.username, password: pwd });
+      } else if (formData.type === 'modbus_tcp') {
+        protocol = 'modbus';
+        Object.assign(configObj, { port: formData.port, unit_id: formData.unitId, username: formData.username, password: formData.password });
       }
-    } else {
-      setTestConnResult({ show: true, success: false, msg: 'Lưu thiết bị trước rồi mới test được.' });
+
+      const res = await stationApi.testProtocolConnection(formData.ip, formData.port || 102, protocol, JSON.stringify(configObj));
+      setTestConnResult({ show: true, success: res.success, msg: res.success ? `Kết nối thành công — ${res.latencyMs}ms` : res.message, latency: res.latencyMs });
+    } catch (err: any) {
+      setTestConnResult({ show: true, success: false, msg: `Lỗi: ${err.message || 'Lỗi kết nối'}` });
     }
   };
 
@@ -284,57 +301,59 @@ export default function DeviceManagementPage() {
     <div className="admin-page-container">
       {/* TOOLBAR */}
       {roiTab === 3 ? (
-        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="page-toolbar-row">
+          <div className="page-title-cell">
             <button
-              className="btn-industrial"
+              className="btn-industrial btn-sm"
               onClick={() => { setRoiTab(0); setSelectedRoiDevice(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
             >
-              ← Quay lại danh sách
+              ← QUAY LẠI
             </button>
-            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
-              CẤU HÌNH ĐIỂM ĐO NHIỆT ĐỘ
-              <span style={{ fontSize: '.68rem', background: 'rgba(239,68,68,.08)', padding: '2px 8px', border: '1px solid rgba(239,68,68,.18)', color: 'var(--admin-danger)', borderRadius: 3 }}>
-                {selectedRoiDevice?.name || 'Camera Nhiệt'}
-              </span>
-            </h3>
+            <h2 style={{ fontSize: '1rem', marginLeft: 15 }}>
+              CẤU HÌNH NHIỆT: {selectedRoiDevice?.name || '---'}
+            </h2>
           </div>
         </div>
       ) : roiTab === 2 ? (
-        <div className="page-toolbar-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--admin-border)', background: 'var(--admin-layer-1)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="page-toolbar-row">
+          <div className="page-title-cell">
             <button
-              className="btn-industrial"
+              className="btn-industrial btn-sm"
               onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', fontSize: '.75rem', fontWeight: 700 }}
             >
-              ← Quay lại danh sách
+              ← QUAY LẠI
             </button>
-            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '.9rem', display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)' }}>
-              VẼ VÙNG PHÁT HIỆN PD
-              <span style={{ fontSize: '.68rem', background: 'rgba(59,130,246,.08)', padding: '2px 8px', border: '1px solid rgba(59,130,246,.18)', color: 'var(--admin-accent)', borderRadius: 3 }}>
-                {selectedPdDevice?.name || 'Camera PD'}
-              </span>
-            </h3>
+            <h2 style={{ fontSize: '1rem', marginLeft: 15 }}>
+              VẼ VÙNG PD: {selectedPdDevice?.name || '---'}
+            </h2>
           </div>
         </div>
       ) : (
-        <div className="page-toolbar-row" style={{ display: 'flex', flexWrap: 'wrap', rowGap: 8 }}>
+        <div className="page-toolbar-row">
           <div className="page-title-cell">
             <h2>QUẢN LÝ THIẾT BỊ</h2>
           </div>
-          <div className="page-toolbar-group" style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="page-toolbar-group">
             {/* Status Indicators */}
-            <div className="page-toolbar-cell">
-              <span style={{ color: 'var(--admin-success)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>🟢 {online} ONLINE</span>
-              <span style={{ color: 'var(--admin-text-muted)', opacity: 0.3, fontSize: '.7rem' }}>|</span>
-              <span style={{ color: 'var(--admin-danger)', fontWeight: 700, fontSize: '.75rem', fontFamily: 'Consolas, monospace' }}>{devices.length - online} OFFLINE</span>
+            <div className="page-toolbar-cell" style={{ height: 28 }}>
+              <span style={{ color: 'var(--admin-success)', fontWeight: 800, fontSize: '.75rem' }}>🟢 {online} ONLINE</span>
+              <span style={{ color: 'var(--admin-text-muted)', opacity: 0.3, margin: '0 4px' }}>|</span>
+              <span style={{ color: 'var(--admin-danger)', fontWeight: 800, fontSize: '.75rem' }}>{devices.length - online} OFFLINE</span>
             </div>
   
             {/* Action Buttons */}
-            <button className="btn-industrial btn-primary" onClick={() => openDeviceModal()}>+ Thêm thiết bị</button>
-            <button className="btn-industrial" onClick={() => setIsScanModalOpen(true)}>Quét LAN</button>
+            <button 
+              className="btn-industrial btn-primary" 
+              onClick={() => openDeviceModal()}
+            >
+              + THÊM THIẾT BỊ
+            </button>
+            <button 
+              className="btn-industrial" 
+              onClick={() => setIsScanModalOpen(true)}
+            >
+              QUÉT LAN
+            </button>
           </div>
         </div>
       )}
@@ -407,6 +426,7 @@ export default function DeviceManagementPage() {
               <PdRegionTab 
                 cameras={devices.filter(d => d.type.startsWith('camera')) as CameraDevice[]}
                 initialCamera={selectedPdDevice}
+                onBack={() => { setRoiTab(0); setSelectedPdDevice(null); }}
               />
             ) : (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-text-muted)' }}>
@@ -435,141 +455,138 @@ export default function DeviceManagementPage() {
               <h3>{editingId ? `Sửa: ${formData.name}` : 'Thêm thiết bị mới'}</h3>
               <button className="modal-close-btn" onClick={() => setIsDeviceModalOpen(false)}>✕</button>
             </div>
-            <div className="modal-body">
-              <div className="form-grid-2">
-                <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                  <label>Tên hiển thị *</label>
-                  <input type="text" className="form-input" placeholder="VD: PLC Tủ điện A1" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+            <div className="modal-body" style={{ padding: 0, background: 'var(--admin-layer-1)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                
+                {/* A. GENERAL INFO */}
+                <div style={{ background: 'var(--admin-border)', color: '#fff', padding: '6px 16px', fontSize: '.62rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  A. Định danh thiết bị
                 </div>
-                <div className="form-group">
-                  <label>Loại thiết bị *</label>
-                  <select className="form-select" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
-                    <option value="plc_s7">️ PLC S7-1200/1500</option>
-                    <option value="cabinet">📦 Tủ điện (3 Nhiệt, 1 PD)</option>
-                    <option value="camera_cctv">📷 Camera Thường (RTSP)</option>
-                    <option value="camera_thermal">🌡 Camera Nhiệt (RTSP) — chỉ luồng nhiệt</option>
-                    <option value="camera_dual">⚡ Camera Dual-Stream (quang học + nhiệt)</option>
-                    <option value="camera_pd">⚡ Camera Phóng điện (RTSP)</option>
-                    <option value="modbus_tcp">Cảm biến Modbus TCP</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Địa chỉ IP *</label>
-                  <input type="text" className="form-input" placeholder="192.168.10.x" value={formData.ip} onChange={e => setFormData({ ...formData, ip: e.target.value })} />
+                <div style={{ padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', alignItems: 'center', gap: 15 }}>
+                    <label style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)', textAlign: 'right' }}>TÊN HIỂN THỊ</label>
+                    <input type="text" className="form-input" style={{ borderRadius: 0 }} placeholder="VD: CAMERA NHIET 01" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', alignItems: 'center', gap: 15 }}>
+                    <label style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)', textAlign: 'right' }}>PHÂN LOẠI</label>
+                    <select className="form-select" style={{ borderRadius: 0 }} value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
+                      <option value="camera_dual">Camera Dual-Stream (Nhiệt + Quang)</option>
+                      <option value="camera_thermal">Camera Nhiệt (RTSP)</option>
+                      <option value="camera_cctv">Camera CCTV thường (RTSP)</option>
+                      <option value="camera_pd">Camera Phóng điện (RTSP)</option>
+                      <option value="plc_s7">Siemens S7-1200/1500</option>
+                      <option value="cabinet">Cabinet Unit (3 Temp + 1 PD)</option>
+                      <option value="modbus_tcp">Modbus TCP Device</option>
+                    </select>
+                  </div>
                 </div>
 
-                {formData.type === 'plc_s7' && (
-                  <>
-                    <div className="form-group" style={{ gridColumn: '1/-1', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-                      <div><label>Rack</label><input type="number" className="form-input" value={formData.rack} onChange={e => setFormData({ ...formData, rack: Number(e.target.value) })} /></div>
-                      <div><label>Slot</label><input type="number" className="form-input" value={formData.slot} onChange={e => setFormData({ ...formData, slot: Number(e.target.value) })} /></div>
-                      <div><label>DB Number</label><input type="number" className="form-input" value={formData.db} onChange={e => setFormData({ ...formData, db: Number(e.target.value) })} /></div>
-                      <div><label>Length</label><input type="number" className="form-input" value={formData.length} onChange={e => setFormData({ ...formData, length: Number(e.target.value) })} /></div>
-                    </div>
-                    <div className="form-group" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
-                      <input
-                        type="checkbox"
-                        id="enableHealthScore"
-                        checked={formData.enableHealthScore}
-                        onChange={e => setFormData({ ...formData, enableHealthScore: e.target.checked })}
-                        style={{ width: 16, height: 16, cursor: 'pointer' }}
-                      />
-                      <label htmlFor="enableHealthScore" style={{ margin: 0, fontWeight: 600, cursor: 'pointer', fontSize: '.82rem', color: 'var(--admin-text)' }}>
-                        Đánh giá sức khỏe thiết bị (Tính điểm sức khỏe 0-100)
-                      </label>
-                    </div>
-                  </>
-                )}
-
-                {(formData.type.startsWith('camera') || formData.type === 'modbus_tcp') && (
-                  <>
-                    <div className="form-group">
-                      <label>Username</label>
-                      <input type="text" className="form-input" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label>Password</label>
-                      <input type="password" className="form-input" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
-                    </div>
-                  </>
-                )}
-
-                {(formData.type === 'camera_dual' || formData.type === 'camera_thermal') && (
-                  <div className="form-group" style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 10,
-                    padding: '12px 14px', background: 'rgba(239,68,68,.04)', border: '1px solid rgba(239,68,68,.18)', borderRadius: 4 }}>
-                    <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-danger)', textTransform: 'uppercase', letterSpacing: '.8px' }}>🌡 Luồng nhiệt (bắt buộc)</div>
-                    <div>
-                      <label>RTSP URL — Nhiệt
-                        <select className="form-select" style={{ marginLeft: 8, fontSize: 11, display: 'inline-block', width: 'auto' }}
-                          onChange={e => { if (e.target.value) setFormData({ ...formData, rtspThermal: e.target.value }) }}>
-                          <option value="">-- Preset --</option>
-                          <option value="/Streaming/Channels/201">Hikvision kênh nhiệt 201</option>
-                          <option value="/Streaming/Channels/202">Hikvision nhiệt sub 202</option>
-                          <option value="/thermal/main">Generic /thermal/main</option>
-                        </select>
-                      </label>
-                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="/Streaming/Channels/201"
-                        value={formData.rtspThermal} onChange={e => setFormData({ ...formData, rtspThermal: e.target.value })} />
-                    </div>
-                    <div>
-                      <label>go2rtc Stream ID — Nhiệt <small style={{ opacity: .6 }}>(tự tạo nếu bỏ trống)</small></label>
-                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="cam_192_168_10_5_thermal"
-                        value={formData.go2rtcThermal} onChange={e => setFormData({ ...formData, go2rtcThermal: e.target.value })} />
+                {/* B. CONNECTION */}
+                <div style={{ background: 'var(--admin-border)', color: '#fff', padding: '6px 16px', fontSize: '.62rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  B. Kết nối & Xác thực
+                </div>
+                <div style={{ padding: '15px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>ĐỊA CHỈ IP (HOST)</label>
+                    <input type="text" className="form-input" style={{ borderRadius: 0 }} placeholder="192.168.10.152" value={formData.ip} onChange={e => setFormData({ ...formData, ip: e.target.value })} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>TÀI KHOẢN (USER)</label>
+                    <input type="text" className="form-input" style={{ borderRadius: 0 }} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
+                  </div>
+                  <div style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={{ fontSize: '.6rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>MẬT KHẨU (PASSWORD)</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type={showPassword ? 'text' : 'password'} className="form-input" style={{ borderRadius: 0, paddingRight: 35 }} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--admin-text-muted)' }}>
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
                     </div>
                   </div>
-                )}
 
-                {formData.type === 'camera_dual' && (
-                  <div className="form-group" style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', gap: 10,
-                    padding: '12px 14px', background: 'rgba(59,130,246,.04)', border: '1px solid rgba(59,130,246,.18)', borderRadius: 4 }}>
-                    <div style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-accent)', textTransform: 'uppercase', letterSpacing: '.8px' }}>📷 Luồng quang học</div>
-                    <div>
-                      <label>RTSP URL — Quang học
-                        <select className="form-select" style={{ marginLeft: 8, fontSize: 11, display: 'inline-block', width: 'auto' }}
-                          onChange={e => { if (e.target.value) setFormData({ ...formData, rtspOptical: e.target.value }) }}>
-                          <option value="">-- Preset --</option>
-                          <option value="/Streaming/Channels/101">Hikvision kênh chính 101</option>
-                          <option value="/Streaming/Channels/102">Hikvision kênh phụ 102</option>
-                          <option value="/stream1">Generic /stream1</option>
-                        </select>
-                      </label>
-                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="/Streaming/Channels/101"
-                        value={formData.rtspOptical} onChange={e => setFormData({ ...formData, rtspOptical: e.target.value })} />
+                  {formData.type === 'plc_s7' && (
+                    <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, border: '1px solid var(--admin-border)', padding: 10, background: 'rgba(0,0,0,0.1)' }}>
+                      <div><label style={{ fontSize: '.55rem', display: 'block', marginBottom: 2 }}>RACK</label><input type="number" className="form-input" value={formData.rack} onChange={e => setFormData({ ...formData, rack: Number(e.target.value) })} /></div>
+                      <div><label style={{ fontSize: '.55rem', display: 'block', marginBottom: 2 }}>SLOT</label><input type="number" className="form-input" value={formData.slot} onChange={e => setFormData({ ...formData, slot: Number(e.target.value) })} /></div>
+                      <div><label style={{ fontSize: '.55rem', display: 'block', marginBottom: 2 }}>DB NO.</label><input type="number" className="form-input" value={formData.db} onChange={e => setFormData({ ...formData, db: Number(e.target.value) })} /></div>
+                      <div><label style={{ fontSize: '.55rem', display: 'block', marginBottom: 2 }}>LEN</label><input type="number" className="form-input" value={formData.length} onChange={e => setFormData({ ...formData, length: Number(e.target.value) })} /></div>
                     </div>
-                    <div>
-                      <label>go2rtc Stream ID — Quang học</label>
-                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="cam_192_168_10_5_optical"
-                        value={formData.go2rtcOptical} onChange={e => setFormData({ ...formData, go2rtcOptical: e.target.value })} />
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
-                {/* Camera thường — single stream */}
-                {formData.type !== 'camera_dual' && formData.type !== 'camera_thermal' && formData.type.startsWith('camera') && (
+                {/* C. VIDEO STREAMS */}
+                {formData.type.startsWith('camera') && (
                   <>
-                    <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                      <label>RTSP Path
-                        <select className="form-select" style={{ marginLeft: 8, fontSize: 11, display: 'inline-block', width: 'auto' }} onChange={e => { if (e.target.value) setFormData({ ...formData, rtspPath: e.target.value }) }}>
-                          <option value="">-- Preset Hikvision --</option>
-                          <option value="/Streaming/Channels/101">Kênh chính (101)</option>
-                          <option value="/Streaming/Channels/102">Kênh phụ (102)</option>
-                          <option value="/stream1">Generic /stream1</option>
-                        </select>
-                      </label>
-                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="/Streaming/Channels/101" value={formData.rtspPath} onChange={e => setFormData({ ...formData, rtspPath: e.target.value })} />
+                    <div style={{ background: 'var(--admin-border)', color: '#fff', padding: '6px 16px', fontSize: '.62rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      C. Cấu hình luồng truyền tải
                     </div>
-                    <div className="form-group" style={{ gridColumn: '1/-1' }}>
-                      <label>go2rtc Stream ID <small style={{ opacity: .6 }}>(tự tạo nếu bỏ trống)</small></label>
-                      <input type="text" className="form-input" style={{ marginTop: 4 }} placeholder="vd: camera_152_normal" value={formData.go2rtcId} onChange={e => setFormData({ ...formData, go2rtcId: e.target.value })} />
+                    <div style={{ padding: '15px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      
+                      {/* THERMAL */}
+                      {(formData.type === 'camera_dual' || formData.type === 'camera_thermal') && (
+                        <div style={{ border: '1px solid var(--admin-border)', padding: 10, background: 'rgba(0,0,0,0.1)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: '.62rem', fontWeight: 900, color: 'var(--admin-danger)' }}>🌡 LUỒNG NHIỆT (THERMAL)</span>
+                            <select className="form-select" style={{ fontSize: 9, height: 18, width: 'auto', padding: '0 4px', border: 'none', background: 'var(--admin-layer-2)' }} onChange={e => e.target.value && setFormData({ ...formData, rtspThermal: e.target.value })}>
+                              <option value="">Preset</option>
+                              <option value="/Streaming/Channels/201">Hik Ch201</option>
+                              <option value="/thermal/main">Generic</option>
+                            </select>
+                          </div>
+                          <input type="text" className="form-input" style={{ fontSize: '.75rem', marginBottom: 6 }} placeholder="RTSP Path" value={formData.rtspThermal} onChange={e => setFormData({ ...formData, rtspThermal: e.target.value })} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: '.58rem', color: 'var(--admin-text-muted)' }}>STREAM ID:</span>
+                            <input type="text" className="form-input" style={{ flex: 1, fontSize: '.7rem', height: 22, border: 'none', background: 'rgba(255,255,255,0.03)' }} value={formData.go2rtcThermal} onChange={e => setFormData({ ...formData, go2rtcThermal: e.target.value })} placeholder="Auto-generate" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* OPTICAL */}
+                      {formData.type === 'camera_dual' && (
+                        <div style={{ border: '1px solid var(--admin-border)', padding: 10, background: 'rgba(0,0,0,0.1)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: '.62rem', fontWeight: 900, color: 'var(--admin-accent)' }}>📷 LUỒNG QUANG HỌC (OPTICAL)</span>
+                            <select className="form-select" style={{ fontSize: 9, height: 18, width: 'auto', padding: '0 4px', border: 'none', background: 'var(--admin-layer-2)' }} onChange={e => e.target.value && setFormData({ ...formData, rtspOptical: e.target.value })}>
+                              <option value="">Preset</option>
+                              <option value="/Streaming/Channels/101">Hik Ch101</option>
+                              <option value="/live/main">Generic</option>
+                            </select>
+                          </div>
+                          <input type="text" className="form-input" style={{ fontSize: '.75rem', marginBottom: 6 }} placeholder="RTSP Path" value={formData.rtspOptical} onChange={e => setFormData({ ...formData, rtspOptical: e.target.value })} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: '.58rem', color: 'var(--admin-text-muted)' }}>STREAM ID:</span>
+                            <input type="text" className="form-input" style={{ flex: 1, fontSize: '.7rem', height: 22, border: 'none', background: 'rgba(255,255,255,0.03)' }} value={formData.go2rtcOptical} onChange={e => setFormData({ ...formData, go2rtcOptical: e.target.value })} placeholder="Auto-generate" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* OTHER CAM */}
+                      {formData.type !== 'camera_dual' && formData.type !== 'camera_thermal' && formData.type.startsWith('camera') && (
+                        <div style={{ border: '1px solid var(--admin-border)', padding: 10, background: 'rgba(0,0,0,0.1)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: '.62rem', fontWeight: 900 }}>🎥 RTSP STREAM</span>
+                            <select className="form-select" style={{ fontSize: 9, height: 18, width: 'auto', padding: '0 4px', border: 'none', background: 'var(--admin-layer-2)' }} onChange={e => e.target.value && setFormData({ ...formData, rtspPath: e.target.value })}>
+                              <option value="">Preset</option>
+                              <option value="/Streaming/Channels/101">Hik Ch101</option>
+                              <option value="/live/main">Generic</option>
+                            </select>
+                          </div>
+                          <input type="text" className="form-input" style={{ fontSize: '.75rem', marginBottom: 6 }} value={formData.rtspPath} onChange={e => setFormData({ ...formData, rtspPath: e.target.value })} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: '.58rem', color: 'var(--admin-text-muted)' }}>STREAM ID:</span>
+                            <input type="text" className="form-input" style={{ flex: 1, fontSize: '.7rem', height: 22, border: 'none', background: 'rgba(255,255,255,0.03)' }} value={formData.go2rtcId} onChange={e => setFormData({ ...formData, go2rtcId: e.target.value })} placeholder="Auto-generate" />
+                          </div>
+                        </div>
+                      )}
+
                     </div>
                   </>
                 )}
-
 
                 {formData.type === 'modbus_tcp' && (
-                  <div style={{ gridColumn: '1/-1', display: 'flex', gap: 8 }}>
-                    <div style={{ flex: 1 }}><label>Port</label><input type="number" className="form-input" value={formData.port} onChange={e => setFormData({ ...formData, port: Number(e.target.value) })} /></div>
-                    <div style={{ flex: 1 }}><label>Unit ID</label><input type="number" className="form-input" value={formData.unitId} onChange={e => setFormData({ ...formData, unitId: Number(e.target.value) })} /></div>
+                  <div style={{ padding: '15px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15, background: 'rgba(0,0,0,0.1)', borderTop: '1px solid var(--admin-border)' }}>
+                    <div><label style={{ fontSize: '.6rem' }}>PORT</label><input type="number" className="form-input" value={formData.port} onChange={e => setFormData({ ...formData, port: Number(e.target.value) })} /></div>
+                    <div><label style={{ fontSize: '.6rem' }}>UNIT ID</label><input type="number" className="form-input" value={formData.unitId} onChange={e => setFormData({ ...formData, unitId: Number(e.target.value) })} /></div>
                   </div>
                 )}
               </div>
