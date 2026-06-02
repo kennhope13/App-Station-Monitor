@@ -89,7 +89,7 @@ function PdChart({ pd, range }: PdChartProps) {
         labels: pd.map(p => fmt(p.time)),
         datasets: [{
           label: 'Mức độ PD (dB)',
-          data: pd.map(p => Math.max(-100, p.value)),
+          data: pd.map(p => p.value),
           backgroundColor: pd.map(p => p.value > 50 ? '#EF444470' : p.value > 20 ? '#F59E0B70' : '#10B98170'),
           borderColor: pd.map(p => p.value > 50 ? '#EF4444' : p.value > 20 ? '#F59E0B' : '#10B981'),
           borderWidth: 1,
@@ -103,7 +103,7 @@ function PdChart({ pd, range }: PdChartProps) {
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: getCSSColor('--admin-text-muted'), font: { size: 9 }, maxTicksLimit: 10 } },
-          y: { grid: { color: getCSSColor('--admin-border') }, ticks: { color: getCSSColor('--admin-text-muted'), font: { size: 9 } }, suggestedMin: -80, suggestedMax: 0 },
+          y: { grid: { color: getCSSColor('--admin-border') }, ticks: { color: getCSSColor('--admin-text-muted'), font: { size: 9 } } },
         },
       },
     });
@@ -255,7 +255,8 @@ export default function CabinetAnalyticsTab() {
       const t1Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_1' || s.pointId === 'temp_1'))?.value;
       const t2Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_2' || s.pointId === 'temp_2'))?.value;
       const t3Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_3' || s.pointId === 'temp_3'))?.value;
-      const pdVal = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'phong_dien' || s.pointId === 'pd'))?.value ?? 0;
+      const pdVal = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'phong_dien' || s.pointId === 'pd'))?.value ??
+                    latestPoints.find(s => s.pointId === 'phong_dien' || s.pointId === 'pd')?.value ?? 0;
 
       const t1 = t1Raw !== undefined && t1Raw !== null ? Math.round(t1Raw * 10) / 10 : null;
       const t2 = t2Raw !== undefined && t2Raw !== null ? Math.round(t2Raw * 10) / 10 : null;

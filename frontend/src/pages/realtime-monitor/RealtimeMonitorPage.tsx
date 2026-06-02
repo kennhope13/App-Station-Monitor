@@ -380,22 +380,22 @@ export default function RealtimeMonitorPage() {
             style={{
               background: 'rgba(13, 17, 23, 0.95)',
               backdropFilter: 'blur(4px)',
-              border: `1.5px solid ${color}`,
-              borderRadius: 4,
-              padding: '2px 8px',
-              fontSize: `${fontSize}px`,
+              border: `1px solid ${color}`,
+              borderRadius: 3,
+              padding: '1px 5px',
+              fontSize: '10px',
               color: '#fff',
               whiteSpace: 'nowrap',
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              boxShadow: `0 4px 12px rgba(0,0,0,0.7), 0 0 10px ${color}44`,
+              gap: 4,
+              boxShadow: `0 2px 6px rgba(0,0,0,0.5), 0 0 6px ${color}33`,
               fontFamily: 'var(--font-mono)',
               animation: temp !== undefined ? 'pulse-subtle 2s infinite' : 'none'
             }}
           >
-            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{b.name}</span>
-            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{b.name.replace(/Vùng\s*/g, 'V')}</span>
+            <span style={{ fontWeight: 800, color: color, fontSize: '9px', borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: 4 }}>
               {temp !== undefined ? `${temp.toFixed(1)}°C` : '--°C'}
             </span>
           </div>
@@ -458,7 +458,7 @@ export default function RealtimeMonitorPage() {
           </div>
           {/* Label badge — y hệt ThermalConfigTab */}
           <div style={{ position: 'absolute', ...labelStyle, background: 'rgba(8,8,8,.88)', border: `1px solid ${color}55`, borderRadius: 3, padding: '1px 6px', fontSize: 9, fontFamily: 'monospace', whiteSpace: 'nowrap', color: '#fff' }}>
-            <span style={{ color: '#ccc' }}>{pid || nm}</span>
+             <span style={{ color: '#ccc' }}>{(pid || nm).replace(/Điểm\s*/gi, 'D').replace(/P\s*/g, 'D')}</span>
             {temp != null && <span style={{ fontWeight: 800, color, marginLeft: 4 }}>{temp.toFixed(1)}°C</span>}
           </div>
         </div>
@@ -496,14 +496,29 @@ export default function RealtimeMonitorPage() {
       else if (labelPos === 'right')  { rx = maxX; }
 
       const lookupId = b.id.toLowerCase();
-      const pdValue = readings[lookupId] ?? 
-                      (b.name ? readings[b.name.toLowerCase()] : undefined) ??
-                      readings[b.name] ??
-                      readings["phong_dien"] ??
-                      readings["db"];
+      
+      const regionValue = readings[lookupId] ?? 
+                          (b.name ? readings[b.name.toLowerCase()] : undefined) ??
+                          readings[b.name];
 
-      const isAlarm = b.severityLevel === 'alarm' || (pdValue !== undefined && pdValue >= 45);
-      const color = isAlarm ? '#ef4444' : '#10b981';
+      // Fallback to global PD camera decibel value if region value is 0 or missing
+      const globalDb = readings['phong_dien'] ?? readings['pd'];
+      const pdValue = (regionValue !== undefined && regionValue !== 0) ? regionValue : globalDb;
+      const hasDischarge = pdValue !== undefined;
+
+      // Xác định các ngưỡng cảnh báo/báo động động cho vùng này
+      let warningDb = 20, alarmDb = 45;
+      try {
+        if (b.thresholds) {
+          const t = JSON.parse(b.thresholds);
+          warningDb = t.warn || t.warning || 20;
+          alarmDb = t.alarm || 45;
+        }
+      } catch {}
+
+      const isAlarm = hasDischarge && pdValue !== undefined && pdValue >= alarmDb;
+      const isWarning = hasDischarge && pdValue !== undefined && pdValue >= warningDb;
+      const color = isAlarm ? '#ef4444' : isWarning ? '#fbbf24' : '#10b981';
 
       const labelTransform =
         labelPos === 'bottom' ? 'translate(-50%, 0)'    :
@@ -527,22 +542,22 @@ export default function RealtimeMonitorPage() {
             style={{
               background: 'rgba(13, 17, 23, 0.95)',
               backdropFilter: 'blur(4px)',
-              border: `1.5px solid ${color}`,
-              borderRadius: 4,
-              padding: '2px 8px',
-              fontSize: `${fontSize}px`,
+              border: `1px solid ${color}`,
+              borderRadius: 3,
+              padding: '1px 5px',
+              fontSize: '10px',
               color: '#fff',
               whiteSpace: 'nowrap',
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              boxShadow: `0 4px 12px rgba(0,0,0,0.7), 0 0 10px ${color}44`,
+              gap: 4,
+              boxShadow: `0 2px 6px rgba(0,0,0,0.5), 0 0 6px ${color}33`,
               fontFamily: 'var(--font-mono)',
               animation: pdValue !== undefined ? 'pulse-subtle 2s infinite' : 'none'
             }}
           >
             <span style={{ fontWeight: 600, color: '#e2e8f0' }}>⚡ {b.name}</span>
-            <span style={{ fontWeight: 900, color: color, fontSize: '0.8rem' }}>
+            <span style={{ fontWeight: 800, color: color, fontSize: '9px', borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: 4 }}>
               {pdValue !== undefined ? `${pdValue.toFixed(1)} dB` : '-- dB'}
             </span>
           </div>

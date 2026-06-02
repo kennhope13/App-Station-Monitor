@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
 import { stationApi } from '@/services/StationApiService';
 import type { SldUnpinnedDevice, SldPoint } from '@/types/api.types';
 import type { SldCanvasRef, BadgeConfig } from './SldCanvas';
@@ -159,7 +160,7 @@ export default function SldEditPanel({ stationId, sldRef, refreshTick, selectedN
         {selectedNode && (
           <button onClick={onClearSelection}
             style={{ background: 'none', border: 'none', color: 'var(--admin-text-muted)', cursor: 'pointer', fontSize: '.8rem', lineHeight: 1 }}>
-            ✕
+            <X size={14} />
           </button>
         )}
       </div>

@@ -6,7 +6,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { CameraDevice, Boundary, stationApi } from '@/services/StationApiService';
-import { Plus, Trash2, Save, X, Zap, Edit2, ChevronLeft, MousePointer2 } from 'lucide-react';
+import { Plus, Trash2, Save, X, Zap, Edit2, MousePointer2 } from 'lucide-react';
 import { authService } from '@/services/AuthService';
 import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
 import { confirmDialog } from '@/utils/confirm';
@@ -264,12 +264,6 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
         
         {/* Top Toolbar */}
         <div style={{ display:'flex', alignItems:'center', gap:16, padding:'6px 10px', background:'var(--admin-layer-1)', borderBottom:'1px solid var(--admin-border)', flexShrink:0 }}>
-          <button className="btn-industrial btn-sm" onClick={onBack} style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <ChevronLeft size={14}/> <span>Quay lại</span>
-          </button>
-          
-          <div style={{ width:1, height:24, background:'var(--admin-border)' }} />
-          
           <div style={{ flex: 1 }} />
           <div style={{ fontSize: '.7rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
              PD - <span style={{ color: 'var(--admin-text)' }}>{cam.name}</span>
@@ -292,7 +286,19 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
               {boundaries.filter(b => b.id !== form.id).map(b => {
                 let poly: any = []; try { poly = JSON.parse(b.polygon); } catch { return null; }
                 const isActive = aiStats.active_boundary === b.name;
-                const c = isActive ? '#ef4444' : '#10b981';
+                const currentDb = isActive ? aiStats.db : null;
+
+                let warnDb = 20, alarmDb = 35;
+                try {
+                  const t = JSON.parse(b.thresholds || '{}');
+                  warnDb = t.warn || t.warning || 20;
+                  alarmDb = t.alarm || 35;
+                } catch {}
+
+                const isAlarm = currentDb != null && currentDb >= alarmDb;
+                const isWarning = currentDb != null && currentDb >= warnDb;
+                const c = isActive ? (isAlarm ? '#ef4444' : isWarning ? '#fbbf24' : '#10b981') : '#10b981';
+
                 return <polygon key={b.id} points={toSvg(poly)} fill={c+'10'} stroke={c} strokeWidth={isActive?3:1.5} vectorEffect="non-scaling-stroke" />;
               })}
 
@@ -312,24 +318,45 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
               const cy = poly.reduce((s:any, p:any) => s + p[1], 0) / poly.length * 100;
               
               const isActive = aiStats.active_boundary === b.name;
-              const currentDb = isActive ? aiStats.db : null;
+              const currentDb = aiStats.db;
+
+              // Tính toán ngưỡng cảnh báo/báo động động cho vùng này
+              let warnDb = 20, alarmDb = 35;
+              try {
+                const t = JSON.parse(b.thresholds || '{}');
+                warnDb = t.warn || t.warning || 20;
+                alarmDb = t.alarm || 35;
+              } catch {}
+
+              const isAlarm = currentDb != null && currentDb >= alarmDb;
+              const isWarning = currentDb != null && currentDb >= warnDb;
+              const statusColor = isAlarm ? '#ef4444' : isWarning ? '#fbbf24' : '#10b981';
 
               return (
                 <div key={b.id} style={{ 
                   position:'absolute', left:`${cx}%`, top:`${cy}%`, transform:'translate(-50%,-50%)', 
-                  background:'rgba(0,0,0,0.75)', padding:'2px 8px', borderRadius: 4,
-                  color:'#fff', fontSize:11, fontWeight:700, pointerEvents:'none',
-                  border: isActive ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.2)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                  boxShadow: isActive ? '0 0 10px rgba(239,68,68,0.5)' : 'none',
-                  zIndex: isActive ? 20 : 10
+                  background:'rgba(13,17,23,0.92)', padding:'2px 6px', borderRadius: 3,
+                  color:'#fff', fontSize:9, fontWeight:700, pointerEvents:'none',
+                  border: isActive ? `1px solid ${statusColor}` : '1px solid rgba(255,255,255,0.2)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                  boxShadow: isActive ? `0 0 6px ${statusColor}44` : 'none',
+                  zIndex: isActive ? 20 : 10,
+                  transition: 'all 0.3s ease'
                 }}>
-                  <div style={{ opacity: 0.9 }}>{b.name}</div>
-                  {isActive && currentDb != null && (
-                    <div style={{ color: '#ef4444', fontSize: '13px', fontFamily: 'monospace', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 2 }}>
-                      {currentDb.toFixed(1)} dB
-                    </div>
-                  )}
+                  <div style={{ opacity: 0.9, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {isActive && <span>⚡</span>} {b.name}
+                  </div>
+                  <div style={{ 
+                    color: isActive ? statusColor : 'rgba(255,255,255,0.75)', 
+                    fontSize: '10px', 
+                    fontFamily: 'monospace', 
+                    borderTop: '1px solid rgba(255,255,255,0.12)', 
+                    paddingTop: 1, 
+                    marginTop: 1, 
+                    fontWeight: 800 
+                  }}>
+                    {currentDb != null ? `${currentDb.toFixed(1)} dB` : '-- dB'}
+                  </div>
                 </div>
               );
             })}

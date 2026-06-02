@@ -5,14 +5,24 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff } from 'lucide-react';
-import { stationApi, Device, CameraDevice } from '@/services/StationApiService';
+import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff, ShieldAlert } from 'lucide-react';
+import { stationApi, Device, CameraDevice, Rule } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
+import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS, CAM_POINT_LABELS } from '@/constants/points';
 import ThermalConfigTab from './components/ThermalConfigTab';
 import PdRegionTab from './components/PdRegionTab';
+import SldConfigTab from './components/SldConfigTab';
 import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
+
+const FALLBACK_POINTS = [
+  ...(PT_CAM_IDS as readonly string[]).map(id => ({ value: id, label: `Điểm camera ${id} — Nhiệt độ (°C)` })),
+  { value: PT_TEMP_1, label: `${TEMP_LABELS[PT_TEMP_1]} (°C)` },
+  { value: PT_TEMP_2, label: `${TEMP_LABELS[PT_TEMP_2]} (°C)` },
+  { value: PT_TEMP_3, label: `${TEMP_LABELS[PT_TEMP_3]} (°C)` },
+  { value: PT_PD,     label: `${TEMP_LABELS[PT_PD]} (dB)` },
+];
 
 // Nhãn hiển thị theo loại thiết bị — import từ constants để dùng chung
 const TYPE_LABELS = DEVICE_TYPE_LABELS;
@@ -21,7 +31,10 @@ const TYPE_LABELS = DEVICE_TYPE_LABELS;
  * Trang quản lý thiết bị — hỗ trợ thêm/sửa/xóa thiết bị,
  * kiểm tra kết nối, quét LAN/ONVIF và cấu hình nhiệt/PD/vùng giám sát.
  */
+import { useSearchParams } from 'react-router-dom';
+
 export default function DeviceManagementPage() {
+  const [searchParams] = useSearchParams();
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +91,181 @@ export default function DeviceManagementPage() {
   const [tcPort, setTcPort] = useState(102);
   const [isTesting, setIsTesting] = useState(false);
   const [tcResult, setTcResult] = useState<any | null>(null);
+
+  // States cho cấu hình quy tắc nhanh tại thiết bị
+  const [selectedRulesDevice, setSelectedRulesDevice] = useState<Device | null>(null);
+  const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
+  const [rulesLoading, setRulesLoading] = useState(false);
+  const [deviceRules, setDeviceRules] = useState<Rule[]>([]);
+  const [isEditingRule, setIsEditingRule] = useState(false);
+  const [ruleEditingId, setRuleEditingId] = useState<string | null>(null);
+  const [pointOptions, setPointOptions] = useState<any[]>(FALLBACK_POINTS);
+
+  const [ruleFormData, setRuleFormData] = useState({
+    name: '',
+    ruleSet: '',
+    point: 'P1',
+    op: '>=',
+    preAlarm: '',
+    alarm: '',
+    doAlert: true,
+    doHealth: false,
+    doMaintenance: false,
+    penalty: 10,
+    maintType: 'inspection',
+    maintDays: 30
+  });
+
+  const loadRulesForDevice = async (dev: Device) => {
+    setRulesLoading(true);
+    try {
+      const allRules = await stationApi.getRules();
+      const filtered = allRules.filter(r => r.deviceId === dev.id);
+      setDeviceRules(filtered);
+
+      const firstId = stationId || await stationApi.getFirstStationId();
+      if (firstId) {
+        const pts = await stationApi.getLatestPoints(firstId).catch(() => []);
+        if (pts && pts.length > 0) {
+          const seen = new Set<string>();
+          const apiPoints = pts
+            .filter(p => { const ok = !seen.has(p.pointId); seen.add(p.pointId); return ok; })
+            .map(p => {
+              const name = TEMP_LABELS[p.pointId] ?? CAM_POINT_LABELS[p.pointId] ?? (p.pointId.toUpperCase().startsWith('P') ? `Điểm camera ${p.pointId}` : p.pointId.replace(/_/g, ' '));
+              return { value: p.pointId, label: p.unit ? `${name} (${p.unit})` : name };
+            });
+          setPointOptions(apiPoints);
+        } else {
+          setPointOptions(FALLBACK_POINTS);
+        }
+      }
+    } catch (e) {
+      console.error('Lỗi khi tải quy tắc:', e);
+    } finally {
+      setRulesLoading(false);
+    }
+  };
+
+  const handleOpenRulesModal = (dev: Device) => {
+    setSelectedRulesDevice(dev);
+    setIsRulesModalOpen(true);
+    setIsEditingRule(false);
+    setRuleEditingId(null);
+    loadRulesForDevice(dev);
+  };
+
+  const parseCondition = (json: string): any => {
+    try { return JSON.parse(json); } catch { return { point: '?', op: '>=', value: 0 }; }
+  };
+
+  const parseActions = (actionsJson: string): any => {
+    try {
+      const arr: any[] = JSON.parse(actionsJson);
+      const healthA = arr.find(a => a.type === 'health');
+      const alertA = arr.find(a => a.type === 'alert' || !a.type);
+      const maintA = arr.find(a => a.type === 'maintenance');
+      return {
+        doHealth: !!healthA, penalty: healthA?.penalty ?? 10,
+        doAlert: !!alertA, level: alertA?.level ?? (alertA === undefined ? 'warning' : 'hybrid'),
+        doMaintenance: !!maintA, maintType: maintA?.taskType ?? 'inspection', maintDays: maintA?.scheduledInDays ?? 30,
+      };
+    } catch {
+      return { doHealth: false, penalty: 10, doAlert: true, level: 'warning', doMaintenance: false, maintType: 'inspection', maintDays: 30 };
+    }
+  };
+
+  const handleToggleRule = async (id: string, currentEnabled: boolean) => {
+    try {
+      await stationApi.toggleRule(id);
+      setDeviceRules(deviceRules.map(r => r.id === id ? { ...r, enabled: !currentEnabled } : r));
+    } catch (e) {
+      alert('Không thể thay đổi trạng thái: ' + e);
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    if (!window.confirm('Xóa quy tắc này?')) return;
+    try {
+      await stationApi.deleteRule(id);
+      if (selectedRulesDevice) loadRulesForDevice(selectedRulesDevice);
+    } catch (e) {
+      alert('Không thể xóa quy tắc: ' + e);
+    }
+  };
+
+  const handleSaveRule = async () => {
+    if (!selectedRulesDevice) return;
+    const { name, point, op, preAlarm, alarm, doAlert, doHealth, doMaintenance, penalty, maintType, maintDays, ruleSet } = ruleFormData;
+    if (!name) { alert('Vui lòng nhập tên quy tắc'); return; }
+    
+    const preA = preAlarm === '' ? null : parseFloat(preAlarm);
+    const alA = alarm === '' ? null : parseFloat(alarm);
+
+    if (preA === null && alA === null) { alert('Vui lòng cấu hình ít nhất 1 ngưỡng cảnh báo hoặc nguy hiểm'); return; }
+    if (!doAlert && !doHealth && !doMaintenance) { alert('Vui lòng chọn ít nhất 1 hành động'); return; }
+
+    const condition = JSON.stringify({ type: 'analog', point, op, pre_alarm: preA, alarm: alA });
+    
+    const actionList: any[] = [];
+    if (doAlert) actionList.push({ type: 'alert', level: (alA !== null && preA !== null) ? 'hybrid' : (alA !== null ? 'alarm' : 'warning') });
+    if (doHealth) actionList.push({ type: 'health', penalty });
+    if (doMaintenance) actionList.push({ type: 'maintenance', taskType: maintType, scheduledInDays: maintDays });
+
+    const actions = JSON.stringify(actionList);
+
+    try {
+      if (ruleEditingId) {
+        await stationApi.updateRule(ruleEditingId, { name, ruleSet: ruleSet || undefined, condition, actions, deviceId: selectedRulesDevice.id });
+      } else {
+        await stationApi.createRule({ name, ruleSet: ruleSet || undefined, condition, actions, enabled: true, deviceId: selectedRulesDevice.id });
+      }
+      setIsEditingRule(false);
+      setRuleEditingId(null);
+      loadRulesForDevice(selectedRulesDevice);
+    } catch (e) {
+      alert(`Không thể lưu quy tắc: ${e}`);
+    }
+  };
+
+  const handleOpenAddRule = () => {
+    setRuleEditingId(null);
+    setRuleFormData({
+      name: '',
+      ruleSet: 'Mặc định',
+      point: 'P1',
+      op: '>=',
+      preAlarm: '',
+      alarm: '',
+      doAlert: true,
+      doHealth: false,
+      doMaintenance: false,
+      penalty: 10,
+      maintType: 'inspection',
+      maintDays: 30
+    });
+    setIsEditingRule(true);
+  };
+
+  const handleOpenEditRule = (r: Rule) => {
+    setRuleEditingId(r.id);
+    const cond = parseCondition(r.condition);
+    const actions = parseActions(r.actions);
+    setRuleFormData({
+      name: r.name,
+      ruleSet: r.ruleSet || '',
+      point: cond.point,
+      op: cond.op || '>=',
+      preAlarm: cond.pre_alarm ?? cond.value ?? '',
+      alarm: cond.alarm ?? '',
+      doAlert: actions.doAlert,
+      doHealth: actions.doHealth,
+      doMaintenance: actions.doMaintenance,
+      penalty: actions.penalty,
+      maintType: actions.maintType,
+      maintDays: actions.maintDays
+    });
+    setIsEditingRule(true);
+  };
 
   useEffect(() => {
     loadDevices();
@@ -399,6 +587,7 @@ export default function DeviceManagementPage() {
                       <ActionDropdown>
                         <ActionDropdownItem icon={<Settings size={14} />} label="Sửa thiết bị" onClick={() => openDeviceModal(d)} />
                         <ActionDropdownItem icon={<LayoutList size={14} />} label="Kiểm tra kết nối" onClick={() => handleTestDevice(d.id)} />
+                        <ActionDropdownItem icon={<ShieldAlert size={14} />} label="Quy tắc giám sát" onClick={() => handleOpenRulesModal(d)} />
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
                           <ActionDropdownItem icon={<Thermometer size={14} />} label="Cấu hình nhiệt" onClick={() => { setSelectedRoiDevice(d as CameraDevice); setRoiTab(3); }} />
                         )}
@@ -757,6 +946,211 @@ export default function DeviceManagementPage() {
                   }
                 }}
               >{isAutoConfiguring ? '⏳ Đang xử lý...' : 'Tự động cấu hình'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* QUICK RULES CONFIGURATION MODAL */}
+      {isRulesModalOpen && selectedRulesDevice && (
+        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setIsRulesModalOpen(false); }} style={{ zIndex: 999 }}>
+          <div className="modal-content" style={{ maxWidth: isEditingRule ? 560 : 700 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ShieldAlert size={20} style={{ color: 'var(--admin-accent)' }} />
+                <h3 style={{ margin: 0 }}>Quy tắc giám sát: {selectedRulesDevice.name}</h3>
+              </div>
+              <button className="modal-close-btn" onClick={() => setIsRulesModalOpen(false)}>✕</button>
+            </div>
+            
+            <div className="modal-body" style={{ padding: 20, background: 'var(--admin-layer-1)', maxHeight: '70vh', overflowY: 'auto' }}>
+              {isEditingRule ? (
+                /* CHẾ ĐỘ THÊM/SỬA RULE */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Tên quy tắc <span style={{ color: 'var(--admin-danger)' }}>*</span></label>
+                    <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} placeholder="VD: Quá nhiệt máy biến áp" value={ruleFormData.name} onChange={e => setRuleFormData({ ...ruleFormData, name: e.target.value })} />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Điểm đo cảm biến <span style={{ color: 'var(--admin-danger)' }}>*</span></label>
+                      <select className="form-select" style={{ width: '100%' }} value={ruleFormData.point} onChange={e => setRuleFormData({ ...ruleFormData, point: e.target.value })}>
+                        {pointOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                      </select>
+                    </div>
+                    
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Phân nhóm quy tắc</label>
+                      <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} placeholder="VD: Cảnh báo nhiệt độ" value={ruleFormData.ruleSet} onChange={e => setRuleFormData({ ...ruleFormData, ruleSet: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1px solid var(--admin-border)', padding: 14, borderRadius: 6, background: 'var(--admin-layer-2)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--admin-accent)', fontWeight: 800, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ngưỡng và Điều kiện so sánh</div>
+                    
+                    <div className="form-group" style={{ marginBottom: 10 }}>
+                      <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, marginBottom: 4 }}>Phép toán so sánh</label>
+                      <select className="form-select" style={{ width: '100%' }} value={ruleFormData.op} onChange={e => setRuleFormData({ ...ruleFormData, op: e.target.value })}>
+                        <option value=">=">&gt;= Lớn hơn hoặc bằng (Mặc định)</option>
+                        <option value=">">&gt; Lớn hơn hẳn</option>
+                        <option value="<=">&lt;= Nhỏ hơn hoặc bằng</option>
+                        <option value="<">&lt; Nhỏ hơn hẳn</option>
+                        <option value="==">== Bằng chính xác</option>
+                      </select>
+                    </div>
+                    
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: 'var(--admin-warning)', marginBottom: 4 }}>Ngưỡng Cảnh báo (Vàng)</label>
+                        <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} type="number" placeholder="Bỏ trống nếu không dùng" step="any" value={ruleFormData.preAlarm} onChange={e => setRuleFormData({ ...ruleFormData, preAlarm: e.target.value })} />
+                      </div>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, color: 'var(--admin-danger)', marginBottom: 4 }}>Ngưỡng Nguy hiểm (Đỏ)</label>
+                        <input className="form-input" style={{ width: '100%', boxSizing: 'border-box' }} type="number" placeholder="Bỏ trống nếu không dùng" step="any" value={ruleFormData.alarm} onChange={e => setRuleFormData({ ...ruleFormData, alarm: e.target.value })} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: 6 }}>Tác động và Tự động hóa hệ thống</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                      <div style={{ padding: '10px 12px', borderRadius: 6, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
+                          <input type="checkbox" checked={ruleFormData.doAlert} onChange={e => setRuleFormData({ ...ruleFormData, doAlert: e.target.checked })} style={{ accentColor: 'var(--admin-warning)', width: 16, height: 16 }} />
+                          <div>
+                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--admin-text)' }}>Kích hoạt cảnh báo hệ thống</span>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Hiển thị trên bảng cảnh báo thời gian thực.</div>
+                          </div>
+                        </label>
+                      </div>
+                      
+                      <div style={{ padding: '10px 12px', borderRadius: 6, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
+                          <input type="checkbox" checked={ruleFormData.doHealth} onChange={e => setRuleFormData({ ...ruleFormData, doHealth: e.target.checked })} style={{ accentColor: '#0ea5e9', width: 16, height: 16 }} />
+                          <div>
+                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--admin-text)' }}>Ảnh hưởng sức khỏe thiết bị</span>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Tự động trừ điểm sức khỏe của thiết bị này khi có sự cố.</div>
+                          </div>
+                        </label>
+                        {ruleFormData.doHealth && (
+                          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)' }}>Số điểm trừ (1-100):</span>
+                            <input type="number" className="form-input" style={{ width: 80, padding: '4px 8px' }} min="1" max="100" value={ruleFormData.penalty} onChange={e => setRuleFormData({ ...ruleFormData, penalty: Number(e.target.value) })} />
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ padding: '10px 12px', borderRadius: 6, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', margin: 0 }}>
+                          <input type="checkbox" checked={ruleFormData.doMaintenance} onChange={e => setRuleFormData({ ...ruleFormData, doMaintenance: e.target.checked })} style={{ accentColor: 'var(--admin-success)', width: 16, height: 16 }} />
+                          <div>
+                            <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--admin-text)' }}>Lập phiếu bảo trì tự động (CMMS)</span>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 1 }}>Tự động tạo một công việc bảo trì khi thiết bị vượt ngưỡng đỏ.</div>
+                          </div>
+                        </label>
+                        {ruleFormData.doMaintenance && (
+                          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                              <div>
+                                <label style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 4 }}>Loại công việc bảo trì</label>
+                                <select className="form-select" style={{ width: '100%', padding: '4px 8px', fontSize: '0.72rem' }} value={ruleFormData.maintType} onChange={e => setRuleFormData({ ...ruleFormData, maintType: e.target.value })}>
+                                  <option value="inspection">Kiểm tra thiết bị</option>
+                                  <option value="repair">Sửa chữa khẩn cấp</option>
+                                  <option value="cleaning">Vệ sinh công nghiệp</option>
+                                  <option value="calibration">Hiệu chuẩn thông số</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)', display: 'block', marginBottom: 4 }}>Thời hạn hoàn thành (ngày)</label>
+                                <input type="number" className="form-input" style={{ width: '100%', padding: '4px 8px', fontSize: '0.72rem', boxSizing: 'border-box' }} min="1" max="365" value={ruleFormData.maintDays} onChange={e => setRuleFormData({ ...ruleFormData, maintDays: Number(e.target.value) })} />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* CHẾ ĐỘ HIỂN THỊ DANH SÁCH RULES */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: '.75rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>DANH SÁCH QUY TẮC ĐANG ÁP DỤNG ({deviceRules.length})</span>
+                    <button className="btn-industrial btn-primary btn-sm" onClick={handleOpenAddRule}>
+                      + THÊM QUY TẮC MỚI
+                    </button>
+                  </div>
+
+                  {rulesLoading ? (
+                    <div style={{ textAlign: 'center', padding: 24, color: 'var(--admin-text-muted)' }}>⏳ Đang tải quy tắc...</div>
+                  ) : deviceRules.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: 30, border: '1px dashed var(--admin-border)', borderRadius: 6, color: 'var(--admin-text-muted)', fontSize: '.8rem' }}>
+                      Thiết bị này chưa có quy tắc riêng. Nhấp vào <b>+ Thêm quy tắc mới</b> để thiết lập kịch bản tự động hóa.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {deviceRules.map(r => {
+                        const cond = parseCondition(r.condition);
+                        const actions = parseActions(r.actions);
+                        const pointLabel = (pointOptions.find(p => p.value === cond.point)?.label ?? cond.point).split(' — ')[0];
+                        
+                        const hasAlarm = cond.alarm !== null && cond.alarm !== undefined && cond.alarm !== '';
+                        const hasWarning = (cond.pre_alarm !== null && cond.pre_alarm !== undefined && cond.pre_alarm !== '') || (cond.value !== undefined && actions.level === 'warning');
+                        const valAlarm = cond.alarm ?? (actions.level === 'alarm' ? cond.value : null);
+                        const valWarning = cond.pre_alarm ?? (actions.level === 'warning' ? cond.value : null);
+
+                        return (
+                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)', borderRadius: 4 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 800, fontSize: '.82rem', color: 'var(--admin-text)' }}>{r.name}</span>
+                                {actions.doHealth && <span style={{ fontSize: '0.62rem', padding: '1px 5px', background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', borderRadius: 3 }}>Sức khỏe (-{actions.penalty}đ)</span>}
+                                {actions.doMaintenance && <span style={{ fontSize: '0.62rem', padding: '1px 5px', background: 'rgba(34,197,94,0.15)', color: 'var(--admin-success)', borderRadius: 3 }}>Bảo trì</span>}
+                              </div>
+                              <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span>Điểm đo: <b>{pointLabel}</b></span>
+                                <span style={{ opacity: 0.3 }}>|</span>
+                                <span>Điều kiện: <code>{cond.op || '≥'}</code></span>
+                                <span style={{ opacity: 0.3 }}>|</span>
+                                {hasWarning && <span>Cảnh báo: <b style={{ color: '#fbbf24' }}>{valWarning}°C</b></span>}
+                                {hasAlarm && <span style={{ marginLeft: 4 }}>Nguy hiểm: <b style={{ color: '#ef4444' }}>{valAlarm}°C</b></span>}
+                              </div>
+                            </div>
+
+                            {/* Switch Enable */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <label style={{ position: 'relative', display: 'inline-block', width: 34, height: 18 }}>
+                                <input type="checkbox" checked={r.enabled} onChange={() => handleToggleRule(r.id, r.enabled)} style={{ opacity: 0, width: 0, height: 0 }} />
+                                <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, background: r.enabled ? 'var(--admin-accent)' : 'var(--admin-layer-3)', borderRadius: 18, transition: '.2s' }}>
+                                  <span style={{ position: 'absolute', content: '""', height: 12, width: 12, left: r.enabled ? 19 : 3, bottom: 3, background: 'white', borderRadius: '50%', transition: '.2s' }}></span>
+                                </span>
+                              </label>
+                              
+                              <button className="btn-industrial btn-sm" onClick={() => handleOpenEditRule(r)} style={{ padding: '2px 8px', fontSize: 10 }}>Sửa</button>
+                              <button className="btn-industrial btn-sm btn-danger" onClick={() => handleDeleteRule(r.id)} style={{ padding: '2px 8px', fontSize: 10 }}>Xóa</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              {isEditingRule ? (
+                <>
+                  <button className="btn-industrial" onClick={() => setIsEditingRule(false)}>Quay lại</button>
+                  <div style={{ flex: 1 }}></div>
+                  <button className="btn-industrial btn-primary" onClick={handleSaveRule}>Lưu quy tắc</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ flex: 1 }}></div>
+                  <button className="btn-industrial" onClick={() => setIsRulesModalOpen(false)}>Đóng</button>
+                </>
+              )}
             </div>
           </div>
         </div>

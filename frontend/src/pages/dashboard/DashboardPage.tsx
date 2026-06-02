@@ -43,6 +43,7 @@ export default function DashboardPage() {
   const [selectedNode, setSelectedNode] = useState<any | null>(null);
   const [sldColorMatrix, setSldColorMatrix] = useState<string | undefined>(undefined);
   const [sldRefreshTick, setSldRefreshTick] = useState(0);
+  const [unpinnedCount, setUnpinnedCount] = useState(0);
 
   // ── Global stores ─────────────────────────────────────────────
   const stations = useStationStore(s => s.stations);
@@ -126,7 +127,12 @@ export default function DashboardPage() {
     fetchSensors(stationId);
     fetchDevices(stationId);
     fetchAlerts(ALERT_STATUS.OPEN);
-  }, [stationId, fetchSensors, fetchDevices, fetchAlerts]);
+
+    // Fetch SLD status to show unpinned badge
+    stationApi.getSld(stationId).then(data => {
+      setUnpinnedCount(data.unpinned?.length || 0);
+    }).catch(() => {});
+  }, [stationId, fetchSensors, fetchDevices, fetchAlerts, sldRefreshTick]);
 
   // ── Realtime cập nhật ─────────────────────────────────────────
   useRealtime({
@@ -231,6 +237,7 @@ export default function DashboardPage() {
         onColorChange={handleColorChange}
         filters={filters}
         onFilterChange={setFilters}
+        unpinnedCount={unpinnedCount}
       />
 
       {/* Left column: KPI + camera grid — ẩn khi đang chỉnh sơ đồ */}

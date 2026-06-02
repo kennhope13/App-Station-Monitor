@@ -59,6 +59,7 @@ class PdRegionAnalyzer:
     _last_alert: dict[str, float] = field(default_factory=dict, init=False)
     _flash_state: bool = field(default=False, init=False)
     _flash_counter: int = field(default=0, init=False)
+    active_region_id: str | None = field(default=None, init=False)
 
     # ── Public API ────────────────────────────────────────────────────
 
@@ -152,6 +153,7 @@ class PdRegionAnalyzer:
             self._cached_hotspot = self._detect_hotspot(frame)
         hotspot = self._cached_hotspot
 
+        active_region_id = None
         for region in regions_snapshot:
             verts = region.vertices
             if len(verts) < 3:
@@ -167,13 +169,14 @@ class PdRegionAnalyzer:
             is_alarm = current_db >= region.alarm_threshold
             is_warning = current_db >= region.warning_threshold
 
-            # Chỉ báo động khi acoustic overlay blob nằm trong vùng VÀ dB vượt ngưỡng
-            if hotspot and self._point_in_polygon(hotspot, verts) and (is_alarm or is_warning):
-                level = "alarm" if is_alarm else "warning"
-                color = (0, 0, 255) if is_alarm else (0, 165, 255)
-                fill_alpha = 0.35 if self._flash_state else 0.15
-                border_thickness = region.border_thickness + 1
+            # Chỉ báo động khi acoustic overlay blob nằm trong vùng (kể cả khi dB dưới ngưỡng vẫn ghi nhận trạng thái bình thường để hiển thị trị số thực tế)
+            if hotspot and self._point_in_polygon(hotspot, verts):
+                level = "alarm" if is_alarm else "warning" if is_warning else "normal"
+                color = (0, 0, 255) if is_alarm else (0, 165, 255) if is_warning else (0, 255, 0)
+                fill_alpha = 0.35 if (self._flash_state and (is_alarm or is_warning)) else 0.0
+                border_thickness = region.border_thickness + 1 if (is_alarm or is_warning) else region.border_thickness
                 self._update_ui_state(region.name, current_db, current_hz, level, hotspot)
+                active_region_id = region.id
             else:
                 # XANH LÁ — Trạng thái bình thường (không có hotspot trong vùng)
                 level = "normal"
@@ -226,6 +229,7 @@ class PdRegionAnalyzer:
             if level in ("alarm", "warning"):
                 self._maybe_send_alert(region, current_db, level, annotated)
 
+        self.active_region_id = active_region_id
         _pd_annotated_frames[self.stream_id] = annotated
         return annotated
 

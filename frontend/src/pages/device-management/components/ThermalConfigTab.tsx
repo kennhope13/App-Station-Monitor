@@ -211,7 +211,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
     setForm({
       ...EMPTY_FORM,
       open: true, isNew: true, type: 'marker',
-      name: `Điểm ${idx}`, shortName: `P${idx}`,
+      name: `Điểm ${idx}`, shortName: `D${idx}`,
       tx: tx.toFixed(4), ty: ty.toFixed(4),
       preAlarm: '50', alarm: '70', markerSize: '28'
     });
@@ -345,12 +345,6 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
         {/* Toolbar & View Tabs */}
         <div style={{ display:'flex', alignItems:'center', gap:16, padding:'6px 10px', background:'var(--admin-layer-1)', borderBottom:'1px solid var(--admin-border)', flexShrink:0 }}>
           
-          <button className="btn-industrial btn-sm" onClick={onBack} style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <span>← Quay lại</span>
-          </button>
-
-          <div style={{ width:1, height:24, background:'var(--admin-border)' }} />
-          
           <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius: 0, padding:2 }}>
             <button className={`btn-industrial btn-sm ${viewMode==='op'?'btn-primary':''}`} onClick={() => setViewMode('op')}>Ảnh quang học</button>
             <button className={`btn-industrial btn-sm ${viewMode==='th'?'btn-primary':''}`} onClick={() => setViewMode('th')}>Ảnh nhiệt độ</button>
@@ -406,7 +400,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
               return (
                 <div key={r.id} style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:`${bw}px solid ${c}`, background:c+'10' }}>
                   <div style={{ position:'absolute', ...labelStyle, background:'rgba(0,0,0,0.72)', padding:'1px 5px', borderRadius: 0, color:'#fff', fontSize:fs, fontFamily:'monospace', whiteSpace:'nowrap' }}>
-                    <b>{r.name}</b> <span style={{color:c}}>{r.maxTemp?.toFixed(1)??'--'}°C</span>
+                    <b>{r.name.replace(/Vùng\s*/g, 'V')}</b> <span style={{color:c}}>{r.maxTemp?.toFixed(1)??'--'}°C</span>
                   </div>
                 </div>
               );
@@ -439,7 +433,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
                   {/* Label: Mã + nhiệt độ */}
                   <div style={{ position:'absolute', top:0, left:labelOffset, transform:'translateY(-50%)', background:'rgba(8,8,12,.88)', borderRadius: 0, padding:'1px 6px', display:'flex', flexDirection:'column', alignItems:'flex-start', whiteSpace:'nowrap', pointerEvents:'none' }}>
-                    <span style={{fontSize:10, color:'#94a3b8', lineHeight:1.3}}>{m.shortName||m.name}</span>
+                    <span style={{fontSize:10, color:'#94a3b8', lineHeight:1.3}}>{(m.shortName||m.name).replace(/Điểm\s*/gi, 'D').replace(/P\s*/g, 'D')}</span>
                     <span style={{fontSize:11, fontWeight:800, color:c, fontFamily:'monospace', lineHeight:1.3}}>{m.temp?.toFixed(1)??'--'}°C</span>
                   </div>
                 </div>
@@ -594,7 +588,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                     <div key={m.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
                       <div style={{width:8, height:8, borderRadius:'50%', background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
                       <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{m.shortName||m.name}</div>
+                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{(m.shortName||m.name).replace(/Điểm\s*/gi, 'D').replace(/P\s*/g, 'D')}</div>
                         <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
                           <span style={{fontWeight:800, color:c}}>{m.temp!=null?`${m.temp.toFixed(1)}°C`:'--°C'}</span>
                           <span style={{opacity:0.25, fontWeight:100}}>|</span>
@@ -622,7 +616,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                     <div key={r.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
                       <div style={{width:8, height:8, background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
                       <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.name}</div>
+                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.name.replace(/Vùng\s*/g, 'V')}</div>
                         <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
                           <span style={{fontWeight:800, color:c}}>{r.maxTemp!=null?`Max ${r.maxTemp.toFixed(1)}°C`:'Max --°C'}</span>
                           <span style={{opacity:0.25, fontWeight:100}}>|</span>

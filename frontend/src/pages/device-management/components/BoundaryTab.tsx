@@ -118,7 +118,7 @@ export default function BoundaryTab({ cameras, initialCamera }: Props) {
         // Label
         ctx.fillStyle = '#fff';
         ctx.font = '10px Inter, sans-serif';
-        ctx.fillText(b.name, startPt[0] * w, startPt[1] * h - 5);
+        ctx.fillText(b.name.replace(/Vùng\s*/g, 'V'), startPt[0] * w, startPt[1] * h - 5);
       });
 
       // 2. Vẽ vùng đang vẽ (draft)
@@ -215,7 +215,7 @@ export default function BoundaryTab({ cameras, initialCamera }: Props) {
             boundaries.map(b => (
               <div key={b.id} className="list-item" style={{ padding:10, borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:8 }}>
                 <div style={{ flex:1 }}>
-                  <div style={{ fontSize:'.85rem', fontWeight:700 }}>{b.name}</div>
+                  <div style={{ fontSize:'.85rem', fontWeight:700 }}>{b.name.replace(/Vùng\s*/g, 'V')}</div>
                   <div style={{ fontSize:'.7rem', color:'var(--admin-text-muted)' }}>{b.type.toUpperCase()} • {b.severityLevel}</div>
                 </div>
                 <button className="btn-icon" onClick={() => handleDelete(b.id)}><Trash2 size={14}/></button>

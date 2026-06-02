@@ -14,10 +14,11 @@ interface DashboardToolbarProps {
   onColorChange: (hex: string) => void;
   filters: { thermal: boolean; pd: boolean; camera: boolean };
   onFilterChange: (filters: { thermal: boolean; pd: boolean; camera: boolean }) => void;
+  unpinnedCount?: number;
 }
 
 export default function DashboardToolbar(props: DashboardToolbarProps) {
-  const { stationName, isEditMode, onToggleEditMode, onFit, onRotate, showLabels, onToggleLabels, onColorChange, filters, onFilterChange } = props;
+  const { stationName, isEditMode, onToggleEditMode, onFit, onRotate, showLabels, onToggleLabels, onColorChange, filters, onFilterChange, unpinnedCount = 0 } = props;
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -35,30 +36,54 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
       }}
     >
       {/* Title & Toggle Row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--admin-text)', whiteSpace: 'nowrap' }}>
           {stationName.toUpperCase() || 'SƠ ĐỒ TRẠM'}
         </span>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--admin-text-muted)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 4,
-            borderRadius: '50%',
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--admin-hover)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          title="Điều khiển sơ đồ"
-        >
-          <Settings size={14} style={{ transform: isOpen ? 'rotate(45deg)' : 'none', transition: 'transform 0.3s' }} />
-        </button>
+
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button 
+            onClick={onToggleEditMode} 
+            className={`btn-industrial btn-sm ${isEditMode ? 'btn-primary' : ''}`}
+            style={{ fontSize: '0.65rem', padding: '2px 8px', height: 24, position: 'relative' }}
+          >
+            {isEditMode ? 'XONG' : 'CHỈNH SƠ ĐỒ'}
+            {!isEditMode && unpinnedCount > 0 && (
+              <span style={{
+                position: 'absolute', top: -5, right: -5,
+                background: 'var(--admin-danger)', color: '#fff',
+                fontSize: 9, fontWeight: 900,
+                width: 14, height: 14, borderRadius: '50%',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 0 5px var(--admin-danger)',
+                animation: 'pulse 1.5s infinite'
+              }}>
+                {unpinnedCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--admin-text-muted)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 4,
+              borderRadius: '50%',
+              transition: 'background 0.2s',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--admin-hover)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            title="Điều khiển sơ đồ"
+          >
+            <Settings size={14} style={{ transform: isOpen ? 'rotate(45deg)' : 'none', transition: 'transform 0.3s' }} />
+          </button>
+        </div>
       </div>
       
       {/* Toggled Control Row */}
@@ -84,12 +109,6 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
           {/* Actions */}
           <button onClick={onFit} className="btn-industrial btn-sm">FIT</button>
           <button onClick={onRotate} className="btn-industrial btn-sm">XOAY</button>
-          <button 
-            onClick={onToggleEditMode} 
-            className={`btn-industrial btn-sm ${isEditMode ? 'btn-primary' : ''}`}
-          >
-            {isEditMode ? 'ĐANG CHỈNH' : 'CHỈNH SƠ ĐỒ'}
-          </button>
           
           <button 
             onClick={onToggleLabels} 
@@ -113,6 +132,11 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
         @keyframes toolbarSlideDown {
           from { opacity: 0; transform: translateY(-5px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
       `}</style>
     </div>

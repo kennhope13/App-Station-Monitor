@@ -263,6 +263,15 @@ class AcousticAnalyzer:
                 {"deviceId": self.device_id, "pointId": "phong_dien", "value": db, "unit": "dB"},
                 {"deviceId": self.device_id, "pointId": "tan_so", "value": freq, "unit": "Hz"}
             ]
+            
+            # Gửi thêm chỉ số decibel riêng biệt cho từng vùng phóng điện (nếu có cấu hình)
+            if self._pd_analyzer and self._pd_analyzer.regions:
+                active_id = getattr(self._pd_analyzer, "active_region_id", None)
+                for r in self._pd_analyzer.regions:
+                    # Nếu là vùng đang xảy ra phóng điện -> ghi nhận giá trị dB thực tế, ngược lại ghi nhận 0.0
+                    val = db if (active_id == r.id) else 0.0
+                    payload.append({"deviceId": self.device_id, "pointId": r.id, "value": val, "unit": "dB"})
+            
             requests.post(f"{cfg.backend_url}/api/v1/measurements/ingest", json=payload, timeout=2)
             
             # Cảnh báo phóng điện giờ đây được kiểm tra và kích hoạt độc lập trong PdRegionAnalyzer
