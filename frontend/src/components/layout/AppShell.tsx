@@ -291,41 +291,43 @@ export default function AppShell() {
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center',
-            width: 36, 
-            height: 36, 
+            width: 42, 
+            height: 42, 
             borderRadius: '10px',
-            background: 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid var(--admin-border-light)',
-            boxShadow: '0 0 15px rgba(68, 255, 136, 0.2)', // Soft green glow matching the icon
+            background: '#1a1c1e', // matching industrial bg
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5), 0 0 15px rgba(16, 185, 129, 0.15)',
             flexShrink: 0
           }}>
             <img
               alt="StationOS"
               src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
-              style={{ width: 24, height: 24 }}
+              style={{ width: 28, height: 28 }}
             />
           </div>
           <span style={{ 
-            fontWeight: 900, 
-            fontSize: '1.15rem', 
-            color: 'var(--admin-text)', 
-            letterSpacing: '1px',
-            textTransform: 'uppercase'
+            fontWeight: 700, 
+            fontSize: '1.1rem', 
+            color: '#FFFFFF', 
+            letterSpacing: '0.5px',
+            fontFamily: 'Inter, sans-serif'
           }}>
             HỆ THỐNG GIÁM SÁT <span style={{ 
-              color: 'var(--admin-accent)',
-              textShadow: '0 0 12px var(--admin-accent)',
-              marginLeft: '4px'
+              color: '#F59E0B', // Safety Orange
+              textShadow: '0 0 10px rgba(245, 158, 11, 0.4), 0 0 20px rgba(245, 158, 11, 0.2)',
+              marginLeft: '6px',
+              fontWeight: 800
             }}>TRẠM ĐIỆN</span>
           </span>
           <span className="version-badge" style={{ 
-            background: 'var(--admin-border)', 
-            padding: '2px 8px', 
+            background: '#24272a', 
+            color: '#8c9196',
+            padding: '3px 8px', 
             borderRadius: '4px', 
-            fontSize: '0.7rem', 
-            fontWeight: 800,
-            opacity: 0.8,
-            border: '1px solid var(--admin-border-light)'
+            fontSize: '0.65rem', 
+            fontWeight: 600,
+            border: '1px solid rgba(255,255,255,0.05)',
+            marginLeft: '8px'
           }}>v{__APP_VERSION__}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>

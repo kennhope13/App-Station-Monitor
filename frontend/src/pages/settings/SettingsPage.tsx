@@ -11,10 +11,9 @@ import { useState } from 'react';
 import GeneralTab from './tabs/GeneralTab';
 import NotificationTab from './tabs/NotificationTab';
 import CloudSyncTab from './tabs/CloudSyncTab';
-import LinkageTab from './tabs/LinkageTab';
 import './SettingsPage.css';
 
-const TABS = ['', '', '', ''];
+const TABS = ['', '', ''];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(0);
@@ -42,7 +41,6 @@ export default function SettingsPage() {
         {activeTab === 0 && <GeneralTab />}
         {activeTab === 1 && <NotificationTab />}
         {activeTab === 2 && <CloudSyncTab />}
-        {activeTab === 3 && <LinkageTab />}
       </div>
     </div>
   );
