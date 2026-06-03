@@ -22,7 +22,7 @@ for _d in (DATA_DIR, RECEIVED_DIR): _d.mkdir(parents=True, exist_ok=True)
 def _load_config() -> dict:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    except Exception: return {"targets": ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"], "window_size": 6, "horizon": 5}
+    except Exception: return {"targets": ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"], "window_size": 6, "horizon": 1}
 
 def save_raw_payload(payload: dict) -> Path:
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]

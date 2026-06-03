@@ -7,10 +7,10 @@
     "Điểm 7",
     "Điểm 8",
     "Điểm 2",
+    "Điểm 1",
     "Vùng 1",
-    "Vùng 2",
-    "Điểm 1"
+    "Vùng 2"
   ],
   "window_size": 5,
-  "horizon": 5
+  "horizon": 1
 }

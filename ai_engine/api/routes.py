@@ -1059,7 +1059,7 @@ def load_or_create_model_config():
     config = {
         "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
         "window_size": 5,
-        "horizon": 5
+        "horizon": 1
     }
     
     # Try to load existing settings for window_size/horizon
