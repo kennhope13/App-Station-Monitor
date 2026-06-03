@@ -307,26 +307,41 @@ export default function AppShell() {
           </div>
           <span style={{ 
             fontWeight: 700, 
-            fontSize: '1.1rem', 
-            color: '#FFFFFF', 
+            fontSize: '1rem', 
+            color: 'var(--admin-text)', 
+            opacity: 0.9,
             letterSpacing: '0.5px',
-            fontFamily: 'Inter, sans-serif'
+            fontFamily: 'var(--admin-font)',
+            display: 'flex',
+            alignItems: 'center'
           }}>
-            HỆ THỐNG GIÁM SÁT <span style={{ 
-              color: '#F59E0B', // Safety Orange
-              textShadow: '0 0 10px rgba(245, 158, 11, 0.4), 0 0 20px rgba(245, 158, 11, 0.2)',
-              marginLeft: '6px',
-              fontWeight: 800
-            }}>TRẠM ĐIỆN</span>
+            HỆ THỐNG GIÁM SÁT 
+            <span style={{ 
+              color: 'var(--admin-accent)', 
+              marginLeft: '12px',
+              fontWeight: 900,
+              fontSize: '1.1rem',
+              letterSpacing: '1.5px',
+              padding: '4px 16px',
+              background: 'var(--admin-bg)',
+              border: '1px solid var(--admin-border)',
+              borderLeft: '4px solid var(--admin-accent)', // Industrial accent strip
+              borderRadius: '4px',
+              textShadow: '0 0 10px var(--admin-accent)',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              display: 'inline-block'
+            }}>
+              TRẠM ĐIỆN
+            </span>
           </span>
           <span className="version-badge" style={{ 
-            background: '#24272a', 
-            color: '#8c9196',
+            background: 'var(--admin-layer-2)', 
+            color: 'var(--admin-text-muted)',
             padding: '3px 8px', 
             borderRadius: '4px', 
             fontSize: '0.65rem', 
             fontWeight: 600,
-            border: '1px solid rgba(255,255,255,0.05)',
+            border: '1px solid var(--admin-border-light)',
             marginLeft: '8px'
           }}>v{__APP_VERSION__}</span>
         </div>

@@ -11,7 +11,7 @@ export default function PdAnalyticsTab() {
   const [selectedCamera, setSelectedCamera] = useState<Device | null>(null);
   const [loading, setLoading] = useState(true);
   
-  const [aiStats, setAiStats] = useState<{ db?: number | null, active_boundary?: string | null }>({});
+  const [aiStats, setAiStats] = useState<{ db?: number | null, hz?: number | null, active_boundary?: string | null }>({});
   const [historyData, setHistoryData] = useState<{ time: string, db: number }[]>([]);
   const [boundaries, setBoundaries] = useState<any[]>([]);
 
@@ -66,18 +66,22 @@ export default function PdAnalyticsTab() {
         const res = await fetch(`/pd-monitor/${selectedCamera.id}/state?token=${token}&backend=${backend}`);
         if (res.ok) {
           const data = await res.json();
-          setAiStats(data);
+          setAiStats({
+            db: data.db,
+            hz: data.hz,
+            active_boundary: data.active_boundary,
+          });
           
           // Add to local history for chart
           const now = new Date().toLocaleTimeString('vi-VN', { hour12: false });
           setHistoryData(prev => {
             const next = [...prev, { time: now, db: data.db || 0 }];
-            if (next.length > 30) next.shift(); // Keep last 30 points
+            if (next.length > 60) next.shift(); // Keep last 60 points for better granularity
             return next;
           });
         }
       } catch (err) {}
-      timer = setTimeout(fetchStats, 2000); // Update every 2 seconds
+      timer = setTimeout(fetchStats, 800); // Faster update like in PdRegionTab
     };
     fetchStats();
     return () => clearTimeout(timer);
@@ -199,17 +203,42 @@ export default function PdAnalyticsTab() {
                         
                         const isActive = aiStats.active_boundary === b.name;
                         const color = isActive ? '#ef4444' : '#10b981';
-                        const minX = Math.min(...poly.map(p => p[0])) * 100;
-                        const minY = Math.min(...poly.map(p => p[1])) * 100;
+                        
+                        // Calculate center
+                        const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length * 100;
+                        const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length * 100;
 
                         return (
                           <div key={b.id} style={{ 
-                            position: 'absolute', left: `${minX}%`, top: `${minY}%`,
-                            background: 'rgba(0,0,0,0.7)', padding: '1px 4px', fontSize: 9,
-                            color: '#fff', borderLeft: `2px solid ${color}`, whiteSpace: 'nowrap',
-                            transform: 'translateY(-100%)'
+                            position: 'absolute', left: `${cx}%`, top: `${cy}%`,
+                            transform: 'translate(-50%, -50%)',
+                            background: 'rgba(13,17,23,0.92)', padding: '2px 6px', borderRadius: 3,
+                            color: '#fff', fontSize: 9, fontWeight: 700, pointerEvents: 'none',
+                            border: isActive ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.2)',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                            boxShadow: isActive ? `0 0 6px ${color}44` : 'none',
+                            zIndex: isActive ? 20 : 10,
+                            transition: 'all 0.3s ease'
                           }}>
-                            {b.name}
+                            <div style={{ opacity: 0.9, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {isActive && <span>⚡</span>} {b.name}
+                            </div>
+                            <div style={{ 
+                              color: isActive ? color : 'rgba(255,255,255,0.85)', 
+                              fontSize: '11px', 
+                              fontFamily: 'monospace', 
+                              borderTop: '1px solid rgba(255,255,255,0.15)', 
+                              paddingTop: 1, 
+                              marginTop: 1, 
+                              fontWeight: 900 
+                            }}>
+                              {aiStats.db != null ? `${aiStats.db.toFixed(1)} dB` : '-- dB'}
+                            </div>
+                            {aiStats.hz != null && (
+                              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)', marginTop: -1 }}>
+                                {aiStats.hz.toFixed(0)} kHz
+                              </div>
+                            )}
                           </div>
                         );
                     })}

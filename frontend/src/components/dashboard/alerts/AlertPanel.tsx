@@ -1,26 +1,15 @@
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Eye } from 'lucide-react';
 import type { AlertItem } from '@/types/api.types';
 
 interface AlertPanelProps {
   alerts: AlertItem[];
+  onAlertClick?: (alert: AlertItem) => void;
 }
-
-/** Trả về màu CSS tương ứng với mức độ cảnh báo (alarm/warning). */
-const levelColor = (l: string) => l === 'alarm' ? 'var(--admin-danger)' : 'var(--admin-warning)';
 
 /** Trả về nhãn tiếng Việt cho mức độ cảnh báo. */
 const levelLabel = (l: string) => l === 'alarm' ? 'BÁO ĐỘNG' : 'CẢNH BÁO';
-
-/**
- * Trả về nhãn và màu hiển thị theo trạng thái xử lý cảnh báo.
- * @param s - Trạng thái: 'open' | 'acked' | 'closed'
- */
-const statusLabel = (s: string) => {
-  if (s === 'open') return { text: 'Chưa xử lý', color: 'var(--admin-tag-danger-text)' };
-  if (s === 'acked') return { text: 'Đã xác nhận', color: 'var(--admin-tag-warning-text)' };
-  return { text: 'Đã đóng', color: 'var(--admin-tag-success-text)' };
-};
 
 /** Phân loại cảnh báo dựa trên nội dung thông điệp để hiển thị tiêu đề thu gọn. */
 const getCategory = (msg: string) => {
@@ -54,7 +43,7 @@ const timeAgo = (iso: string) => {
  * Panel cảnh báo gần đây trên Dashboard: liệt kê tối đa 12 cảnh báo mới nhất,
  * có thể thu gọn và điều hướng đến trang lịch sử chi tiết.
  */
-export default function AlertPanel({ alerts }: AlertPanelProps) {
+export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const navigate = useNavigate();
 
@@ -64,11 +53,6 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
 
   const openCount = alerts.filter(a => a.status === 'open').length;
 
-  const nguoiCount = sorted.filter(a => getCategory(a.message).text === 'NGƯỜI').length;
-  const nhietCount = sorted.filter(a => getCategory(a.message).text === 'NHIỆT').length;
-  const pdCount = sorted.filter(a => getCategory(a.message).text === 'PD').length;
-  const sysCount = sorted.filter(a => getCategory(a.message).text === 'HỆ THỐNG').length;
-
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
@@ -76,7 +60,7 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
       minHeight: 0,
       background: 'var(--admin-overlay)', backdropFilter: 'blur(12px)',
       border: `1px solid ${openCount > 0 ? 'rgba(239,68,68,0.35)' : 'var(--admin-border)'}`,
-      borderRadius: 4, overflow: 'hidden', boxShadow: 'var(--admin-shadow)',
+      borderRadius: 0, overflow: 'hidden', boxShadow: 'var(--admin-shadow)',
     }}>
       {/* Header */}
       <div style={{
@@ -90,7 +74,7 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
           </span>
           {openCount > 0 && (
             <span style={{
-              fontSize: '0.52rem', fontWeight: 800, padding: '1px 5px', borderRadius: 3,
+              fontSize: '0.52rem', fontWeight: 800, padding: '1px 5px', borderRadius: 0,
               background: 'var(--admin-tag-danger-bg)', color: 'var(--admin-tag-danger-text)',
               border: '1px solid var(--admin-tag-danger-bg)',
             }}>
@@ -113,15 +97,16 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.64rem', height: 'auto' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--admin-border-light)', background: 'var(--admin-layer-2)' }}>
-                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '33%', letterSpacing: '0.3px' }}>Thời gian</th>
-                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '33%', letterSpacing: '0.3px' }}>Cấp độ</th>
-                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '34%', letterSpacing: '0.3px' }}>Phân loại</th>
+                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '28%', letterSpacing: '0.3px' }}>Thời gian</th>
+                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '28%', letterSpacing: '0.3px' }}>Cấp độ</th>
+                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '28%', letterSpacing: '0.3px' }}>Phân loại</th>
+                  <th style={{ padding: '3px 6px', textAlign: 'center', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '16%', letterSpacing: '0.3px' }}>Xem</th>
                 </tr>
               </thead>
               <tbody>
                 {sorted.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={{ color: 'var(--admin-text-muted)', fontSize: '0.68rem', textAlign: 'center', padding: '16px 0' }}>
+                    <td colSpan={4} style={{ color: 'var(--admin-text-muted)', fontSize: '0.68rem', textAlign: 'center', padding: '16px 0' }}>
                       Hệ thống ổn định
                     </td>
                   </tr>
@@ -135,7 +120,13 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
                     return (
                       <tr
                         key={a.id}
-                        onClick={() => navigate(`/alerts-history?alertId=${a.id}`)}
+                        onClick={() => {
+                          if (onAlertClick) {
+                            onAlertClick(a);
+                          } else {
+                            navigate(`/alerts-history?alertId=${a.id}`);
+                          }
+                        }}
                         style={{
                           borderBottom: '1px solid var(--admin-border-light)',
                           background: idx % 2 === 0 ? 'transparent' : 'var(--admin-layer-1)',
@@ -156,7 +147,7 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
                             fontSize: '0.5rem',
                             fontWeight: 950,
                             padding: '1.5px 5px',
-                            borderRadius: 3,
+                            borderRadius: 0,
                             background: pillBg,
                             color: pillColor,
                             border: `1px solid ${isAlarm ? 'rgba(220,38,38,0.15)' : 'rgba(217,119,6,0.15)'}`,
@@ -174,7 +165,7 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
                             fontSize: '0.48rem',
                             fontWeight: 950,
                             padding: '1.5px 5px',
-                            borderRadius: 3,
+                            borderRadius: 0,
                             background: cat.bg,
                             color: cat.color,
                             border: `1px solid ${cat.border}`,
@@ -184,6 +175,38 @@ export default function AlertPanel({ alerts }: AlertPanelProps) {
                           }}>
                             {cat.text}
                           </span>
+                        </td>
+                        {/* Detail Link Icon */}
+                        <td style={{ padding: '3px 6px', textAlign: 'center' }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/alerts-history?alertId=${a.id}`);
+                            }}
+                            title="Xem chi tiết lịch sử cảnh báo"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--admin-text-muted)',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderRadius: 0,
+                              transition: 'all 0.15s',
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.color = 'var(--admin-accent)';
+                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.color = 'var(--admin-text-muted)';
+                              e.currentTarget.style.background = 'none';
+                            }}
+                          >
+                            <Eye size={11} />
+                          </button>
                         </td>
                       </tr>
                     );

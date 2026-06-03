@@ -12,6 +12,7 @@ import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
 import { useRealtime } from '@/hooks/useRealtime';
 import { PT_PD } from '@/constants/points';
 import { DEV_PLC_S7, DEV_CAM_TYPES } from '@/constants/devices';
+import type { AlertItem } from '@/types/api.types';
 
 import SldCanvas, { SldCanvasRef } from '@/components/dashboard/sld/SldCanvas';
 import SldEditPanel from '@/components/dashboard/sld/SldEditPanel';
@@ -133,6 +134,30 @@ export default function DashboardPage() {
       setUnpinnedCount(data.unpinned?.length || 0);
     }).catch(() => {});
   }, [stationId, fetchSensors, fetchDevices, fetchAlerts, sldRefreshTick]);
+
+  // Keep track of the last seen alert ID to detect when a new alert actually arrives
+  const lastAlertIdRef = useRef<string>('');
+
+  useEffect(() => {
+    const first = alerts[0];
+    if (!first) return;
+
+    let newestAlert: AlertItem = first;
+    for (let i = 1; i < alerts.length; i++) {
+      const item = alerts[i];
+      if (item && new Date(item.triggeredAt).getTime() > new Date(newestAlert.triggeredAt).getTime()) {
+        newestAlert = item;
+      }
+    }
+
+    if (newestAlert.id !== lastAlertIdRef.current) {
+      lastAlertIdRef.current = newestAlert.id;
+      const streamId = findCameraStreamForDevice(newestAlert, devices);
+      if (streamId) {
+        handleCamChange(streamId);
+      }
+    }
+  }, [alerts, devices]);
 
   // ── Realtime cập nhật ─────────────────────────────────────────
   useRealtime({
@@ -265,7 +290,15 @@ export default function DashboardPage() {
             display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden',
           }}
         >
-          <AlertPanel alerts={alerts} />
+          <AlertPanel
+            alerts={alerts}
+            onAlertClick={(alert) => {
+              const streamId = findCameraStreamForDevice(alert, devices);
+              if (streamId) {
+                handleCamChange(streamId);
+              }
+            }}
+          />
           <div style={{ flex: '0 0 auto' }}>
             <CameraLiveViewer
               cameraSrc={activeCameraSrc}
@@ -308,4 +341,43 @@ export default function DashboardPage() {
       </div>
     </div>
   );
+}
+
+/**
+ * Tìm stream camera tương ứng với thiết bị hoặc tủ điện bị cảnh báo.
+ */
+function findCameraStreamForDevice(alert: AlertItem, devicesList: any[]) {
+  const deviceId = alert.deviceId;
+  if (!deviceId || !devicesList) return null;
+  const devIdLower = deviceId.toLowerCase();
+
+  // Helper chọn stream tối ưu dựa trên loại cảnh báo
+  const selectStream = (cfg: any) => {
+    const isThermalAlert = (alert.message || '').toLowerCase().includes('nhiệt') || 
+                           (alert.message || '').toLowerCase().includes('roi') ||
+                           (alert.message || '').toLowerCase().includes('thermal') ||
+                           (alert.message || '').toLowerCase().includes('quá nhiệt') ||
+                           (alert.message || '').toLowerCase().includes('temp');
+    if (isThermalAlert && cfg.go2rtc_thermal) {
+      return cfg.go2rtc_thermal;
+    }
+    return cfg.go2rtc_optical || cfg.go2rtc_id || cfg.go2rtc_thermal || null;
+  };
+
+  // 1. Nếu thiết bị cảnh báo chính là một camera
+  const camera = devicesList.find(d => d.id.toLowerCase() === devIdLower);
+  if (camera) {
+    return selectStream(camera.config || {});
+  }
+
+  // 2. Nếu thiết bị cảnh báo được liên kết cabinetId với một camera
+  const linkedCamera = devicesList.find(d => {
+    const cfg = d.config || {};
+    return cfg.cabinetId && cfg.cabinetId.toLowerCase() === devIdLower;
+  });
+  if (linkedCamera) {
+    return selectStream(linkedCamera.config || {});
+  }
+
+  return null;
 }
