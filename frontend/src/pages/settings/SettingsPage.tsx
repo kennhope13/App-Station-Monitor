@@ -10,12 +10,11 @@
 import { useState } from 'react';
 import GeneralTab from './tabs/GeneralTab';
 import NotificationTab from './tabs/NotificationTab';
-import ThemeTab from './tabs/ThemeTab';
 import CloudSyncTab from './tabs/CloudSyncTab';
 import LinkageTab from './tabs/LinkageTab';
 import './SettingsPage.css';
 
-const TABS = ['', '', '', '', ''];
+const TABS = ['', '', '', ''];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(0);
@@ -42,9 +41,8 @@ export default function SettingsPage() {
       <div className="admin-card" style={{ flex: 1, overflow: 'auto', padding: '20px 24px', borderRadius: 4 }}>
         {activeTab === 0 && <GeneralTab />}
         {activeTab === 1 && <NotificationTab />}
-        {activeTab === 2 && <ThemeTab />}
-        {activeTab === 3 && <CloudSyncTab />}
-        {activeTab === 4 && <LinkageTab />}
+        {activeTab === 2 && <CloudSyncTab />}
+        {activeTab === 3 && <LinkageTab />}
       </div>
     </div>
   );
