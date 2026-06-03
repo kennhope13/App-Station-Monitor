@@ -46,6 +46,16 @@ const ADMIN_NAV: NavItem[] = [
   { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt' },
 ];
 
+const THEME_NAMES: Record<string, string> = {
+  dark: 'Tối',
+  light: 'Trắng',
+  'soft-light': 'Dịu mắt',
+  silver: 'Bạc',
+  industrial: 'Công nghiệp',
+  hightech: 'Hiện đại',
+  cyberpunk: 'Neon'
+};
+
 /**
  * Khung bố cục chính của ứng dụng — gồm header, sidebar thu gọn/mở rộng và vùng nội dung trang.
  * Quản lý SignalR toàn cục, xử lý cảnh báo mới, đồng bộ cảm biến và điều hướng theo vai trò.
@@ -135,6 +145,7 @@ export default function AppShell() {
   const [time, setTime] = useState(new Date().toLocaleTimeString('vi-VN'));
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showThemeList, setShowThemeList] = useState(false);
   const [popupPos, setPopupPos] = useState({ bottom: 0, left: 0 });
   const userMenuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
@@ -167,6 +178,7 @@ export default function AppShell() {
   useEffect(() => {
     // Đóng user menu khi đổi route/tab
     setShowUserMenu(false);
+    setShowThemeList(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -174,6 +186,7 @@ export default function AppShell() {
     const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setShowUserMenu(false);
+        setShowThemeList(false);
       }
     };
 
@@ -321,38 +334,57 @@ export default function AppShell() {
                 {/* Popover Menu — position:fixed để thoát overflow:hidden của sidebar */}
                 {showUserMenu && (
                   <div className="sb-user-popover" style={{ position: 'fixed', bottom: popupPos.bottom, left: popupPos.left, top: 'auto', width: 200, padding: '6px 0' }}>
-                    <div style={{ padding: '6px 12px 4px', fontSize: '0.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      GIAO DIỆN HỆ THỐNG
+                    <div 
+                      className="sb-popover-item"
+                      onClick={() => setShowThemeList(!showThemeList)}
+                      style={{ justifyContent: 'space-between', fontWeight: 700, padding: '8px 12px' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>🎨 Giao diện:</span>
+                        <span style={{ color: 'var(--admin-accent)' }}>{THEME_NAMES[theme] || theme}</span>
+                      </div>
+                      <span style={{ 
+                        fontSize: '0.6rem', 
+                        transform: showThemeList ? 'rotate(90deg)' : 'none', 
+                        transition: 'transform 0.15s ease',
+                        opacity: 0.5 
+                      }}>▸</span>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {[
-                        { value: 'dark', label: '⚫ Tối Tiêu chuẩn' },
-                        { value: 'industrial', label: '🔘 Xám Công nghiệp' },
-                        { value: 'hightech', label: '🔵 Xanh Hiện đại' },
-                        { value: 'cyberpunk', label: '🟣 Tím Neon' },
-                        { value: 'light', label: '⚪ Trắng Tiêu chuẩn' },
-                        { value: 'soft-light', label: '🟡 Sáng Dịu mắt' },
-                        { value: 'silver', label: '🥈 Bạc Tinh tế' },
-                      ].map(t => {
-                        const isActive = theme === t.value;
-                        return (
-                          <div
-                            key={t.value}
-                            onClick={() => handleSelectTheme(t.value)}
-                            className="sb-popover-item"
-                            style={{
-                              fontWeight: isActive ? 800 : 500,
-                              background: isActive ? 'var(--admin-accent)' : undefined,
-                              color: isActive ? '#ffffff' : undefined,
-                              justifyContent: 'space-between',
-                            }}
-                          >
-                            <span>{t.label}</span>
-                            {isActive && <span style={{ fontSize: '0.65rem' }}>✓</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
+
+                    {showThemeList && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '2px 6px', background: 'var(--admin-hover)', borderRadius: 4, margin: '2px 8px' }}>
+                        {[
+                          { value: 'dark', label: '⚫ Tối Tiêu chuẩn' },
+                          { value: 'industrial', label: '🔘 Xám Công nghiệp' },
+                          { value: 'hightech', label: '🔵 Xanh Hiện đại' },
+                          { value: 'cyberpunk', label: '🟣 Tím Neon' },
+                          { value: 'light', label: '⚪ Trắng Tiêu chuẩn' },
+                          { value: 'soft-light', label: '🟡 Sáng Dịu mắt' },
+                          { value: 'silver', label: '🥈 Bạc Tinh tế' },
+                        ].map(t => {
+                          const isActive = theme === t.value;
+                          return (
+                            <div
+                              key={t.value}
+                              onClick={() => handleSelectTheme(t.value)}
+                              className="sb-popover-item"
+                              style={{
+                                fontWeight: isActive ? 800 : 500,
+                                background: isActive ? 'var(--admin-accent)' : undefined,
+                                color: isActive ? '#ffffff' : undefined,
+                                justifyContent: 'space-between',
+                                padding: '5px 8px',
+                                fontSize: '0.7rem',
+                                borderRadius: 3,
+                              }}
+                            >
+                              <span>{t.label}</span>
+                              {isActive && <span style={{ fontSize: '0.6rem' }}>✓</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="sb-popover-sep" style={{ margin: '4px 0' }} />
                     <div className="sb-popover-item danger" onClick={() => { setShowLogoutModal(true); setShowUserMenu(false); }} style={{ padding: '8px 12px' }}>
                       <LogOut size={14} strokeWidth={2} /> <span>Đăng xuất</span>
