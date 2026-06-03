@@ -202,7 +202,7 @@ def load_history_for_chart(targets: list[str], window_points: int = 12, horizon:
             dt = datetime.strptime(r["timestamp"], "%Y-%m-%d %H:%M:%S")
             # Làm tròn xuống mốc 5 phút (ví dụ 09:34:22 -> 09:30:00)
             bucket_dt = dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
-            bucket_key = bucket_dt.strftime("%H:%M")
+            bucket_key = bucket_dt.strftime("%Y-%m-%d %H:%M")
             
             # Trộn các giá trị không rỗng từ các camera/mốc ghi khác nhau vào cùng một bucket 5 phút
             if bucket_key not in bucketed_history:
@@ -243,7 +243,8 @@ def load_history_for_chart(targets: list[str], window_points: int = 12, horizon:
 
     for lbl in recent_keys:
         r = bucketed_history[lbl]
-        p = {"timestamp": lbl}
+        display_ts = lbl.split(" ")[1] if " " in lbl else lbl
+        p = {"timestamp": display_ts}
         # Thử tìm matched pred cho mốc bucket này
         try: dt = datetime.strptime(r["timestamp"], "%Y-%m-%d %H:%M:%S")
         except: dt = None
