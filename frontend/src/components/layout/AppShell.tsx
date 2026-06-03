@@ -18,7 +18,7 @@ import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
   LayoutDashboard, Video, AlertTriangle, LineChart, FileText,
   Wrench, FileArchive, Map, Radio, Users, Settings, LogOut,
-  ChevronLeft, ChevronRight, Moon, Sun
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 interface NavSubItem { id: string; path: string; label: string }
@@ -326,7 +326,7 @@ export default function AppShell() {
               background: 'var(--admin-bg)',
               border: '1px solid var(--admin-border)',
               borderLeft: '4px solid var(--admin-accent)', // Industrial accent strip
-              borderRadius: '4px',
+              borderRadius: '0px',
               textShadow: '0 0 10px var(--admin-accent)',
               boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
               display: 'inline-block'
@@ -338,7 +338,7 @@ export default function AppShell() {
             background: 'var(--admin-layer-2)', 
             color: 'var(--admin-text-muted)',
             padding: '3px 8px', 
-            borderRadius: '4px', 
+            borderRadius: '0px', 
             fontSize: '0.65rem', 
             fontWeight: 600,
             border: '1px solid var(--admin-border-light)',
