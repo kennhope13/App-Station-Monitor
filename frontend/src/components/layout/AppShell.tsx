@@ -17,7 +17,7 @@ import { createRealtimeHub } from '@/services/realtime.service';
 import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
   LayoutDashboard, Video, AlertTriangle, LineChart, FileText,
-  Wrench, FileArchive, Map, Radio, Users, Settings2, Settings, LogOut,
+  Wrench, FileArchive, Map, Radio, Users, Settings, LogOut,
   ChevronLeft, ChevronRight, Moon, Sun
 } from 'lucide-react';
 
@@ -43,7 +43,6 @@ const NAV_ITEMS: NavItem[] = [
 const ADMIN_NAV: NavItem[] = [
   { id: 'device-management', path: '/device-management', icon: <Radio size={19} strokeWidth={1.5} />, label: 'Thiết bị' },
   { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng' },
-  { id: 'rule-engine', path: '/rule-engine', icon: <Settings2 size={19} strokeWidth={1.5} />, label: 'Bộ quy tắc' },
   { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt' },
 ];
 
