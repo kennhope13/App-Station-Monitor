@@ -4,7 +4,9 @@
   "mainBinaryName": "station-monitor",
   "identifier": "com.stationmonitor.desktop",
   "build": {
-    "frontendDist": "./thin-client-ui"
+    "frontendDist": "./thin-client-ui",
+    "beforeBuildCommand": "",
+    "beforeDevCommand": ""
   },
   "app": {
     "windows": [
