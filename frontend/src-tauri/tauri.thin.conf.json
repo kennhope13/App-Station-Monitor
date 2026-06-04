@@ -41,10 +41,7 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "https://timestamp.digicert.com",
       "nsis": {
-        "installMode": "perMachine",
-        "shortcutName": "Station Monitor",
-        "displayLanguageSelector": false,
-        "languages": ["Vietnamese", "English"]
+        "installMode": "perMachine"
       }
     }
   }
