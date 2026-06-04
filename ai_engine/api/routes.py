@@ -451,7 +451,6 @@ def get_last_csv_records(filename: str, n: int = 100) -> list:
         return []
 
 @router.post("/api/prediction")
-@router.get("/api/prediction")
 async def receive_prediction(data: dict = None, request: Request = None):
     """Nhận dự đoán nhiệt độ từ mô hình AI và lưu vào CSV lịch sử."""
     import os, csv, time, re
@@ -465,6 +464,7 @@ async def receive_prediction(data: dict = None, request: Request = None):
         except Exception:
             data = {}
             
+    logger.info("[Prediction] Received raw prediction payload: %s", data)
     prediction_payload = (data or {}).get("prediction", data or {})
     
     # Flatten "points" array if present in the payload
@@ -660,6 +660,8 @@ def _get_or_create_state(device_id: str) -> dict:
             "db": 0.0, "hz": 0.0, "ts": "—",
             "detection": None, "active_boundary": None,
             "connected": False, "events": [], "boundaries": [],
+            "last_fetch_time": 0.0,
+            "cached_device_info": None,
         }
     return _pd_monitor_state[device_id]
 
@@ -881,160 +883,192 @@ async def pd_monitor_state(
     backend: str = Query(default="http://localhost:5000"),
 ):
     """Trả về JSON state: dB, hz, boundaries, events, detection, active_boundary."""
-    import httpx, json as _json
+    import httpx, json as _json, time as _time
 
-    s = dict(_get_or_create_state(device_id))
+    s = _get_or_create_state(device_id)
+    now = _time.time()
+    
+    # Chỉ gọi API Backend mỗi 10 giây một lần hoặc khi chưa có cache
+    should_fetch = (now - s.get("last_fetch_time", 0.0) > 10.0) or not s.get("cached_device_info")
 
-    # Tự động cập nhật / khởi tạo AcousticAnalyzer từ backend DB config
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            headers = {"Authorization": f"Bearer {token}"} if token else {}
-            r = await client.get(f"{backend}/api/v1/devices/{device_id}", headers=headers)
-            if r.status_code == 200:
-                d = r.json()
-                cfg_raw = d.get("config") or {}
-                if isinstance(cfg_raw, str):
-                    cfg_raw = _json.loads(cfg_raw)
-                cam_ip    = cfg_raw.get("ip", "")
-                username  = cfg_raw.get("username", "admin")
-                password  = cfg_raw.get("password", "")
-                stream_id = cfg_raw.get("go2rtc_id", "")
-                if password == "***" or not password:
-                    r_cred = await client.get(f"{backend}/api/v1/devices/{device_id}/credentials", headers=headers)
-                    if r_cred.status_code == 200:
-                        cred = r_cred.json()
-                        password = cred.get("password", "")
-                        username = cred.get("username", username)
-                
-                # NGĂN CHẶN SPAM MẬT KHẨU MẶC ĐỊNH HOẶC BỊ CHE (***)
-                if cam_ip and password and password != "***" and stream_id:
-                    # 1. Tìm analyzer xem đã tồn tại chưa
-                    analyzer = None
-                    for a in _acoustic_analyzers.values():
-                        if a.device_id == device_id:
-                            analyzer = a
-                            break
+    if should_fetch:
+        # Tự động cập nhật / khởi tạo AcousticAnalyzer từ backend DB config
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                headers = {"Authorization": f"Bearer {token}"} if token else {}
+                r = await client.get(f"{backend}/api/v1/devices/{device_id}", headers=headers)
+                if r.status_code == 200:
+                    s["cached_device_info"] = r.json()
+                    s["last_fetch_time"] = now
+                else:
+                    logger.warning("[Routes] Failed to fetch device %s: status %d", device_id, r.status_code)
+        except Exception as ex:
+            logger.debug("[Routes] Failed to fetch device info: %s", ex)
 
-                    # 2. Nhập tracker mật khẩu sai từ acoustic_analyzer để tránh lockout
-                    from services.acoustic.acoustic_analyzer import _auth_failed_passwords
-                    is_failed_pw = _auth_failed_passwords.get(device_id) == password
+    # Sử dụng thông tin device từ cache (hoặc mới lấy)
+    d = s.get("cached_device_info")
+    if d:
+        try:
+            cfg_raw = d.get("config") or {}
+            if isinstance(cfg_raw, str):
+                cfg_raw = _json.loads(cfg_raw)
+            cam_ip    = cfg_raw.get("ip", "")
+            username  = cfg_raw.get("username", "admin")
+            password  = cfg_raw.get("password", "")
+            stream_id = cfg_raw.get("go2rtc_id", "")
+            
+            # Nếu chưa có password thực và should_fetch, gọi API lấy credentials
+            if (password == "***" or not password) and should_fetch:
+                try:
+                    async with httpx.AsyncClient(timeout=3.0) as client:
+                        headers = {"Authorization": f"Bearer {token}"} if token else {}
+                        r_cred = await client.get(f"{backend}/api/v1/devices/{device_id}/credentials", headers=headers)
+                        if r_cred.status_code == 200:
+                            cred = r_cred.json()
+                            password = cred.get("password", "")
+                            username = cred.get("username", username)
+                            # Cập nhật ngược lại cache
+                            cfg_raw["password"] = password
+                            cfg_raw["username"] = username
+                            d["config"] = cfg_raw
+                except Exception as ex:
+                    logger.debug("[Routes] Failed to fetch credentials: %s", ex)
 
-                    if analyzer:
-                        # Nếu đổi cấu hình (IP, user, pass, stream), cập nhật và restart
-                        if (analyzer.username != username or 
-                            analyzer.password != password or 
-                            analyzer.camera_ip != cam_ip or
-                            analyzer.stream_id != stream_id):
-                            logger.info("[Routes] Phát hiện đổi cấu hình device %s, khởi động lại AcousticAnalyzer...", device_id)
-                            # Xoá mật khẩu sai cũ
-                            _auth_failed_passwords.pop(device_id, None)
-                            analyzer.stop()
-                            if analyzer.stream_id in _acoustic_analyzers:
-                                del _acoustic_analyzers[analyzer.stream_id]
-                            analyzer.username = username
-                            analyzer.password = password
-                            analyzer.camera_ip = cam_ip
-                            analyzer.stream_id = stream_id
-                            analyzer.start()
-                            _acoustic_analyzers[stream_id] = analyzer
-                        # Nếu thread listener chết, khởi động lại (nếu KHÔNG phải do sai pass)
-                        elif not is_failed_pw and (not analyzer._listener or not analyzer._listener.is_alive()):
-                            logger.info("[Routes] Khởi động lại listener cho device %s...", device_id)
-                            analyzer.start()
-                    else:
-                        # Chưa có analyzer, tạo mới và khởi động (nếu KHÔNG phải do sai pass)
-                        if not is_failed_pw:
-                            from services.acoustic.acoustic_analyzer import AcousticAnalyzer
-                            logger.info("[Routes] Tạo mới và khởi động AcousticAnalyzer cho device %s...", device_id)
-                            analyzer = AcousticAnalyzer(
-                                device_id=device_id,
-                                camera_ip=cam_ip,
-                                username=username,
-                                password=password,
-                                stream_id=stream_id
-                            )
-                            analyzer.start()
-                            _acoustic_analyzers[stream_id] = analyzer
-    except Exception as ex:
-        logger.warning("[Routes] Lỗi tự động cấu hình AcousticAnalyzer: %s", ex)
-
-    # Lấy danh sách vùng từ backend DB
-    try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            headers = {"Authorization": f"Bearer {token}"} if token else {}
-            r = await client.get(
-                f"{backend}/api/v1/devices/{device_id}/boundaries?type=pd",
-                headers=headers,
-            )
-            if r.status_code == 200:
-                raw_list = r.json()
-                import json as _json
-                import math as _math
-
-                def parse_vertices(polygon_json):
-                    """Chuyển đổi chuỗi JSON polygon 0-1 thành danh sách dict tọa độ 0-100."""
-                    try:
-                        arr = _json.loads(polygon_json or "[]")
-                        return [{"x": p[0]*100, "y": p[1]*100} for p in arr]
-                    except Exception:
-                        return []
-
-                def parse_thresholds(thr_json):
-                    """Trích xuất ngưỡng cảnh báo và thông số hiển thị từ chuỗi JSON thresholds."""
-                    try:
-                        t = _json.loads(thr_json or "{}")
-                        return (
-                            t.get("warn", 20),
-                            t.get("alarm", 45),
-                            int(t.get("strokeWidth") or t.get("borderThickness", 1)),
-                            int(t.get("fontSize", 14)),
-                            str(t.get("labelPos") or t.get("namePosition", "top")),
-                        )
-                    except Exception:
-                        return 20, 45, 1, 14, "top"
-
-                boundaries = []
-                for b in raw_list:
-                    warn, alarm, thick, size, pos = parse_thresholds(b.get("Thresholds") or b.get("thresholds"))
-                    vertices = parse_vertices(b.get("Polygon") or b.get("polygon") or "[]")
-                    boundaries.append({
-                        "id":               b.get("Id") or b.get("id"),
-                        "name":             b.get("Name") or b.get("name"),
-                        "vertices":         vertices,
-                        "warningThreshold": warn,
-                        "alarmThreshold":   alarm,
-                        "borderThickness":  thick,
-                        "fontSize":         size,
-                        "namePosition":     pos,
-                    })
-                s["boundaries"] = boundaries
-                
-                # Cập nhật ngay danh sách vùng vẽ cho AI Engine (đồng bộ với Database)
-                analyzer_for_device = None
+            # NGĂN CHẶN SPAM MẬT KHẨU MẶC ĐỊNH HOẶC BỊ CHE (***)
+            if cam_ip and password and password != "***" and stream_id:
+                # 1. Tìm analyzer xem đã tồn tại chưa
+                analyzer = None
                 for a in _acoustic_analyzers.values():
                     if a.device_id == device_id:
-                        analyzer_for_device = a
+                        analyzer = a
                         break
-                        
-                if analyzer_for_device and analyzer_for_device._pd_analyzer:
-                    from services.detection.pd_region_analyzer import PdRegion
-                    regions = []
-                    for b in boundaries:
-                        regions.append(PdRegion(
-                            id=str(b["id"]),
-                            name=b["name"],
-                            vertices=b["vertices"],
-                            warning_threshold=float(b["warningThreshold"]),
-                            alarm_threshold=float(b["alarmThreshold"]),
-                            border_thickness=int(b.get("borderThickness", 1)),
-                            font_size=int(b.get("fontSize", 14)),
-                            name_position=str(b.get("namePosition", "top")),
-                        ))
-                    analyzer_for_device._pd_analyzer.update_regions(regions)
-    except Exception:
-        pass
 
-    return s
+                # 2. Nhập tracker mật khẩu sai từ acoustic_analyzer để tránh lockout
+                from services.acoustic.acoustic_analyzer import _auth_failed_passwords
+                is_failed_pw = _auth_failed_passwords.get(device_id) == password
+
+                if analyzer:
+                    # Nếu đổi cấu hình (IP, user, pass, stream), cập nhật và restart
+                    if (analyzer.username != username or 
+                        analyzer.password != password or 
+                        analyzer.camera_ip != cam_ip or
+                        analyzer.stream_id != stream_id):
+                        logger.info("[Routes] Phát hiện đổi cấu hình device %s, khởi động lại AcousticAnalyzer...", device_id)
+                        # Xoá mật khẩu sai cũ
+                        _auth_failed_passwords.pop(device_id, None)
+                        analyzer.stop()
+                        if analyzer.stream_id in _acoustic_analyzers:
+                            del _acoustic_analyzers[analyzer.stream_id]
+                        analyzer.username = username
+                        analyzer.password = password
+                        analyzer.camera_ip = cam_ip
+                        analyzer.stream_id = stream_id
+                        analyzer.start()
+                        _acoustic_analyzers[stream_id] = analyzer
+                    # Nếu thread listener chết, khởi động lại (nếu KHÔNG phải do sai pass)
+                    elif not is_failed_pw and (not analyzer._listener or not analyzer._listener.is_alive()):
+                        logger.info("[Routes] Khởi động lại listener cho device %s...", device_id)
+                        analyzer.start()
+                else:
+                    # Chưa có analyzer, tạo mới và khởi động (nếu KHÔNG phải do sai pass)
+                    if not is_failed_pw:
+                        from services.acoustic.acoustic_analyzer import AcousticAnalyzer
+                        logger.info("[Routes] Tạo mới và khởi động AcousticAnalyzer cho device %s...", device_id)
+                        analyzer = AcousticAnalyzer(
+                            device_id=device_id,
+                            camera_ip=cam_ip,
+                            username=username,
+                            password=password,
+                            stream_id=stream_id
+                        )
+                        analyzer.start()
+                        _acoustic_analyzers[stream_id] = analyzer
+        except Exception as ex:
+            logger.warning("[Routes] Lỗi tự động cấu hình AcousticAnalyzer: %s", ex)
+
+    # Lấy danh sách vùng từ backend DB nếu should_fetch
+    if should_fetch:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                headers = {"Authorization": f"Bearer {token}"} if token else {}
+                r = await client.get(
+                    f"{backend}/api/v1/devices/{device_id}/boundaries?type=pd",
+                    headers=headers,
+                )
+                if r.status_code == 200:
+                    raw_list = r.json()
+                    import math as _math
+
+                    def parse_vertices(polygon_json):
+                        """Chuyển đổi chuỗi JSON polygon 0-1 thành danh sách dict tọa độ 0-100."""
+                        try:
+                            arr = _json.loads(polygon_json or "[]")
+                            return [{"x": p[0]*100, "y": p[1]*100} for p in arr]
+                        except Exception:
+                            return []
+
+                    def parse_thresholds(thr_json):
+                        """Trích xuất ngưỡng cảnh báo và thông số hiển thị từ chuỗi JSON thresholds."""
+                        try:
+                            t = _json.loads(thr_json or "{}")
+                            return (
+                                t.get("warn", 20),
+                                t.get("alarm", 45),
+                                int(t.get("strokeWidth") or t.get("borderThickness", 1)),
+                                int(t.get("fontSize", 14)),
+                                str(t.get("labelPos") or t.get("namePosition", "top")),
+                            )
+                        except Exception:
+                            return 20, 45, 1, 14, "top"
+
+                    boundaries = []
+                    for b in raw_list:
+                        warn, alarm, thick, size, pos = parse_thresholds(b.get("Thresholds") or b.get("thresholds"))
+                        vertices = parse_vertices(b.get("Polygon") or b.get("polygon") or "[]")
+                        boundaries.append({
+                            "id":               b.get("Id") or b.get("id"),
+                            "name":             b.get("Name") or b.get("name"),
+                            "vertices":         vertices,
+                            "warningThreshold": warn,
+                            "alarmThreshold":   alarm,
+                            "borderThickness":  thick,
+                            "fontSize":         size,
+                            "namePosition":     pos,
+                        })
+                    s["boundaries"] = boundaries
+                    
+                    # Cập nhật ngay danh sách vùng vẽ cho AI Engine (đồng bộ với Database)
+                    analyzer_for_device = None
+                    for a in _acoustic_analyzers.values():
+                        if a.device_id == device_id:
+                            analyzer_for_device = a
+                            break
+                            
+                    if analyzer_for_device and analyzer_for_device._pd_analyzer:
+                        from services.detection.pd_region_analyzer import PdRegion
+                        regions = []
+                        for b in boundaries:
+                            regions.append(PdRegion(
+                                id=str(b["id"]),
+                                name=b["name"],
+                                vertices=b["vertices"],
+                                warning_threshold=float(b["warningThreshold"]),
+                                alarm_threshold=float(b["alarmThreshold"]),
+                                border_thickness=int(b.get("borderThickness", 1)),
+                                font_size=int(b.get("fontSize", 14)),
+                                name_position=str(b.get("namePosition", "top")),
+                            ))
+                        analyzer_for_device._pd_analyzer.update_regions(regions)
+                else:
+                    logger.warning("[Routes] Failed to fetch boundaries for %s: status %d", device_id, r.status_code)
+        except Exception as ex:
+            logger.debug("[Routes] Failed to fetch boundaries: %s", ex)
+
+    # Trả về bản sao sạch của state (loại bỏ các trường cache local)
+    res_dict = dict(s)
+    res_dict.pop("last_fetch_time", None)
+    res_dict.pop("cached_device_info", None)
+    return res_dict
 
 
 # ── AI Forecasting & Training Simulation ─────────────────────────
@@ -1054,12 +1088,13 @@ _model_status = {
     "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 }
 
-def load_or_create_model_config():
+def load_or_create_model_config(stream_id: str = None, camera_ip: str = None, device_id: str = None):
     os.makedirs("model", exist_ok=True)
     config = {
         "targets": ["ID_1", "ID_2", "ID_3", "ID_4", "ID_5", "ID_6"],
         "window_size": 5,
-        "horizon": 1
+        "horizon": 1,
+        "devices": {}
     }
     
     # Try to load existing settings for window_size/horizon
@@ -1074,27 +1109,65 @@ def load_or_create_model_config():
         except Exception:
             pass
 
-    # Dynamically extract active points and zones from all registered thermal analyzers
-    active_targets = []
-    for analyzer in _thermal_analyzers.values():
+    # Extract active points/zones for each analyzer
+    device_targets = {}
+    for s_id, analyzer in _thermal_analyzers.items():
+        ip = analyzer.camera_ip
+        if not ip:
+            continue
+        if ip not in device_targets:
+            device_targets[ip] = []
+        
         for pt in getattr(analyzer, "points", []):
             name = pt.label or pt.id
-            if name and name not in active_targets:
-                active_targets.append(name)
+            if name and name not in device_targets[ip]:
+                device_targets[ip].append(name)
         for zn in getattr(analyzer, "zones", []):
             name = zn.label or zn.id
-            if name and name not in active_targets:
-                active_targets.append(name)
+            if name and name not in device_targets[ip]:
+                device_targets[ip].append(name)
 
-    # If active targets exist from active devices, update the targets list dynamically!
-    if active_targets:
-        config["targets"] = active_targets
-        # Proactively persist the updated configuration to prevent drift
-        try:
-            with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+    config["devices"] = device_targets
+
+    # Filter targets if camera context is provided
+    is_filtered = False
+    filtered_targets = []
+    if stream_id:
+        is_filtered = True
+        matching = _thermal_analyzers.get(stream_id)
+        if matching and matching.camera_ip in device_targets:
+            filtered_targets = device_targets[matching.camera_ip]
+    elif camera_ip:
+        is_filtered = True
+        if camera_ip in device_targets:
+            filtered_targets = device_targets[camera_ip]
+    elif device_id:
+        is_filtered = True
+        matching = next((a for a in _thermal_analyzers.values() if a.device_id == device_id), None)
+        if matching and matching.camera_ip in device_targets:
+            filtered_targets = device_targets[matching.camera_ip]
+
+    if is_filtered:
+        config["targets"] = filtered_targets
+    else:
+        # Grouped targets for legacy / global list
+        all_targets = []
+        for targets_list in device_targets.values():
+            for t in targets_list:
+                if t not in all_targets:
+                    all_targets.append(t)
+        if all_targets:
+            config["targets"] = all_targets
+            try:
+                with open(MODEL_CONFIG_FILE, "w", encoding="utf-8") as f:
+                    persist_cfg = {
+                        "targets": all_targets,
+                        "window_size": config["window_size"],
+                        "horizon": config["horizon"]
+                    }
+                    json.dump(persist_cfg, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
 
     return config
 
@@ -1206,8 +1279,8 @@ async def receive_thermal_data(body: ThermalDataPayload):
 
 # Endpoints cho AI Forecast & Config
 @router.get("/api/config")
-async def get_model_config():
-    config = load_or_create_model_config()
+async def get_model_config(stream_id: str = None, camera_ip: str = None, device_id: str = None):
+    config = load_or_create_model_config(stream_id=stream_id, camera_ip=camera_ip, device_id=device_id)
     return config
 
 @router.post("/api/config/update")
@@ -1260,7 +1333,7 @@ async def get_latest_prediction():
     return {"success": True, "prediction": None, "source": "none"}
 
 @router.get("/api/prediction/history")
-async def get_prediction_history():
+async def get_prediction_history(points: int = Query(default=48), date: str = Query(default=None)):
     """
     Trả về chuỗi lịch sử + dự báo cho biểu đồ đường đôi.
     - Chỉ sử dụng dữ liệu thực từ CSV.
@@ -1273,53 +1346,63 @@ async def get_prediction_history():
 
     from services.thermal.thermal_forecaster import load_history_for_chart, HISTORY_CSV
     if HISTORY_CSV.exists():
-        history = load_history_for_chart(targets, window_points=12, horizon=horizon)
+        history = load_history_for_chart(targets, window_points=points, horizon=horizon, date_str=date)
         if history:
-            # DYNAMIC INJECTION: Lấy nhiệt độ thực tế tức thời từ RAM
-            live_temps = {}
-            for analyzer in _thermal_analyzers.values():
-                for pt in getattr(analyzer, "points", []):
-                    name = pt.label or pt.id
-                    temp = analyzer.last_point_temps.get(pt.id)
-                    if name and temp is not None:
-                        live_temps[name] = temp
-                for zn in getattr(analyzer, "zones", []):
-                    name = zn.label or zn.id
-                    res = analyzer.last_zone_results.get(zn.id)
-                    if name and res is not None and "max" in res:
-                        live_temps[name] = res["max"]
-
-            # Lấy dự báo tức thời mới nhất nếu có sẵn (từ Jetson)
-            from services.thermal.thermal_forecaster import load_latest_prediction
-            latest_pred = load_latest_prediction(targets) or {}
-            if latest_pred:
+            # Chỉ inject các giá trị tức thời vào phần tử "Hiện tại" nếu là ngày hôm nay
+            is_today = True
+            if date:
                 try:
-                    from datetime import datetime, timedelta
-                    issued_str = latest_pred.get("issued_at") or latest_pred.get("input_timestamp")
-                    if issued_str:
-                        issued_dt = datetime.strptime(issued_str, "%Y-%m-%d %H:%M:%S")
-                        if datetime.now() - issued_dt > timedelta(minutes=5, seconds=30):
-                            latest_pred = {}
+                    from datetime import datetime
+                    is_today = (datetime.strptime(date.strip(), "%Y-%m-%d").date() == datetime.now().date())
                 except Exception:
                     pass
 
-            # Inject các giá trị tức thời này vào phần tử "Hiện tại"
-            boundary_idx = len(history) - horizon - 1
-            if 0 <= boundary_idx < len(history):
-                for t in targets:
-                    if history[boundary_idx].get(f"{t}_actual") is None and t in live_temps:
-                        history[boundary_idx][f"{t}_actual"] = live_temps[t]
-                    # Chỉ điền dự báo nếu THỰC SỰ có dữ liệu từ Jetson
-                    if history[boundary_idx].get(f"{t}_pred") is None:
-                        if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
-                            history[boundary_idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
+            if is_today:
+                # DYNAMIC INJECTION: Lấy nhiệt độ thực tế tức thời từ RAM
+                live_temps = {}
+                for analyzer in _thermal_analyzers.values():
+                    for pt in getattr(analyzer, "points", []):
+                        name = pt.label or pt.id
+                        temp = analyzer.last_point_temps.get(pt.id)
+                        if name and temp is not None:
+                            live_temps[name] = temp
+                    for zn in getattr(analyzer, "zones", []):
+                        name = zn.label or zn.id
+                        res = analyzer.last_zone_results.get(zn.id)
+                        if name and res is not None and "max" in res:
+                            live_temps[name] = res["max"]
 
-            # Điền dự phòng cho các mốc thời gian tương lai (forecast points) của các điểm đo mới thêm vào
-            for idx in range(len(history) - horizon, len(history)):
-                for t in targets:
-                    if history[idx].get(f"{t}_pred") is None:
-                        if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
-                            history[idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
+                # Lấy dự báo tức thời mới nhất nếu có sẵn (từ Jetson)
+                from services.thermal.thermal_forecaster import load_latest_prediction
+                latest_pred = load_latest_prediction(targets) or {}
+                if latest_pred:
+                    try:
+                        from datetime import datetime, timedelta
+                        issued_str = latest_pred.get("issued_at") or latest_pred.get("input_timestamp")
+                        if issued_str:
+                            issued_dt = datetime.strptime(issued_str, "%Y-%m-%d %H:%M:%S")
+                            if datetime.now() - issued_dt > timedelta(minutes=5, seconds=30):
+                                latest_pred = {}
+                    except Exception:
+                        pass
+
+                # Inject các giá trị tức thời này vào phần tử "Hiện tại"
+                boundary_idx = len(history) - horizon - 1
+                if 0 <= boundary_idx < len(history):
+                    for t in targets:
+                        if history[boundary_idx].get(f"{t}_actual") is None and t in live_temps:
+                            history[boundary_idx][f"{t}_actual"] = live_temps[t]
+                        # Chỉ điền dự báo nếu THỰC SỰ có dữ liệu từ Jetson
+                        if history[boundary_idx].get(f"{t}_pred") is None:
+                            if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
+                                history[boundary_idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
+
+                # Điền dự phòng cho các mốc thời gian tương lai (forecast points) của các điểm đo mới thêm vào
+                for idx in range(len(history) - horizon, len(history)):
+                    for t in targets:
+                        if history[idx].get(f"{t}_pred") is None:
+                            if f"{t}_pred" in latest_pred and latest_pred[f"{t}_pred"] is not None:
+                                history[idx][f"{t}_pred"] = latest_pred[f"{t}_pred"]
 
             return {"success": True, "history": history, "targets": targets, "source": "live"}
 

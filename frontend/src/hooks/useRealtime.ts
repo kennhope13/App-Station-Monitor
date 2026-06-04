@@ -26,9 +26,21 @@ export function useRealtime(handlers: RealtimeHandlers, dependencies: any[] = []
       hub.on('AlertUpdated', handlers.onAlertUpdated);
     }
 
-    hub.start().catch(err => console.warn('[useRealtime] SignalR Connection Error:', err));
+    let isMounted = true;
+    const startHub = async () => {
+      try {
+        await hub.start();
+      } catch (err) {
+        console.warn('[useRealtime] SignalR Connection failed, retrying in 5s...', err);
+        if (isMounted) {
+          setTimeout(startHub, 5000);
+        }
+      }
+    };
+    startHub();
 
     return () => {
+      isMounted = false;
       hub.stop();
       hubRef.current = null;
     };

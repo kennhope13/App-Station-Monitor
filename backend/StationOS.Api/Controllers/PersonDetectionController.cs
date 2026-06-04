@@ -67,8 +67,42 @@ public class PersonDetectionController : ControllerBase
         PersonDetectionMetadataDto? metadataDto = null;
         try
         {
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            metadataDto = JsonSerializer.Deserialize<PersonDetectionMetadataDto>(metadata, options);
+            using var doc = JsonDocument.Parse(metadata);
+            var root = doc.RootElement;
+
+            metadataDto = new PersonDetectionMetadataDto
+            {
+                Timestamp = root.TryGetProperty("timestamp", out var ts) ? ts.GetString() ?? "" : "",
+                Camera_Ip = root.TryGetProperty("camera_ip", out var ip) ? ip.GetString() ?? "" : "",
+                Person_Count = root.TryGetProperty("person_count", out var pc) ? (pc.ValueKind == JsonValueKind.Number && pc.TryGetInt32(out var pVal) ? pVal : 0) : 0,
+                Alert_Type = root.TryGetProperty("alert_type", out var at) ? at.GetString() ?? "person_detected" : "person_detected",
+                Boxes = new List<BoundingBoxDto>()
+            };
+
+            if (root.TryGetProperty("boxes", out var boxesEl) && boxesEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var boxItem in boxesEl.EnumerateArray())
+                {
+                    if (boxItem.ValueKind == JsonValueKind.Object)
+                    {
+                        var x1 = boxItem.TryGetProperty("x1", out var x1El) && x1El.TryGetSingle(out var x1Val) ? x1Val : 0f;
+                        var y1 = boxItem.TryGetProperty("y1", out var y1El) && y1El.TryGetSingle(out var y1Val) ? y1Val : 0f;
+                        var x2 = boxItem.TryGetProperty("x2", out var x2El) && x2El.TryGetSingle(out var x2Val) ? x2Val : 0f;
+                        var y2 = boxItem.TryGetProperty("y2", out var y2El) && y2El.TryGetSingle(out var y2Val) ? y2Val : 0f;
+                        var score = boxItem.TryGetProperty("score", out var scEl) && scEl.TryGetSingle(out var scVal) ? scVal : 0f;
+                        metadataDto.Boxes.Add(new BoundingBoxDto { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Score = score });
+                    }
+                    else if (boxItem.ValueKind == JsonValueKind.Array && boxItem.GetArrayLength() >= 5)
+                    {
+                        var x1 = boxItem[0].TryGetSingle(out var x1Val) ? x1Val : 0f;
+                        var y1 = boxItem[1].TryGetSingle(out var y1Val) ? y1Val : 0f;
+                        var x2 = boxItem[2].TryGetSingle(out var x2Val) ? x2Val : 0f;
+                        var y2 = boxItem[3].TryGetSingle(out var y2Val) ? y2Val : 0f;
+                        var score = boxItem[4].TryGetSingle(out var scVal) ? scVal : 0f;
+                        metadataDto.Boxes.Add(new BoundingBoxDto { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Score = score });
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -141,6 +175,42 @@ public class PersonDetectionController : ControllerBase
             var videoUrl = $"/media/videos/{fname}";
             _logger.LogInformation("[PersonDetection] Đã lưu và xử lý video thành công: {path}", fullPath);
 
+            // Tạo ảnh Thumbnail từ video
+            string detectionsDir = Path.Combine(_rootPath, "media", "detections");
+            if (!Directory.Exists(detectionsDir)) Directory.CreateDirectory(detectionsDir);
+
+            var thumbFname = $"{Guid.NewGuid()}_thumb.jpg";
+            var thumbFullPath = Path.Combine(detectionsDir, thumbFname);
+            var thumbUrl = $"/media/detections/{thumbFname}";
+            bool thumbCreated = false;
+
+            try
+            {
+                var psiThumb = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "ffmpeg",
+                    Arguments = $"-y -i \"{fullPath}\" -ss 00:00:00.5 -vframes 1 \"{thumbFullPath}\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var processThumb = System.Diagnostics.Process.Start(psiThumb);
+                if (processThumb != null)
+                {
+                    await processThumb.WaitForExitAsync();
+                    if (System.IO.File.Exists(thumbFullPath))
+                    {
+                        thumbCreated = true;
+                        _logger.LogInformation("[PersonDetection] Đã tạo thumbnail từ video thành công: {path}", thumbFullPath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[PersonDetection] Lỗi khi tạo thumbnail từ video");
+            }
+
             // Tìm camera
             var cam = await FindCameraAsync(camIp);
             if (cam != null)
@@ -154,11 +224,21 @@ public class PersonDetectionController : ControllerBase
                 if (latestAlert != null)
                 {
                     latestAlert.VideoUrl = videoUrl;
+                    if (string.IsNullOrEmpty(latestAlert.ThumbnailUrl) && thumbCreated)
+                    {
+                        latestAlert.ThumbnailUrl = thumbUrl;
+                        latestAlert.ImageUrl = thumbUrl;
+                    }
                     await _db.SaveChangesAsync();
 
-                    // Đánh tín hiệu để giao diện biết có Video và hiện nút Play (Dùng AlertUpdated để cập nhật alert đã tồn tại)
-                    await _notifier.SendAlertUpdatedAsync(new { id = latestAlert.Id, videoUrl });
-                    _logger.LogInformation("[PersonDetection] Đã ghim video vào Alert {alertId}", latestAlert.Id);
+                    // Đánh tín hiệu để giao diện biết có Video và Thumbnail
+                    await _notifier.SendAlertUpdatedAsync(new { 
+                        id = latestAlert.Id, 
+                        videoUrl,
+                        thumbnailUrl = latestAlert.ThumbnailUrl,
+                        imageUrl = latestAlert.ImageUrl
+                    });
+                    _logger.LogInformation("[PersonDetection] Đã ghim video và thumbnail vào Alert {alertId}", latestAlert.Id);
                 }
                 else
                 {

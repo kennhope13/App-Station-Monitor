@@ -25,25 +25,22 @@ interface NavSubItem { id: string; path: string; label: string }
 // roles: undefined = tất cả vai trò; có giá trị = chỉ vai trò trong mảng mới thấy
 interface NavItem { id: string; path: string; icon: React.ReactNode; label: string; roles?: string[]; children?: NavSubItem[] }
 
-// ── Điều hướng chính ─────────────────────────────────────────
-// TODO (production): thêm field `roles` để lọc theo vai trò
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', path: '/dashboard', icon: <LayoutDashboard size={19} strokeWidth={1.5} />, label: 'Tổng quan' },
   { id: 'realtime', path: '/realtime', icon: <Video size={19} strokeWidth={1.5} />, label: 'Trực tiếp' },
   { id: 'alerts-history', path: '/alerts-history', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Lịch sử cảnh báo' },
   { id: 'analytics', path: '/analytics', icon: <LineChart size={19} strokeWidth={1.5} />, label: 'Phân tích' },
-  { id: 'reports', path: '/reports', icon: <FileText size={19} strokeWidth={1.5} />, label: 'Báo cáo' },
-  { id: 'maintenance', path: '/maintenance', icon: <Wrench size={19} strokeWidth={1.5} />, label: 'Bảo trì' },
-  { id: 'audit-log', path: '/audit-log', icon: <FileArchive size={19} strokeWidth={1.5} />, label: 'Nhật ký hệ thống' },
+  { id: 'reports', path: '/reports', icon: <FileText size={19} strokeWidth={1.5} />, label: 'Báo cáo', roles: ['admin', 'manager'] },
+  { id: 'maintenance', path: '/maintenance', icon: <Wrench size={19} strokeWidth={1.5} />, label: 'Bảo trì', roles: ['admin', 'manager'] },
+  { id: 'audit-log', path: '/audit-log', icon: <FileArchive size={19} strokeWidth={1.5} />, label: 'Nhật ký hệ thống', roles: ['admin'] },
   { id: 'multisite', path: '/multisite', icon: <Map size={19} strokeWidth={1.5} />, label: 'Đa trạm' },
 ];
 
 // ── Nhóm quản trị ────────────────────────────────────────────
-// TODO (production): thêm field `roles: ['admin']` khi phân quyền
 const ADMIN_NAV: NavItem[] = [
-  { id: 'device-management', path: '/device-management', icon: <Radio size={19} strokeWidth={1.5} />, label: 'Thiết bị' },
-  { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng' },
-  { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt' },
+  { id: 'device-management', path: '/device-management', icon: <Radio size={19} strokeWidth={1.5} />, label: 'Thiết bị', roles: ['admin'] },
+  { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng', roles: ['admin'] },
+  { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt', roles: ['admin'] },
 ];
 
 const THEME_NAMES: Record<string, string> = {
@@ -63,7 +60,16 @@ const THEME_NAMES: Record<string, string> = {
 export default function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = authService.getUser() || { fullname: 'Người dùng', role: 'user' };
+  const user = authService.getUser();
+
+  // ── Security Check ──
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+    }
+  }, [user, navigate]);
+
+  if (!user) return null;
 
   // ── Alerts Management ────────────────────────────────────────
   const [activeAlert, setActiveAlert] = useState<AlertItem | null>(null);
@@ -79,6 +85,7 @@ export default function AppShell() {
     // 1. Lắng nghe cảnh báo mới từ Rule Engine, Camera, Maintenance
     hub.on('AlertNew', (alert: AlertItem) => {
       invalidateAlerts(ALERT_STATUS.OPEN);
+      useAlertStore.getState().prepend(alert);
       fetchAlerts(ALERT_STATUS.OPEN, true);
       
       const isCritical = alert.level === 'alarm' || alert.level === 'warning';
@@ -91,9 +98,17 @@ export default function AppShell() {
     });
 
     // 2. Lắng nghe cập nhật cảnh báo
-    hub.on('AlertUpdated', () => {
+    hub.on('AlertUpdated', (data: any) => {
       invalidateAlerts(ALERT_STATUS.OPEN);
       fetchAlerts(ALERT_STATUS.OPEN, true);
+
+      // Nếu cảnh báo đang hiện Popup được cập nhật (vd: có ảnh/video mới), cập nhật ngay
+      setActiveAlert(prev => {
+        if (prev && prev.id === data.id) {
+          return { ...prev, ...data };
+        }
+        return prev;
+      });
     });
 
     // 3. Lắng nghe sự kiện Camera AI
@@ -101,7 +116,10 @@ export default function AppShell() {
       // Chúng ta không gọi setActiveAlert ở đây nữa vì AlertNew sẽ hiển thị Popup 
       // với đầy đủ ảnh và thông tin chi tiết (do backend đã thống nhất gửi chung vào AlertNew)
       if (!evt || !evt.detectionType) return;
-      const isCritical = ['fire', 'thermal_hotspot', 'intrusion'].includes(evt.detectionType);
+      
+      // partial_discharge đã có AlertNew (level warning/alarm) nên không cần toast info rời rạc gây spam
+      const isCritical = ['fire', 'thermal_hotspot', 'intrusion', 'partial_discharge'].includes(evt.detectionType);
+      
       if (!isCritical) {
         showToast(`Camera: ${evt.detectionType.toUpperCase()}`, 'info');
       }
@@ -127,9 +145,22 @@ export default function AppShell() {
       });
     });
 
-    hub.start().catch(err => console.warn('[AppShell] SignalR Global Error:', err));
+    let isMounted = true;
+    const startHub = async () => {
+      try {
+        await hub.start();
+        console.log('[AppShell] SignalR Global Connected.');
+      } catch (err) {
+        console.warn('[AppShell] SignalR Global Connection failed, retrying in 5s...', err);
+        if (isMounted) {
+          setTimeout(startHub, 5000);
+        }
+      }
+    };
+    startHub();
 
     return () => {
+      isMounted = false;
       hub.stop();
     };
   }, [fetchAlerts, invalidateAlerts]);
@@ -286,51 +317,15 @@ export default function AppShell() {
 
       {/* ── Full-width header (independent of sidebar) ── */}
       <header className="admin-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            width: 42, 
-            height: 42, 
-            borderRadius: '10px',
-            background: '#1a1c1e', // matching industrial bg
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: 'inset 0 0 10px rgba(0,0,0,0.5), 0 0 15px rgba(16, 185, 129, 0.15)',
-            flexShrink: 0
-          }}>
-            <img
-              alt="StationOS"
-              src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
-              style={{ width: 28, height: 28 }}
-            />
-          </div>
-          <span style={{ 
-            fontWeight: 700, 
-            fontSize: '1rem', 
-            color: 'var(--admin-text)', 
-            opacity: 0.9,
-            letterSpacing: '0.5px',
-            fontFamily: 'var(--admin-font)',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <img
+            alt="StationOS"
+            src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
+            style={{ width: 34, height: 34, flexShrink: 0 }}
+          />
+          <span className="header-title-main">
             HỆ THỐNG GIÁM SÁT 
-            <span style={{ 
-              color: 'var(--admin-accent)', 
-              marginLeft: '12px',
-              fontWeight: 900,
-              fontSize: '1.1rem',
-              letterSpacing: '1.5px',
-              padding: '4px 16px',
-              background: 'var(--admin-bg)',
-              border: '1px solid var(--admin-border)',
-              borderLeft: '4px solid var(--admin-accent)', // Industrial accent strip
-              borderRadius: '0px',
-              textShadow: '0 0 10px var(--admin-accent)',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              display: 'inline-block'
-            }}>
+            <span className="header-title-badge">
               TRẠM ĐIỆN
             </span>
           </span>
@@ -364,12 +359,15 @@ export default function AppShell() {
                 {renderNav(NAV_ITEMS)}
               </div>
 
-              <div className="sb-sep" />
-
-              <div className="sb-group">
-                <div className={`sb-group__label${expanded ? '' : ' hidden'}`}>QUẢN TRỊ</div>
-                {renderNav(ADMIN_NAV)}
-              </div>
+              {user.role === 'admin' && (
+                <>
+                  <div className="sb-sep" />
+                  <div className="sb-group">
+                    <div className={`sb-group__label${expanded ? '' : ' hidden'}`}>QUẢN TRỊ</div>
+                    {renderNav(ADMIN_NAV)}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* ── Bottom actions (pinned) ── */}
@@ -400,7 +398,7 @@ export default function AppShell() {
                     </div>
 
                     {showThemeList && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '2px 6px', background: 'var(--admin-hover)', borderRadius: 4, margin: '2px 8px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '2px 6px', background: 'var(--admin-hover)', borderRadius: 0, margin: '2px 8px' }}>
                         {[
                           { value: 'dark', label: '⚫ Tối Tiêu chuẩn' },
                           { value: 'industrial', label: '🔘 Xám Công nghiệp' },
@@ -423,7 +421,7 @@ export default function AppShell() {
                                 justifyContent: 'space-between',
                                 padding: '5px 8px',
                                 fontSize: '0.7rem',
-                                borderRadius: 3,
+                                borderRadius: 0,
                               }}
                             >
                               <span>{t.label}</span>
@@ -453,7 +451,7 @@ export default function AppShell() {
                   title={!expanded ? 'Tài khoản' : undefined}
                 >
                   <div className="sb-profile">
-                    <span className="user-avatar">{user.fullname?.[0] || 'N'}</span>
+                    <span className="user-avatar">{user.fullname?.[0]?.toUpperCase() || 'A'}</span>
                     {expanded && (
                       <div className="sb-profile-info">
                         <div className="sb-profile-name">{user.fullname}</div>

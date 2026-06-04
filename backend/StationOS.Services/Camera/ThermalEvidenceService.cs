@@ -204,12 +204,15 @@ public class ThermalEvidenceService
 
     private string? BuildClipInput(string? streamId, string? ip, string user, string pass, string rtspPath)
     {
+        // 1. Ưu tiên dùng go2rtc proxy (localhost:8554)
         if (!string.IsNullOrWhiteSpace(streamId))
-            return $"{Go2RtcRtspUrl.TrimEnd('/')}/{streamId}";
+            return $"rtsp://localhost:8554/{streamId}";
 
+        // 2. Fallback sang RTSP trực tiếp
         if (string.IsNullOrWhiteSpace(ip))
             return null;
 
+        if (!rtspPath.StartsWith("/")) rtspPath = "/" + rtspPath;
         return $"rtsp://{user}:{Uri.EscapeDataString(pass)}@{ip}:554{rtspPath}";
     }
 

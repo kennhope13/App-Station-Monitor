@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Chart from 'chart.js/auto';
 import { getCSSColor } from '@/utils/theme-colors';
 import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
 import { authService } from '@/services/AuthService';
 import { stationApi, Device } from '@/services/StationApiService';
+import { createRealtimeHub } from '@/services/realtime.service';
 import { RotateCw, Zap } from 'lucide-react';
 
 export default function PdAnalyticsTab() {
@@ -12,7 +13,7 @@ export default function PdAnalyticsTab() {
   const [loading, setLoading] = useState(true);
   
   const [aiStats, setAiStats] = useState<{ db?: number | null, hz?: number | null, active_boundary?: string | null }>({});
-  const [historyData, setHistoryData] = useState<{ time: string, db: number }[]>([]);
+  const [eventHistory, setEventHistory] = useState<any[]>([]);
   const [boundaries, setBoundaries] = useState<any[]>([]);
 
   const chartRef = useRef<HTMLCanvasElement>(null);
@@ -47,15 +48,52 @@ export default function PdAnalyticsTab() {
     initData();
   }, []);
 
-  // Fetch boundaries for the selected camera
+  // Fetch boundaries and initial history (detections)
+  const getEventLevel = useCallback((db: number, boundaries: any[], activeBoundaryName?: string | null) => {
+    let warnDb = 20, alarmDb = 45;
+    const region = boundaries.find(b => b.name === activeBoundaryName) || boundaries[0];
+    if (region) {
+      try {
+        const t = JSON.parse(region.thresholds || '{}');
+        warnDb = t.warn || t.warning || 20;
+        alarmDb = t.alarm || 45;
+      } catch {}
+    }
+    if (db >= alarmDb) return 'alarm';
+    if (db >= warnDb) return 'warning';
+    return 'event'; // "Vượt ngưỡng" nhưng chưa tới mức cảnh báo
+  }, []);
+
+  const loadHistory = useCallback(async (camId: string, currentBoundaries: any[]) => {
+    try {
+      const params = new URLSearchParams({ deviceId: camId, type: 'partial_discharge', limit: '40' });
+      const data = await stationApi.getDetections(params.toString());
+      // Map to consistent format
+      setEventHistory(data.reverse().map((d: any) => {
+        const db = d.maxTemp || 0;
+        return {
+          id: d.id,
+          time: new Date(d.detectedAt).toLocaleTimeString('vi-VN', { hour12: false }),
+          db: db,
+          level: getEventLevel(db, currentBoundaries, d.affectedZone)
+        };
+      }));
+    } catch {
+      setEventHistory([]);
+    }
+  }, [getEventLevel]);
+
   useEffect(() => {
     if (!selectedCamera) return;
     stationApi.getBoundaries(selectedCamera.id, 'pd')
-      .then(setBoundaries)
+      .then(bs => {
+        setBoundaries(bs);
+        loadHistory(selectedCamera.id, bs);
+      })
       .catch(() => setBoundaries([]));
-  }, [selectedCamera]);
+  }, [selectedCamera, loadHistory]);
 
-  // Poll real-time PD state
+  // Poll real-time PD state for the big number only
   useEffect(() => {
     if (!selectedCamera) return;
     let timer: any;
@@ -71,45 +109,77 @@ export default function PdAnalyticsTab() {
             hz: data.hz,
             active_boundary: data.active_boundary,
           });
-          
-          // Add to local history for chart
-          const now = new Date().toLocaleTimeString('vi-VN', { hour12: false });
-          setHistoryData(prev => {
-            const next = [...prev, { time: now, db: data.db || 0 }];
-            if (next.length > 60) next.shift(); // Keep last 60 points for better granularity
-            return next;
-          });
         }
       } catch (err) {}
-      timer = setTimeout(fetchStats, 800); // Faster update like in PdRegionTab
+      timer = setTimeout(fetchStats, 800);
     };
     fetchStats();
     return () => clearTimeout(timer);
   }, [selectedCamera]);
 
-  // Render Chart
+  // SignalR for real-time history updates
+  useEffect(() => {
+    if (!selectedCamera) return;
+    const hub = createRealtimeHub();
+    
+    hub.on('CameraEvent', (evt: any) => {
+      if (evt.cameraId === selectedCamera.id && evt.detectionType === 'partial_discharge') {
+        const now = new Date(evt.detectedAt).toLocaleTimeString('vi-VN', { hour12: false });
+        const db = evt.maxTemp || 0;
+        const level = getEventLevel(db, boundaries, evt.affectedZone);
+
+        setEventHistory(prev => {
+          // Avoid duplicate events if pushed too fast
+          if (prev.length > 0 && prev[prev.length - 1].id === evt.id) return prev;
+          const next = [...prev, {
+            id: evt.id,
+            time: now,
+            db: db,
+            level: level
+          }];
+          if (next.length > 50) next.shift();
+          return next;
+        });
+      }
+    });
+
+    hub.start().catch(() => {});
+    return () => { hub.stop(); };
+  }, [selectedCamera, boundaries, getEventLevel]);
+
+  // Render Chart (Bar chart for events)
   useEffect(() => {
     if (!chartRef.current) return;
     chartInst.current?.destroy();
 
-    const xLabels = historyData.map(h => h.time);
-    const yData = historyData.map(h => h.db);
+    const xLabels = eventHistory.map(h => h.time);
+    const yData = eventHistory.map(h => h.db);
+    
+    const getLevelColor = (level: string, alpha = 1) => {
+      if (level === 'alarm') return `rgba(239, 68, 68, ${alpha})`; // Red
+      if (level === 'warning') return `rgba(245, 158, 11, ${alpha})`; // Amber
+      return `rgba(59, 130, 246, ${alpha})`; // Blue for "vượt ngưỡng" (event)
+    };
+
+    const bgColors = eventHistory.map(h => getLevelColor(h.level, 0.7));
+    const borderColors = eventHistory.map(h => getLevelColor(h.level, 1));
 
     chartInst.current = new Chart(chartRef.current, {
-      type: 'line',
+      type: 'bar',
       data: {
         labels: xLabels,
-        datasets: [{
-          label: 'Cường độ PD (dB)',
-          data: yData,
-          borderColor: '#F59E0B',
-          backgroundColor: 'rgba(245, 158, 11, 0.1)',
-          borderWidth: 2,
-          tension: 0.4,
-          fill: true,
-          pointRadius: 2,
-          pointBackgroundColor: '#F59E0B'
-        }]
+        datasets: [
+          {
+            label: 'Cường độ PD (dB)',
+            data: yData,
+            backgroundColor: bgColors,
+            borderColor: borderColors,
+            borderWidth: 1,
+            borderRadius: 2,
+            barThickness: 'flex',
+            maxBarThickness: 30
+          }
+        ]
       },
       options: {
         responsive: true,
@@ -119,19 +189,27 @@ export default function PdAnalyticsTab() {
           tooltip: {
             backgroundColor: getCSSColor('--admin-panel'),
             titleColor: getCSSColor('--admin-text'),
-            bodyColor: getCSSColor('--admin-accent'),
+            bodyColor: '#fff',
             borderColor: getCSSColor('--admin-border'),
-            borderWidth: 1
+            borderWidth: 1,
+            callbacks: {
+              label: (context: any) => {
+                const h = eventHistory[context.dataIndex];
+                const levelName = h.level === 'alarm' ? 'BÁO ĐỘNG' : h.level === 'warning' ? 'CẢNH BÁO' : 'VƯỢT NGƯỠNG';
+                return `${levelName}: ${context.parsed.y.toFixed(1)} dB`;
+              }
+            }
           }
         },
         scales: {
           x: {
-            grid: { color: getCSSColor('--admin-border'), drawTicks: false },
-            ticks: { color: getCSSColor('--admin-text-muted'), font: { size: 9, family: 'Consolas' }, maxTicksLimit: 10 }
+            grid: { display: false },
+            ticks: { color: getCSSColor('--admin-text-muted'), font: { size: 9, family: 'Consolas' } }
           },
           y: {
-            grid: { color: getCSSColor('--admin-border') },
+            grid: { color: getCSSColor('--admin-border'), borderDash: [2, 2] } as any,
             ticks: { color: getCSSColor('--admin-text-muted'), font: { size: 9, family: 'Consolas' } },
+            title: { display: true, text: 'dB', color: 'rgba(255,255,255,0.3)', font: { size: 10 } },
             suggestedMin: 0,
             suggestedMax: 60
           }
@@ -140,7 +218,7 @@ export default function PdAnalyticsTab() {
     });
 
     return () => chartInst.current?.destroy();
-  }, [historyData]);
+  }, [eventHistory]);
 
   if (loading) return (
     <div style={{ display: 'flex', flex: 1, height: '100%', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-text-muted)', gap: 10, background: 'var(--admin-card-bg)', borderRadius: 0, border: '1px solid var(--admin-border)' }}>
@@ -212,33 +290,28 @@ export default function PdAnalyticsTab() {
                           <div key={b.id} style={{ 
                             position: 'absolute', left: `${cx}%`, top: `${cy}%`,
                             transform: 'translate(-50%, -50%)',
-                            background: 'rgba(13,17,23,0.92)', padding: '2px 6px', borderRadius: 3,
-                            color: '#fff', fontSize: 9, fontWeight: 700, pointerEvents: 'none',
-                            border: isActive ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.2)',
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                            boxShadow: isActive ? `0 0 6px ${color}44` : 'none',
+                            background: 'rgba(13,17,23,0.9)', padding: '1px 4px', borderRadius: 2,
+                            color: '#fff', fontSize: 8, fontWeight: 700, pointerEvents: 'none',
+                            border: isActive ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.15)',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+                            boxShadow: isActive ? `0 0 4px ${color}44` : 'none',
                             zIndex: isActive ? 20 : 10,
                             transition: 'all 0.3s ease'
                           }}>
-                            <div style={{ opacity: 0.9, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              {isActive && <span>⚡</span>} {b.name}
+                            <div style={{ opacity: 0.85, fontSize: 8 }}>
+                              {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{b.name}
                             </div>
                             <div style={{ 
-                              color: isActive ? color : 'rgba(255,255,255,0.85)', 
-                              fontSize: '11px', 
+                              color: isActive ? color : 'rgba(255,255,255,0.7)', 
+                              fontSize: '9px', 
                               fontFamily: 'monospace', 
-                              borderTop: '1px solid rgba(255,255,255,0.15)', 
-                              paddingTop: 1, 
-                              marginTop: 1, 
-                              fontWeight: 900 
+                              borderTop: '1px solid rgba(255,255,255,0.1)', 
+                              paddingTop: 0, 
+                              marginTop: 0, 
+                              fontWeight: 800 
                             }}>
                               {aiStats.db != null ? `${aiStats.db.toFixed(1)} dB` : '-- dB'}
                             </div>
-                            {aiStats.hz != null && (
-                              <div style={{ fontSize: '8px', color: 'rgba(255,255,255,0.5)', marginTop: -1 }}>
-                                {aiStats.hz.toFixed(0)} kHz
-                              </div>
-                            )}
                           </div>
                         );
                     })}
@@ -256,21 +329,30 @@ export default function PdAnalyticsTab() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', gap: 4, padding: '6px 12px', background: 'var(--admin-layer-2)', borderBottom: '1px solid var(--admin-border)', fontSize: '.52rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase' }}>
             <span>ĐỐI TƯỢNG</span> <span style={{ textAlign: 'right' }}>LIVE (dB)</span>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, borderBottom: '1px dashed var(--admin-border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.8rem', fontWeight: 700, color: 'var(--admin-text)' }}>
-                <Zap size={16} style={{ color: 'var(--admin-accent)' }} /> Cường độ PD
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: '1px dashed var(--admin-border)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.75rem', fontWeight: 700, color: 'var(--admin-text)' }}>
+                <Zap size={14} style={{ color: 'var(--admin-accent)' }} /> Hiện tại
               </div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-accent)', fontFamily: 'var(--font-mono)' }}>
-                {aiStats.db != null ? aiStats.db.toFixed(1) : '--'}
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--admin-accent)', fontFamily: 'var(--font-mono)' }}>
+                {aiStats.db != null ? aiStats.db.toFixed(1) : '--'} <span style={{fontSize:10}}>dB</span>
               </div>
             </div>
-            {aiStats.active_boundary && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: '.75rem', fontWeight: 700, color: 'var(--admin-danger)' }}>Vùng kích hoạt:</div>
-                <div style={{ fontSize: '.75rem', fontWeight: 800, color: 'var(--admin-danger)' }}>{aiStats.active_boundary}</div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: 4, border: '1px solid var(--admin-border)' }}>
+                <div style={{ fontSize: '9px', color: 'var(--admin-text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>Đỉnh (Peak)</div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
+                  {eventHistory.length > 0 ? Math.max(...eventHistory.map(h => h.db)).toFixed(1) : '--'}
+                </div>
               </div>
-            )}
+              <div style={{ background: 'rgba(0,0,0,0.1)', padding: '8px', borderRadius: 4, border: '1px solid var(--admin-border)' }}>
+                <div style={{ fontSize: '9px', color: 'var(--admin-text-muted)', textTransform: 'uppercase', marginBottom: 2 }}>Số lần vượt</div>
+                <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--admin-warning)' }}>
+                  {eventHistory.length}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -282,7 +364,7 @@ export default function PdAnalyticsTab() {
         <div style={{ flex: 1, background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 0, padding: '20px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
           <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', textAlign: 'center' }}>
-              BIỂU ĐỒ XU HƯỚNG PHÓNG ĐIỆN THEO THỜI GIAN
+              PHÂN TÍCH TẦN SUẤT VÀ CƯỜNG ĐỘ PHÓNG ĐIỆN VƯỢT NGƯỠNG
             </div>
           </div>
           <div style={{ flex: 1, position: 'relative' }}>
@@ -293,15 +375,15 @@ export default function PdAnalyticsTab() {
         {/* Status Card */}
         <div style={{ background: 'var(--admin-card-bg)', border: '1px solid var(--admin-border)', borderRadius: 0, padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px' }}>TRẠNG THÁI HỆ THỐNG</div>
+            <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '.8px' }}>CHẾ ĐỘ PHÂN TÍCH</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-              <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>ĐANG GIÁM SÁT TRỰC TIẾP</span>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--admin-success)', animation: 'pulse 2s infinite' }} />
+              <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>GHI LẠI SỰ KIỆN VƯỢT NGƯỠNG</span>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--admin-accent)', animation: 'pulse 2s infinite' }} />
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase' }}>CHẾ ĐỘ MẠNG</div>
-            <div style={{ fontSize: '.85rem', fontWeight: 700, color: 'var(--admin-success)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>WebRTC Real-time</div>
+            <div style={{ fontSize: '.58rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase' }}>TRẠNG THÁI GHI</div>
+            <div style={{ fontSize: '.85rem', fontWeight: 700, color: 'var(--admin-accent)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>Chỉ ghi khi có phóng điện</div>
           </div>
         </div>
       </div>

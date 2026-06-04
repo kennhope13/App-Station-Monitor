@@ -66,9 +66,9 @@ class ExternalApiPusher(threading.Thread):
                     # Lưu vào CSV lịch sử Phóng điện
                     self._save_pd_csv(ts, "PD_SENSOR", pred_db, real_freq, real_db, pred_freq)
                     
-                    # Đẩy thông tin cảnh báo phóng điện nếu vượt ngưỡng
-                    if real_db >= 35.0: # Ngưỡng cảnh báo phóng điện (ví dụ 35dB)
-                        self._trigger_pd_alert(real_db, real_freq)
+                    # Đẩy thông tin cảnh báo phóng điện nếu vượt ngưỡng (Đã vô hiệu hóa: chỉ cảnh báo khi có hotspot nằm trong vùng ở pd_region_analyzer)
+                    # if real_db >= 35.0: # Ngưỡng cảnh báo phóng điện (ví dụ 35dB)
+                    #     self._trigger_pd_alert(real_db, real_freq)
             except Exception as ex:
                 logger.debug("[ExternalPusher] Error processing PD simulation: %s", ex)
                 

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye } from 'lucide-react';
 import type { AlertItem } from '@/types/api.types';
 
 interface AlertPanelProps {
@@ -17,11 +16,11 @@ const getCategory = (msg: string) => {
   if (m.includes('người') || m.includes('xâm nhập') || m.includes('bảo hộ') || m.includes('ppe') || m.includes('nhân viên')) {
     return { text: 'NGƯỜI', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.2)' };
   }
+  if (m.includes('pd') || m.includes('phóng điện') || m.includes('phong dien') || m.includes('acoustic') || m.includes('âm thanh') || m.includes('tần số') || m.includes('discharge')) {
+    return { text: 'PD', color: '#a855f7', bg: 'rgba(168,85,247,0.12)', border: 'rgba(168,85,247,0.2)' };
+  }
   if (m.includes('nhiệt') || m.includes('roi') || m.includes('thermal') || m.includes('quá nhiệt') || m.includes('temp')) {
     return { text: 'NHIỆT', color: '#f97316', bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.2)' };
-  }
-  if (m.includes('pd') || m.includes('phóng điện') || m.includes('acoustic') || m.includes('âm thanh') || m.includes('tần số')) {
-    return { text: 'PD', color: '#a855f7', bg: 'rgba(168,85,247,0.12)', border: 'rgba(168,85,247,0.2)' };
   }
   return { text: 'HỆ THỐNG', color: '#64748b', bg: 'rgba(100,116,139,0.12)', border: 'rgba(100,116,139,0.2)' };
 };
@@ -33,11 +32,12 @@ const getCategory = (msg: string) => {
 const timeAgo = (iso: string) => {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (m < 1) return 'vừa xong';
-  if (m < 60) return `${m} phút trước`;
+  if (m < 60) return `${m}p trước`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} giờ trước`;
-  return `${Math.floor(h / 24)} ngày trước`;
+  if (h < 24) return `${h}h trước`;
+  return `${Math.floor(h / 24)}n trước`;
 };
+
 
 /**
  * Panel cảnh báo gần đây trên Dashboard: liệt kê tối đa 12 cảnh báo mới nhất,
@@ -56,7 +56,8 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      flex: isCollapsed ? '0 0 auto' : '1 1 0',
+      flex: isCollapsed ? '0 0 auto' : (sorted.length === 0 ? '0 0 auto' : '0 1 auto'),
+      maxHeight: '500px',
       minHeight: 0,
       background: 'var(--admin-overlay)', backdropFilter: 'blur(12px)',
       border: `1px solid ${openCount > 0 ? 'rgba(239,68,68,0.35)' : 'var(--admin-border)'}`,
@@ -65,26 +66,26 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
       {/* Header */}
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '6px 10px', borderBottom: '1px solid var(--admin-border-light)',
+        padding: '3px 4px', borderBottom: '1px solid var(--admin-border-light)',
         background: 'var(--admin-hover)', flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--admin-text)', letterSpacing: '.5px' }}>
-            CẢNH BÁO GẦN ĐÂY
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--admin-text)', letterSpacing: '.3px' }}>
+            MỚI
           </span>
           {openCount > 0 && (
             <span style={{
-              fontSize: '0.52rem', fontWeight: 800, padding: '1px 5px', borderRadius: 0,
+              fontSize: '0.45rem', fontWeight: 800, padding: '0px 3px', borderRadius: 0,
               background: 'var(--admin-tag-danger-bg)', color: 'var(--admin-tag-danger-text)',
               border: '1px solid var(--admin-tag-danger-bg)',
             }}>
-              {openCount} MỞ
+              {openCount}
             </span>
           )}
         </div>
         <button
           onClick={() => setIsCollapsed(v => !v)}
-          style={{ background: 'none', border: 'none', color: 'var(--admin-text-muted)', cursor: 'pointer', fontSize: '0.85rem', lineHeight: 1, padding: '0 2px' }}
+          style={{ background: 'none', border: 'none', color: 'var(--admin-text-muted)', cursor: 'pointer', fontSize: '0.75rem', lineHeight: 1, padding: '0 1px' }}
         >
           {isCollapsed ? '▼' : '▲'}
         </button>
@@ -93,29 +94,38 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
       {/* List */}
       {!isCollapsed && (
         <>
-          <div style={{ overflowY: 'auto', flex: 1, padding: '4px 6px' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.64rem', height: 'auto' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--admin-border-light)', background: 'var(--admin-layer-2)' }}>
-                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '28%', letterSpacing: '0.3px' }}>Thời gian</th>
-                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '28%', letterSpacing: '0.3px' }}>Cấp độ</th>
-                  <th style={{ padding: '3px 6px', textAlign: 'left', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '28%', letterSpacing: '0.3px' }}>Phân loại</th>
-                  <th style={{ padding: '3px 6px', textAlign: 'center', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', fontSize: '0.54rem', width: '16%', letterSpacing: '0.3px' }}>Xem</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} style={{ color: 'var(--admin-text-muted)', fontSize: '0.68rem', textAlign: 'center', padding: '16px 0' }}>
-                      Hệ thống ổn định
-                    </td>
-                  </tr>
-                ) : (
-                  sorted.slice(0, 25).map((a, idx) => {
+          {sorted.length === 0 ? (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              padding: '8px 8px',
+              color: '#10b981', 
+              fontSize: '0.6rem',
+              fontWeight: 800,
+              background: 'rgba(16,185,129,0.06)',
+              borderBottom: '1px solid var(--admin-border-light)',
+              letterSpacing: '0.2px'
+            }}>
+              <span style={{ fontSize: '0.7rem', lineHeight: 1 }}>✓</span>
+              ỔN ĐỊNH
+            </div>
+          ) : (
+            <div style={{ overflowY: 'auto', flex: '0 1 auto', padding: '2px 4px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.6rem' }}>
+                <tbody>
+                  {sorted.slice(0, 20).map((a, idx) => {
                     const isAlarm = a.level === 'alarm';
                     const pillBg = isAlarm ? 'var(--admin-tag-danger-bg)' : 'var(--admin-tag-warning-bg)';
                     const pillColor = isAlarm ? 'var(--admin-tag-danger-text)' : 'var(--admin-tag-warning-text)';
                     const cat = getCategory(a.message);
+                    
+                    // Dynamic colors for NHIỆT
+                    const isThermal = cat.text === 'NHIỆT';
+                    const finalCatColor = isThermal ? (isAlarm ? '#ef4444' : '#f59e0b') : cat.color;
+                    const finalCatBg = isThermal ? (isAlarm ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)') : cat.bg;
+                    const finalCatBorder = isThermal ? (isAlarm ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : cat.border;
 
                     return (
                       <tr
@@ -137,97 +147,47 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
                         onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = idx % 2 === 0 ? 'transparent' : 'var(--admin-layer-1)'}
                       >
                         {/* Time */}
-                        <td style={{ padding: '3px 6px', color: 'var(--admin-text-muted)', whiteSpace: 'nowrap', textAlign: 'left' }}>
+                        <td style={{ padding: '2px 2px', color: 'var(--admin-text-muted)', whiteSpace: 'nowrap', textAlign: 'left', width: '70%' }}>
                           {timeAgo(a.triggeredAt)}
                         </td>
-                        {/* Level Pill */}
-                        <td style={{ padding: '3px 6px', textAlign: 'left' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: '0.5rem',
-                            fontWeight: 950,
-                            padding: '1.5px 5px',
-                            borderRadius: 0,
-                            background: pillBg,
-                            color: pillColor,
-                            border: `1px solid ${isAlarm ? 'rgba(220,38,38,0.15)' : 'rgba(217,119,6,0.15)'}`,
-                            minWidth: 42,
-                            textAlign: 'center',
-                            lineHeight: 1.1
-                          }}>
-                            {levelLabel(a.level)}
-                          </span>
-                        </td>
                         {/* Category Pill */}
-                        <td style={{ padding: '3px 6px', textAlign: 'left' }}>
+                        <td style={{ padding: '2px 2px', textAlign: 'right', width: '30%' }}>
                           <span style={{
                             display: 'inline-block',
-                            fontSize: '0.48rem',
-                            fontWeight: 950,
-                            padding: '1.5px 5px',
+                            fontSize: '0.46rem',
+                            fontWeight: 900,
+                            padding: '1px 3px',
                             borderRadius: 0,
-                            background: cat.bg,
-                            color: cat.color,
-                            border: `1px solid ${cat.border}`,
-                            minWidth: 40,
+                            background: finalCatBg,
+                            color: finalCatColor,
+                            border: `1px solid ${finalCatBorder}`,
+                            minWidth: 28,
                             textAlign: 'center',
                             lineHeight: 1.1
                           }}>
                             {cat.text}
                           </span>
                         </td>
-                        {/* Detail Link Icon */}
-                        <td style={{ padding: '3px 6px', textAlign: 'center' }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/alerts-history?alertId=${a.id}`);
-                            }}
-                            title="Xem chi tiết lịch sử cảnh báo"
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: 'var(--admin-text-muted)',
-                              cursor: 'pointer',
-                              padding: '2px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              borderRadius: 0,
-                              transition: 'all 0.15s',
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.color = 'var(--admin-accent)';
-                              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.color = 'var(--admin-text-muted)';
-                              e.currentTarget.style.background = 'none';
-                            }}
-                          >
-                            <Eye size={11} />
-                          </button>
-                        </td>
                       </tr>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Footer */}
           <div
             onClick={() => navigate('/alerts-history')}
             style={{
-              padding: '5px 10px', borderTop: '1px solid var(--admin-border-light)',
+              padding: '3px 4px', borderTop: '1px solid var(--admin-border-light)',
               background: 'var(--admin-hover)', textAlign: 'center', cursor: 'pointer', flexShrink: 0,
             }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.opacity = '0.7'}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.opacity = '1'}
           >
-            <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'var(--admin-accent)' }}>
-              XEM LỊCH SỬ →
+            <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--admin-accent)' }}>
+              LỊCH SỬ →
             </span>
           </div>
         </>

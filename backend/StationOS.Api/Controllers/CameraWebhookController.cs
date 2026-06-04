@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // CameraWebhookController — Nhận HTTP event push từ camera Hikvision
 // POST /api/v1/camera-webhook  (AllowAnonymous — camera không có JWT)
 //
@@ -17,6 +17,8 @@ using Microsoft.EntityFrameworkCore;
 using StationOS.Data;
 using StationOS.Data.Entities;
 using StationOS.Services;
+using StationOS.Services.Camera;
+using StationOS.Services.Security;
 
 namespace StationOS.Api.Controllers;
 
@@ -28,13 +30,20 @@ public class CameraWebhookController : ControllerBase
     private readonly IRealtimeNotifier     _notifier;
     private readonly IWebHostEnvironment   _env;
     private readonly ILogger<CameraWebhookController> _logger;
+    private readonly IServiceScopeFactory  _scopeFactory;
+    private readonly HikvisionIsapiService _isapi;
+    private readonly CredentialEncryptionService _crypto;
     private readonly string                _rootPath;
 
     public CameraWebhookController(
         AppDbContext db, IRealtimeNotifier notifier,
-        IWebHostEnvironment env, ILogger<CameraWebhookController> logger)
+        IWebHostEnvironment env, ILogger<CameraWebhookController> logger,
+        IServiceScopeFactory scopeFactory,
+        HikvisionIsapiService isapi,
+        CredentialEncryptionService crypto)
     {
-        _db = db; _notifier = notifier; _env = env; _logger = logger;
+        _db = db; _notifier = notifier; _env = env; _logger = logger; _scopeFactory = scopeFactory;
+        _isapi = isapi; _crypto = crypto;
         // Sử dụng WebRootPath động để tương thích cả Windows và Docker
         _rootPath = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
         var mediaPath = Path.Combine(_rootPath, "media");
@@ -126,7 +135,7 @@ public class CameraWebhookController : ControllerBase
         var e = ParseXml(xml);
         if (e == null) return;
 
-        var (camIp, eventType, eventState, channelId, detectedAt, maxTemp, desc) = e;
+        var (camIp, eventType, eventState, channelId, detectedAt, maxTemp, desc, affectedZoneXml) = e;
 
         if (string.IsNullOrEmpty(eventType) || eventType == "heartbeat") return;
         if (eventState == "inactive") return;
@@ -137,6 +146,13 @@ public class CameraWebhookController : ControllerBase
         var stationId = device?.StationId ?? await FirstStationIdAsync();
 
         var (detType, alertLevel, shouldAlert) = MapType(eventType);
+        
+        // PHÓNG ĐIỆN: Phân cấp Warning/Alarm dựa trên nội dung description từ AI Engine
+        if (detType == "partial_discharge" && desc != null)
+        {
+            if (desc.ToLower().Contains("level=warning")) alertLevel = "warning";
+            else if (desc.ToLower().Contains("level=alarm")) alertLevel = "alarm";
+        }
 
         // Chuẩn hóa thư mục lưu media
         string mediaRootDir = Path.Combine(_rootPath, "media");
@@ -154,6 +170,66 @@ public class CameraWebhookController : ControllerBase
             _logger.LogInformation("[CamWebhook] Saved snapshot: {path}", fullPath);
         }
 
+        // CHÁY/KHÓI: Chủ động chụp thêm ảnh mắt Quang học (Channel 1) làm bằng chứng song song
+        string? opticalSnapshotUrl = null;
+        if (device != null && (detType == "fire" || detType == "smoke"))
+        {
+            try
+            {
+                var cfgJson = _crypto.DecryptPasswordInConfigJson(device.Config);
+                using var doc = JsonDocument.Parse(cfgJson);
+                var cfg = doc.RootElement;
+                
+                // Kiểm tra xem tính năng này có được bật trong cấu hình thiết bị không (Mặc định là bật)
+                var isFireEnabled = !cfg.TryGetProperty("fire_alarm_enabled", out var fe) || fe.GetBoolean();
+                
+                if (isFireEnabled)
+                {
+                    var user = cfg.TryGetProperty("username", out var u) ? u.GetString() : null;
+                    var pass = cfg.TryGetProperty("password", out var p) ? p.GetString() : null;
+                    var optChannel = cfg.TryGetProperty("optical_channel", out var oc) && oc.TryGetInt32(out var ci) ? ci : 1;
+
+                    if (!string.IsNullOrEmpty(user) && !string.IsNullOrEmpty(pass))
+                    {
+                        _logger.LogInformation("[CamWebhook] Fire/Smoke detected! Capturing emergency optical snapshot for {ip} (Channel {ch})...", camIp, optChannel);
+                        var opticalBytes = await _isapi.GetSnapshotAsync(camIp, user, pass, channel: optChannel);
+                        if (opticalBytes != null)
+                        {
+                            var fname = $"{Guid.NewGuid()}_optical.jpg";
+                            var fullPath = Path.Combine(detDir, fname);
+                            await System.IO.File.WriteAllBytesAsync(fullPath, opticalBytes);
+                            opticalSnapshotUrl = $"/media/detections/{fname}";
+                            _logger.LogInformation("[CamWebhook] Saved optical snapshot: {path}", fullPath);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { _logger.LogWarning(ex, "[CamWebhook] Lỗi khi chụp ảnh quang học khẩn cấp"); }
+        }
+
+        Guid? boundaryId = null;
+        string? polygonJson = null;
+
+        if (device != null && !string.IsNullOrEmpty(desc))
+        {
+            var startIdx = desc.IndexOf('"');
+            if (startIdx >= 0)
+            {
+                var endIdx = desc.IndexOf('"', startIdx + 1);
+                if (endIdx > startIdx)
+                {
+                    var regionName = desc.Substring(startIdx + 1, endIdx - startIdx - 1);
+                    var boundary = await _db.Boundaries
+                        .FirstOrDefaultAsync(b => b.DeviceId == device.Id && b.Name == regionName);
+                    if (boundary != null)
+                    {
+                        boundaryId = boundary.Id;
+                        polygonJson = boundary.PolygonJson;
+                    }
+                }
+            }
+        }
+
         // Tạo Alert
         Alert? alert = null;
         if (shouldAlert)
@@ -162,15 +238,16 @@ public class CameraWebhookController : ControllerBase
             {
                 StationId   = stationId,
                 DeviceId    = device?.Id,
+                BoundaryId  = boundaryId,
                 Source      = "camera",
                 Level       = alertLevel,
                 Status      = "open",
                 Message     = BuildMessage(camIp, device?.Name, detType, desc, maxTemp),
                 Value       = maxTemp,
                 TriggeredAt = detectedAt,
-                // Gán URL ảnh cho Alert
-                ImageUrl     = snapshotUrl,
-                ThumbnailUrl = snapshotUrl // Dùng chung ảnh snapshot cho thumbnail nếu không có thumb riêng
+                // Gán URL ảnh cho Alert: Ưu tiên ảnh quang học nếu có (dễ quan sát), fallback về ảnh nhiệt
+                ImageUrl     = opticalSnapshotUrl ?? snapshotUrl,
+                ThumbnailUrl = snapshotUrl // Dùng ảnh nhiệt làm thumbnail (nơi phát hiện sự cố)
             };
             _db.Alerts.Add(alert);
             _db.AlertHistories.Add(new AlertHistory
@@ -184,15 +261,18 @@ public class CameraWebhookController : ControllerBase
         {
             CameraId      = device?.Id ?? Guid.Empty,
             StationId     = stationId,
+            BoundaryId    = boundaryId,
             DetectionType = detType,
             DetectedAt    = detectedAt,
             MaxTemp       = maxTemp,
-            AffectedZone  = channelId > 0 ? $"Ch{channelId}" : null,
+            AffectedZone  = e.AffectedZone,
             Metadata      = JsonSerializer.Serialize(new
             {
                 eventType, camIp, channelId, snapshotUrl,
+                opticalSnapshotUrl,
                 description = desc,
                 cameraName  = device?.Name,
+                polygon     = polygonJson != null ? JsonSerializer.Deserialize<object>(polygonJson) : null
             }),
         };
         _db.DetectionEvents.Add(evt);
@@ -215,6 +295,7 @@ public class CameraWebhookController : ControllerBase
         };
         await _notifier.SendCameraEventAsync(pushPayload);
         if (shouldAlert && alert != null && alert.Id != Guid.Empty)
+        {
             await _notifier.SendAlertAsync(new
             {
                 id = alert.Id, 
@@ -226,8 +307,36 @@ public class CameraWebhookController : ControllerBase
                 deviceId = alert.DeviceId,
                 thumbnailUrl = alert.ThumbnailUrl,
                 imageUrl = alert.ImageUrl,
-                videoUrl = alert.VideoUrl
+                videoUrl = alert.VideoUrl,
+                metadata = evt.Metadata
             });
+
+            // Tự động kích hoạt ghi hình clip cho sự kiện này (Module 5)
+            // Vì đây là sự kiện tức thời, ta đợi khoảng 10s để buffer kịp ghi các segment tiếp theo
+            var eventId = evt.Id;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(10000); // Chờ 10s để có đủ diễn biến sau sự kiện
+                    using var scope = _scopeFactory.CreateScope();
+                    var recordingService = scope.ServiceProvider.GetRequiredService<StationOS.Services.Recording.EventRecordingService>();
+                    await recordingService.BuildClipAsync(eventId);
+
+                    // Thông báo lại Alert để UI cập nhật VideoUrl
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var updatedAlert = await db.Alerts.FindAsync(alert.Id);
+                    if (updatedAlert != null && !string.IsNullOrEmpty(updatedAlert.VideoUrl))
+                    {
+                        await _notifier.SendAlertUpdatedAsync(new { id = updatedAlert.Id, videoUrl = updatedAlert.VideoUrl });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[CamWebhook] Lỗi khi tạo clip tự động cho event {id}", eventId);
+                }
+            });
+        }
     }
 
     /// <summary>
@@ -271,7 +380,7 @@ public class CameraWebhookController : ControllerBase
             await _db.SaveChangesAsync();
             
             // Đánh tín hiệu để giao diện biết có Video và hiện nút Play
-            await _notifier.SendAlertAsync(new { id = latestAlert.Id, videoUrl });
+            await _notifier.SendAlertUpdatedAsync(new { id = latestAlert.Id, videoUrl });
         }
 
         return Ok(new { success = true, videoUrl, attachToAlertId = latestAlert?.Id });
@@ -281,7 +390,8 @@ public class CameraWebhookController : ControllerBase
 
     private record EventData(
         string CamIp, string EventType, string EventState,
-        int ChannelId, DateTime DetectedAt, float? MaxTemp, string? Description);
+        int ChannelId, DateTime DetectedAt, float? MaxTemp, string? Description,
+        string? AffectedZone = null);
 
     private static EventData? ParseXml(string xml)
     {
@@ -317,7 +427,12 @@ public class CameraWebhookController : ControllerBase
                 System.Globalization.DateTimeStyles.RoundtripKind, out var d)
                 ? d.ToUniversalTime() : DateTime.UtcNow;
 
-            return new EventData(ip, type, state, ch, dt, temp, Get("eventDescription"));
+            // Đọc tên vùng PD từ các tag chuyên dụng (affectedZone, regionName) hoặc fallback về channelID
+            var affectedZone = Get("affectedZone").Length > 0 ? Get("affectedZone")
+                             : Get("regionName").Length > 0   ? Get("regionName")
+                             : ch > 0 ? $"Ch{ch}" : null;
+
+            return new EventData(ip, type, state, ch, dt, temp, Get("eventDescription"), affectedZone);
         }
         catch { return null; }
     }
@@ -374,9 +489,15 @@ public class CameraWebhookController : ControllerBase
     {
         var cam = name ?? ip;
         var what = string.IsNullOrWhiteSpace(desc) ? detType.Replace('_', ' ') : desc;
-        return temp.HasValue
-            ? $"[{cam}] {what} — nhiệt độ {temp:F1}°C"
-            : $"[{cam}] {what}";
+        
+        if (!temp.HasValue) return $"[{cam}] {what}";
+
+        // Phân biệt đơn vị và nhãn dựa trên loại sự kiện
+        bool isPd = detType == "partial_discharge" || detType.Contains("acoustic") || detType.Contains("discharge");
+        string label = isPd ? "mức độ" : "nhiệt độ";
+        string unit  = isPd ? "dB" : "°C";
+
+        return $"[{cam}] {what} — {label} {temp:F1}{unit}";
     }
 
     private static (string detType, string level, bool alert) MapType(string t) => t switch
@@ -396,8 +517,8 @@ public class CameraWebhookController : ControllerBase
         "motiondetection"       => ("motion",            "info",    false),
         "diskfull"              => ("storage_error",     "warning", true),
         "diskerror"             => ("storage_error",     "warning", true),
-        "acousticexception"     => ("partial_discharge", "alarm",   true),
-        "audioexception"        => ("partial_discharge", "alarm",   true),
+        "acousticexception"     => ("partial_discharge", "alarm",   false),
+        "audioexception"        => ("partial_discharge", "alarm",   false),
         "pddetection"           => ("partial_discharge", "alarm",   true),
         "dischargedetection"    => ("partial_discharge", "alarm",   true),
         _                       => (t,                   "warning", true),

@@ -6,7 +6,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { CameraDevice, Boundary, stationApi } from '@/services/StationApiService';
-import { Plus, Trash2, Save, X, Zap, Edit2, MousePointer2 } from 'lucide-react';
+import { Trash2, Save, X, Edit2 } from 'lucide-react';
 import { authService } from '@/services/AuthService';
 import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
 import { confirmDialog } from '@/utils/confirm';
@@ -39,9 +39,8 @@ const notifyAiEngine = async (deviceId: string, streamId: string) => {
   } catch { /* ignore */ }
 };
 
-export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
+export default function PdRegionTab({ initialCamera: cam }: Props) {
   const [boundaries, setBoundaries] = useState<Boundary[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Drawing State
   const [drawMode, setDrawMode] = useState<'none' | 'polygon'>('none');
@@ -59,14 +58,11 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const loadBoundaries = useCallback(async (id: string) => {
-    setLoading(true);
     try {
       const data = await stationApi.getBoundaries(id, 'pd');
       setBoundaries(data);
     } catch (e) {
       console.error('[PdRegionTab] Load boundaries failed:', e);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -119,6 +115,7 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
       const radius = 0.03;
       for (let i = 0; i < draftVertices.length; i++) {
         const v = draftVertices[i];
+        if (!v) continue;
         const dx = v[0] - pos[0], dy = v[1] - pos[1];
         if (dx*dx + dy*dy < radius*radius) {
           setDragVertex(i);
@@ -318,12 +315,14 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
               const cy = poly.reduce((s:any, p:any) => s + p[1], 0) / poly.length * 100;
               
               const isActive = aiStats.active_boundary === b.name;
-              const currentDb = aiStats.db;
+              const currentDb = isActive ? aiStats.db : 0;
 
-              // Tính toán ngưỡng cảnh báo/báo động động cho vùng này
+              // Lấy tên chi tiết từ thresholds
+              let displayName = b.name;
               let warnDb = 20, alarmDb = 35;
               try {
                 const t = JSON.parse(b.thresholds || '{}');
+                if (t.fullName) displayName = t.fullName;
                 warnDb = t.warn || t.warning || 20;
                 alarmDb = t.alarm || 35;
               } catch {}
@@ -335,28 +334,30 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
               return (
                 <div key={b.id} style={{ 
                   position:'absolute', left:`${cx}%`, top:`${cy}%`, transform:'translate(-50%,-50%)', 
-                  background:'rgba(13,17,23,0.92)', padding:'2px 6px', borderRadius: 3,
-                  color:'#fff', fontSize:9, fontWeight:700, pointerEvents:'none',
-                  border: isActive ? `1px solid ${statusColor}` : '1px solid rgba(255,255,255,0.2)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                  boxShadow: isActive ? `0 0 6px ${statusColor}44` : 'none',
+                  background:'rgba(13,17,23,0.9)', padding:'1px 4px', borderRadius: 2,
+                  color:'#fff', fontSize:8, fontWeight:700, pointerEvents:'none',
+                  border: isActive ? `1px solid ${statusColor}` : '1px solid rgba(255,255,255,0.15)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
+                  boxShadow: isActive ? `0 0 4px ${statusColor}44` : 'none',
                   zIndex: isActive ? 20 : 10,
                   transition: 'all 0.3s ease'
                 }}>
-                  <div style={{ opacity: 0.9, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {isActive && <span>⚡</span>} {b.name}
+                  <div style={{ opacity: 0.85, fontSize: 8 }}>
+                    {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{b.name}
                   </div>
-                  <div style={{ 
-                    color: isActive ? statusColor : 'rgba(255,255,255,0.75)', 
-                    fontSize: '10px', 
-                    fontFamily: 'monospace', 
-                    borderTop: '1px solid rgba(255,255,255,0.12)', 
-                    paddingTop: 1, 
-                    marginTop: 1, 
-                    fontWeight: 800 
-                  }}>
-                    {currentDb != null ? `${currentDb.toFixed(1)} dB` : '-- dB'}
-                  </div>
+                  {isActive && (
+                    <div style={{ 
+                      color: statusColor, 
+                      fontSize: '9px', 
+                      fontFamily: 'monospace', 
+                      borderTop: '1px solid rgba(255,255,255,0.1)', 
+                      paddingTop: 0, 
+                      marginTop: 0, 
+                      fontWeight: 800 
+                    }}>
+                      {currentDb != null ? `${currentDb.toFixed(1)} dB` : '-- dB'}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -401,13 +402,27 @@ export default function PdRegionTab({ initialCamera: cam, onBack }: Props) {
                 </div>
               </div>
 
-              <div style={{ background:'rgba(239,68,68,0.05)', padding:10, border:'1px solid rgba(239,68,68,0.15)', borderRadius:4 }}>
-                <div style={{ fontSize:'.65rem', fontWeight:800, color:'#ef4444', marginBottom:8 }}>NGƯỠNG KÍCH HOẠT (dB)</div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                  <div className="form-group" style={{ marginBottom:0 }}><label style={{fontSize:9}}>Cảnh báo</label><input type="number" className="form-input" value={form.warnDb} onChange={e=>setForm(f=>({...f,warnDb:e.target.value}))}/></div>
-                  <div className="form-group" style={{ marginBottom:0 }}><label style={{fontSize:9}}>Báo động</label><input type="number" className="form-input" value={form.alarmDb} onChange={e=>setForm(f=>({...f,alarmDb:e.target.value}))}/></div>
+              <div style={{ background:'rgba(239,68,68,0.05)', padding:12, border:'1px solid rgba(239,68,68,0.15)', borderRadius:4 }}>
+                <div style={{ fontSize:'.65rem', fontWeight:800, color:'#ef4444', marginBottom:12, letterSpacing: '0.5px' }}>NGƯỠNG KÍCH HOẠT (dB)</div>
+                <div style={{ display:'flex', flexDirection: 'column', gap:10 }}>
+                  <div className="form-group" style={{ marginBottom:0 }}>
+                    <label style={{fontSize:9, color: 'var(--admin-text-muted)'}}>CẢNH BÁO</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type="number" className="form-input" style={{ paddingRight: 30 }} value={form.warnDb} onChange={e=>setForm(f=>({...f,warnDb:e.target.value}))}/>
+                      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, opacity: 0.5 }}>dB</span>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom:0 }}>
+                    <label style={{fontSize:9, color: 'var(--admin-text-muted)'}}>BÁO ĐỘNG</label>
+                    <div style={{ position: 'relative' }}>
+                      <input type="number" className="form-input" style={{ paddingRight: 30 }} value={form.alarmDb} onChange={e=>setForm(f=>({...f,alarmDb:e.target.value}))}/>
+                      <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, opacity: 0.5 }}>dB</span>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize:10, marginTop:6, color:'var(--admin-text-muted)' }}>Hiện tại: <b style={{color:'var(--admin-text)'}}>{aiStats.db?.toFixed(1) ?? '--'} dB</b></div>
+                <div style={{ fontSize:10, marginTop:12, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.05)', color:'var(--admin-text-muted)' }}>
+                  Giá trị hiện tại: <b style={{color:'var(--admin-accent)', fontFamily: 'monospace'}}>{aiStats.db?.toFixed(1) ?? '--'} dB</b>
+                </div>
               </div>
 
               <div style={{ display:'flex', gap:10, marginTop:10 }}>

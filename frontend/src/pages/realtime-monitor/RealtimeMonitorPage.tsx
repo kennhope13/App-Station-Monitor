@@ -5,37 +5,22 @@
 // Panel phải: danh sách sự kiện theo thời gian, lọc theo loại/ngày
 // ============================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
-import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
+import { GO2RTC_URL, AI_ENGINE_URL } from '@/utils/env';
 import { createRealtimeHub } from '@/services/realtime.service';
+import { useAlertStore } from '@/store/alertStore';
+import { useDeviceStore } from '@/store/deviceStore';
+import { useStationStore } from '@/store/stationStore';
+import { ALERT_STATUS } from '@/types/enums';
+import { Device } from '@/types/api.types';
 import './RealtimeMonitorPage.css';
 
 type Layout = 'l1' | 'l4' | 'l9';
 
-interface DetectionEvent {
-  id: string;
-  cameraId: string;
-  cameraName: string | null;
-  detectionType: string;
-  detectedAt: string;
-  maxTemp: number | null;
-  affectedZone: string | null;
-  alertId: string | null;
-  metadata: string | null;
-}
 
-const EVT_CFG: Record<string, { label: string; icon: string; color: string }> = {
-  thermal_hotspot: { label: 'Nhiệt bất thường', icon: '◈', color: 'var(--admin-danger)' },
-  fire: { label: 'Cháy', icon: '◈', color: 'var(--admin-danger)' },
-  smoke: { label: 'Khói', icon: '◈', color: '#f97316' },
-  intrusion: { label: 'Xâm nhập', icon: '◈', color: 'var(--admin-warning)' },
-  partial_discharge: { label: 'Phóng điện', icon: '◈', color: '#a855f7' },
-  tampering: { label: 'Che camera', icon: '◈', color: 'var(--admin-warning)' },
-  video_loss: { label: 'Mất tín hiệu', icon: '◈', color: 'var(--admin-text-muted)' },
-  motion: { label: 'Chuyển động', icon: '◈', color: 'var(--admin-accent)' },
-  storage_error: { label: 'Lỗi lưu trữ', icon: '◈', color: 'var(--admin-warning)' },
-};
+
+
 
 /**
  * Trang giám sát camera trực tiếp — hiển thị lưới stream WebRTC với overlay nhiệt/PD,
@@ -65,15 +50,25 @@ export default function RealtimeMonitorPage() {
   // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
   const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
 
-  // Warning Log / Detection Events Panel states
-  const [detections, setDetections] = useState<DetectionEvent[]>([]);
-  const [isPanelCollapsed, setIsPanelCollapsed] = useState(true);
-  const [typeFilter, setTypeFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
+  // Device, Alert and Station stores
+  const fetchDevices = useDeviceStore(s => s.fetch);
+  const devicesByStation = useDeviceStore(s => s.devicesByStation);
+  const devices = useMemo(() => Object.values(devicesByStation).flat() as Device[], [devicesByStation]);
+  const fetchAlerts = useAlertStore(s => s.fetch);
+  const getFirstStationId = useStationStore(s => s.getFirstStationId);
+  const alertsByFilter = useAlertStore(s => s.alertsByFilter);
+  const alerts = alertsByFilter[ALERT_STATUS.OPEN] ?? [];
 
   // Load cameras
   useEffect(() => {
     let roiSyncTimer: any = null;
+    getFirstStationId().then((id: string | null) => {
+      if (id) {
+        fetchDevices(id);
+        fetchAlerts(ALERT_STATUS.OPEN);
+      }
+    }).catch(() => {});
+
     stationApi.getCamerasFromFirstStation().then(cams => {
       const initialStatus: Record<string, string> = {};
       cams.forEach(c => initialStatus[c.id.toLowerCase()] = c.status || 'unknown');
@@ -156,13 +151,10 @@ export default function RealtimeMonitorPage() {
             const devId = r.deviceId?.toLowerCase();
             const ptId = r.pointId?.toLowerCase();
             if (!devId || !ptId) return;
-            if (!next[devId]) {
-              next[devId] = {};
-            }
-            const devMap = next[devId];
-            if (devMap) {
-              devMap[ptId] = r.value;
-            }
+            next[devId] = {
+              ...(next[devId] || {}),
+              [ptId]: r.value
+            };
           });
           return next;
         });
@@ -172,46 +164,13 @@ export default function RealtimeMonitorPage() {
     return () => {
       clearInterval(roiSyncTimer);
     };
-  }, []);
-
-  /** Tải danh sách sự kiện phát hiện từ backend theo bộ lọc camera, loại và ngày. */
-  const loadDetections = useCallback(async () => {
-    try {
-      const params = new URLSearchParams({ limit: '80' });
-      if (selectedCamFilter) {
-        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '');
-        params.set('deviceId', baseFilterId);
-      }
-      if (typeFilter) params.set('type', typeFilter);
-      if (dateFilter) {
-        params.set('from', new Date(dateFilter).toISOString());
-        params.set('to', new Date(dateFilter + 'T23:59:59').toISOString());
-      }
-      const data = await stationApi.getDetections(params.toString());
-      setDetections(data);
-    } catch {
-      setDetections([]);
-    }
-  }, [selectedCamFilter, typeFilter, dateFilter]);
-
-  useEffect(() => {
-    loadDetections();
-  }, [loadDetections]);
+  }, [fetchDevices, fetchAlerts]);
 
   // SignalR (Simplified: only local UI state, global alerts handled in AppShell)
   useEffect(() => {
     const hubConnection = createRealtimeHub();
     hubConnection.on('DeviceStatus', (data: { deviceId: string; status: string }) => {
       setDeviceStatus(prev => ({ ...prev, [data.deviceId.toLowerCase()]: data.status }));
-    });
-    
-    hubConnection.on('CameraEvent', (evt: DetectionEvent) => {
-      setDetections(prev => {
-        const baseFilterId = selectedCamFilter.replace(/_(optical|thermal)$/, '').toLowerCase();
-        if (selectedCamFilter && evt.cameraId?.toLowerCase() !== baseFilterId) return prev;
-        if (typeFilter && evt.detectionType !== typeFilter) return prev;
-        return [evt, ...prev];
-      });
     });
     
     hubConnection.on('SensorUpdate', (data: any[]) => {
@@ -222,13 +181,10 @@ export default function RealtimeMonitorPage() {
           const devId = item.deviceId?.toLowerCase();
           const ptId = item.pointId?.toLowerCase();
           if (!devId || !ptId) return;
-          if (!next[devId]) {
-            next[devId] = {};
-          }
-          const devMap = next[devId];
-          if (devMap) {
-            devMap[ptId] = item.value;
-          }
+          next[devId] = {
+            ...(next[devId] || {}),
+            [ptId]: item.value
+          };
         });
         return next;
       });
@@ -236,7 +192,7 @@ export default function RealtimeMonitorPage() {
 
     hubConnection.start().catch(() => {});
     return () => { hubConnection.stop(); };
-  }, [selectedCamFilter, typeFilter]);
+  }, []);
 
   // Helpers
   const cellCount = layout === 'l1' ? 1 : layout === 'l4' ? 4 : 9;
@@ -383,7 +339,7 @@ export default function RealtimeMonitorPage() {
               border: `1px solid ${color}`,
               borderRadius: 3,
               padding: '1px 5px',
-              fontSize: '10px',
+              fontSize: `${fontSize - 4}px`,
               color: '#fff',
               whiteSpace: 'nowrap',
               display: 'flex',
@@ -545,7 +501,7 @@ export default function RealtimeMonitorPage() {
               border: `1px solid ${color}`,
               borderRadius: 3,
               padding: '1px 5px',
-              fontSize: '10px',
+              fontSize: `${fontSize - 2}px`,
               color: '#fff',
               whiteSpace: 'nowrap',
               display: 'flex',
@@ -637,6 +593,57 @@ export default function RealtimeMonitorPage() {
     
     const isAI = !!aiStreamCells[cam.id];
     const isOptical = cam.id.endsWith('_optical'); // Nhận diện camera quang học trong bộ đôi
+
+    const hasAlert = alerts.some(alert => {
+      const alertDevId = typeof alert.deviceId === 'string' ? alert.deviceId.toLowerCase() : '';
+      if (!alertDevId) return false;
+      const baseCamIdLower = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+
+      // 1. Direct match
+      if (alertDevId === baseCamIdLower) {
+        const alertMsg = typeof alert.message === 'string' ? alert.message.toLowerCase() : '';
+        const isThermalAlert = alertMsg.match(/nhiệt|nhiet|roi|thermal|quá nhiệt|qua nhiet|temp/);
+        const isOpticalCell = cam.id.endsWith('_optical');
+        const isThermalCell = cam.id.endsWith('_thermal');
+        if (isThermalAlert && isOpticalCell) return false;
+        if (!isThermalAlert && isThermalCell) return false;
+        return true;
+      }
+
+      // 2. cabinetId match
+      const origCam = devices.find((d: Device) => d.id.toLowerCase() === baseCamIdLower);
+      if (origCam) {
+        const camCfg = (origCam as any).config || {};
+        const cabIdStr = typeof camCfg.cabinetId === 'string' ? camCfg.cabinetId.toLowerCase() : '';
+        if (cabIdStr && cabIdStr === alertDevId) {
+          const alertMsg = typeof alert.message === 'string' ? alert.message.toLowerCase() : '';
+          const isThermalAlert = alertMsg.match(/nhiệt|nhiet|roi|thermal|quá nhiệt|qua nhiet|temp/);
+          const isOpticalCell = cam.id.endsWith('_optical');
+          const isThermalCell = cam.id.endsWith('_thermal');
+          if (isThermalAlert && isOpticalCell) return false;
+          if (!isThermalAlert && isThermalCell) return false;
+          return true;
+        }
+        
+        // 3. zone match fallback
+        const camZone = typeof camCfg.zone === 'string' ? camCfg.zone.trim().toLowerCase() : '';
+        if (camZone) {
+          const alertDev = devices.find((d: Device) => d.id.toLowerCase() === alertDevId);
+          const alertCfgZone = (alertDev?.config as any)?.zone;
+          const alertDevZone = typeof alertCfgZone === 'string' ? alertCfgZone.trim().toLowerCase() : '';
+          if (alertDevZone && alertDevZone === camZone) {
+            const alertMsg = typeof alert.message === 'string' ? alert.message.toLowerCase() : '';
+            const isThermalAlert = alertMsg.match(/nhiệt|nhiet|roi|thermal|quá nhiệt|qua nhiet|temp/);
+            const isOpticalCell = cam.id.endsWith('_optical');
+            const isThermalCell = cam.id.endsWith('_thermal');
+            if (isThermalAlert && isOpticalCell) return false;
+            if (!isThermalAlert && isThermalCell) return false;
+            return true;
+          }
+        }
+      }
+      return false;
+    });
     
     const rawStreamUrl = `/camera-stream.html?src=${encodeURIComponent(activeId)}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`;
     const aiStreamUrl = `${AI_ENGINE_URL}/stream/${activeId}`;
@@ -644,7 +651,7 @@ export default function RealtimeMonitorPage() {
     return (
       <div 
         key={cam.id} 
-        className={`nvr-cell ${isExpanded ? 'expanded' : ''}`} 
+        className={`nvr-cell ${isExpanded ? 'expanded' : ''} ${hasAlert ? 'alarm-triggered' : ''}`} 
         style={{ display: (expandedCamId && !isExpanded) ? 'none' : 'block' }}
         onDoubleClick={() => toggleExpand(cam.id)}
       >

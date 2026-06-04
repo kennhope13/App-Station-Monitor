@@ -68,6 +68,8 @@ class ThermalAnalyzer:
     last_zone_results:          dict[str, dict]   = field(default_factory=dict, init=False, repr=False)
     _last_history_save:         float             = field(default=0.0, init=False, repr=False)
     _last_jetson_push:          float             = field(default=0.0, init=False, repr=False)
+    _last_matrix_fetch:         float             = field(default=0.0, init=False, repr=False)
+    _cached_matrix:             any               = field(default=None, init=False, repr=False)
 
     def start(self) -> None:
         rtsp_url = f"{cfg.go2rtc_rtsp}/{self.stream_id}"
@@ -77,6 +79,11 @@ class ThermalAnalyzer:
     def stop(self) -> None:
         if self._reader:
             self._reader.stop()
+        if hasattr(self, '_http_client'):
+            try:
+                import asyncio
+                asyncio.create_task(self._http_client.aclose())
+            except Exception: pass
 
     def update_config(self, points: list[ThermalPoint], zones: list[ThermalZone]) -> None:
         """Cập nhật cấu hình các điểm và vùng đo nhiệt."""
@@ -90,15 +97,29 @@ class ThermalAnalyzer:
 
     async def process(self) -> None:
         """Đọc nhiệt độ tại các điểm và vùng, annotate frame, gửi alert nếu cần."""
-        # 1. Đọc matrix nhiệt từ camera
-        matrix_data = await self._read_thermal_matrix()
+        # 1. Đọc matrix nhiệt từ camera (cache 1.0 giây để tránh overload camera)
+        now = time.time()
+        should_fetch = (now - self._last_matrix_fetch >= 1.0) or (self._cached_matrix is None)
+        
+        if should_fetch:
+            matrix_data = await self._read_thermal_matrix()
+            if matrix_data:
+                self._cached_matrix = matrix_data
+                self._last_matrix_fetch = now
+            else:
+                matrix_data = self._cached_matrix
+        else:
+            matrix_data = self._cached_matrix
+        
+        point_temps = {}
+        zone_results = {}
+
         if not matrix_data:
             return
 
         floats, w, h = matrix_data
 
         # 2. Trích xuất nhiệt độ cho points
-        point_temps = {}
         for pt in self.points:
             px = int(pt.x * w)
             py = int(pt.y * h)
@@ -108,7 +129,6 @@ class ThermalAnalyzer:
             point_temps[pt.id] = float(floats[idx])
 
         # 3. Trích xuất nhiệt độ cho zones (Max temp trong vùng)
-        zone_results = {} # id -> {"max": val, "x": px, "y": py}
         for zn in self.zones:
             if not zn.polygon or len(zn.polygon) < 3:
                 continue
@@ -138,35 +158,41 @@ class ThermalAnalyzer:
         self.last_point_temps = point_temps
         self.last_zone_results = zone_results
 
-        # 4. Gửi nhiệt độ thực tế về backend
-        await self._ingest_measurements(point_temps, zone_results)
+        # 4. Gửi nhiệt độ thực tế về backend (chỉ gửi khi vừa fetch matrix mới để tránh quá tải backend)
+        if should_fetch:
+            await self._ingest_measurements(point_temps, zone_results)
 
-        # 4.3 Đẩy dữ liệu sang Jetson đối tác mỗi 5 phút (Chỉ lấy camera nhiệt chính làm chuẩn)
-        if self.stream_id == "cam_192_168_10_152_thermal":
-            import time
-            now = time.time()
-            if now - self._last_jetson_push >= 300.0:
-                self._last_jetson_push = now  # Cập nhật ngay lập tức để tránh retry liên tục (retry storm) khi bị timeout hoặc lỗi kết nối
-                try:
-                    from datetime import datetime
-                    import requests
-                    # Hợp nhất cả điểm đo (points) và vùng đo (zones) sử dụng tên nhãn hiển thị (label)
-                    jetson_points = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
-                    jetson_points += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
-                    
-                    if jetson_points:
-                        payload = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": jetson_points}
-                        # Đẩy đồng thời đến cả hai Endpoint của Jetson để tương thích hoàn toàn
-                        logger.info("[ThermalAnalyzer] Sending unified master sync packet (points & zones) to Jetson partner at 192.168.10.104:8080...")
+        # 4.3 Đẩy dữ liệu sang Jetson đối tác mỗi 5 phút
+        now = time.time()
+        if now - self._last_jetson_push >= 300.0:
+            self._last_jetson_push = now 
+            try:
+                from datetime import datetime
+                import requests
+                # Hợp nhất cả điểm đo (points) và vùng đo (zones) sử dụng tên nhãn hiển thị (label)
+                jetson_points = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
+                jetson_points += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
+                
+                if jetson_points:
+                    payload = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": jetson_points}
+                    logger.info("[ThermalAnalyzer] Pushing %d points/zones to Jetson: %s", len(jetson_points), payload)
+                    try:
                         r1 = requests.post("http://192.168.10.104:8080/api/thermal-data", json=payload, timeout=5.0)
+                        logger.info("[ThermalAnalyzer] Push to /api/thermal-data status: %d", r1.status_code)
+                    except Exception as e:
+                        logger.error("[ThermalAnalyzer] Failed to push to /api/thermal-data: %s", e)
+                        
+                    try:
                         r2 = requests.post("http://192.168.10.104:8080/config/thermal", json=payload, timeout=5.0)
-                        logger.info("[ThermalAnalyzer] Jetson push status - /api/thermal-data: %d, /config/thermal: %d", r1.status_code, r2.status_code)
-                except Exception as ex:
-                    logger.error("[ThermalAnalyzer] Error pushing unified data to Jetson: %s", ex)
+                        logger.info("[ThermalAnalyzer] Push to /config/thermal status: %d", r2.status_code)
+                    except Exception as e:
+                        logger.error("[ThermalAnalyzer] Failed to push to /config/thermal: %s", e)
+            except Exception as ex:
+                logger.error("[ThermalAnalyzer] Critical push error: %s", ex)
 
 
-            # 4.5 Pipeline dự báo AI cục bộ (mỗi 5 phút = 300 giây)
-            if now - self._last_history_save >= 300.0:
+            # 4.5 Pipeline dự báo AI cục bộ (mỗi 30 giây để biểu đồ mượt hơn)
+            if now - self._last_history_save >= 30.0:
                 try:
                     from services.thermal.thermal_forecaster import process_thermal_payload
                     from datetime import datetime
@@ -174,7 +200,7 @@ class ThermalAnalyzer:
                     p_payload += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
                     if p_payload:
                         process_thermal_payload({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": p_payload})
-                        self._last_history_save = now # Chỉ cập nhật khi đã lưu thành công
+                        self._last_history_save = now
                 except Exception: pass
 
 
@@ -207,40 +233,42 @@ class ThermalAnalyzer:
         if not self.points and not self.zones: return None
         now = time.time()
         if now < self._auth_cooldown_until: return None
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            for ch in [2, 1]:
-                url = f"http://{self.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/jpegPicWithAppendData?format=json"
-                try:
-                    resp = await client.get(url, auth=httpx.DigestAuth(self.username, self.password))
-                    if resp.status_code == 401:
-                        self._consecutive_auth_failures += 1
-                        if self._consecutive_auth_failures >= 3: self._auth_cooldown_until = now + 300
-                        break
-                    if resp.status_code == 200:
-                        self._consecutive_auth_failures = 0
-                        content = resp.content
-                        boundary = b'--boundary'
-                        ct = resp.headers.get("content-type", "")
-                        if "boundary=" in ct: boundary = f"--{ct.split('boundary=')[-1].strip()}".encode('ascii')
-                        parts = content.split(boundary)
-                        w, h, data_len = 256, 192, 196608
-                        for part in parts:
-                            if b'application/json' in part:
-                                h_end = part.find(b'\r\n\r\n')
-                                if h_end != -1:
-                                    import json
-                                    info = json.loads(part[h_end+4:].decode('utf-8', errors='ignore').strip()).get("JpegPictureWithAppendData", {})
-                                    w, h = info.get("jpegPicWidth", 256), info.get("jpegPicHeight", 192)
-                                    data_len = info.get("p2pDataLen") or (w * h * 4)
-                        for part in parts:
-                            if b'application/octet-stream' in part:
-                                h_end = part.find(b'\r\n\r\n')
-                                if h_end != -1:
-                                    matrix_bytes = part[h_end+4:][:data_len]
-                                    if len(matrix_bytes) >= w * h * 4:
-                                        return np.frombuffer(matrix_bytes, dtype=np.float32), w, h
-                        break
-                except Exception: pass
+        if not hasattr(self, '_http_client'):
+            self._http_client = httpx.AsyncClient(timeout=5.0)
+        client = self._http_client
+        for ch in [2, 1]:
+            url = f"http://{self.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/jpegPicWithAppendData?format=json"
+            try:
+                resp = await client.get(url, auth=httpx.DigestAuth(self.username, self.password))
+                if resp.status_code == 401:
+                    self._consecutive_auth_failures += 1
+                    if self._consecutive_auth_failures >= 3: self._auth_cooldown_until = now + 300
+                    break
+                if resp.status_code == 200:
+                    self._consecutive_auth_failures = 0
+                    content = resp.content
+                    boundary = b'--boundary'
+                    ct = resp.headers.get("content-type", "")
+                    if "boundary=" in ct: boundary = f"--{ct.split('boundary=')[-1].strip()}".encode('ascii')
+                    parts = content.split(boundary)
+                    w, h, data_len = 256, 192, 196608
+                    for part in parts:
+                        if b'application/json' in part:
+                            h_end = part.find(b'\r\n\r\n')
+                            if h_end != -1:
+                                import json
+                                info = json.loads(part[h_end+4:].decode('utf-8', errors='ignore').strip()).get("JpegPictureWithAppendData", {})
+                                w, h = info.get("jpegPicWidth", 256), info.get("jpegPicHeight", 192)
+                                data_len = info.get("p2pDataLen") or (w * h * 4)
+                    for part in parts:
+                        if b'application/octet-stream' in part:
+                            h_end = part.find(b'\r\n\r\n')
+                            if h_end != -1:
+                                matrix_bytes = part[h_end+4:][:data_len]
+                                if len(matrix_bytes) >= w * h * 4:
+                                    return np.frombuffer(matrix_bytes, dtype=np.float32), w, h
+                    break
+            except Exception: pass
         return None
 
     def _annotate(self, frame: np.ndarray, point_temps: dict[str, float], zone_results: dict[str, dict]) -> np.ndarray:

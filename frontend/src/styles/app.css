@@ -7,6 +7,11 @@
 /* ── Reset helpers ──────────────────────────────────────────── */
 * {
   box-sizing: border-box;
+  font-family: var(--admin-font), 'Inter', 'Segoe UI', sans-serif;
+}
+
+button, input, select, textarea {
+  font-family: inherit; /* Ensure interactive elements inherit the global font */
 }
 
 /* ── App root (full viewport) ─────────────────────────────── */
@@ -4423,4 +4428,65 @@ input:checked+.slider-industrial:before {
 
 .st-toast-close:hover {
   color: var(--admin-text, #ffffff);
+}
+
+/* ── Professional Header Highlights ────────────────────── */
+.header-logo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--admin-layer-1); /* Subtle integration, no button feel */
+  border: none; /* No border to avoid button appearance */
+  box-shadow: none;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.header-logo-glow {
+  display: none; /* Completely remove glow to avoid interactive look */
+}
+
+/* Removed logoBreath animation to keep it static */
+
+.header-title-main {
+  font-weight: 900;
+  font-size: 1.2rem;
+  color: var(--admin-text);
+  letter-spacing: 0px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.header-title-badge {
+  color: var(--admin-accent);
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: 1px;
+  padding: 5px 20px;
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-left: 5px solid var(--admin-accent);
+  border-radius: 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  text-shadow: none;
+}
+
+/* ── Typography Override for Industrial Consistency ── */
+.header-title-main, 
+.header-title-badge, 
+.ah-btn-footer, 
+.ah-btn-action, 
+.ah-badge,
+.ah-time-val,
+.btn-industrial {
+  font-family: var(--admin-font), 'Inter', sans-serif !important;
+}
+
+.ah-time-val, .ah-date-val, .ah-tl-time {
+  font-family: var(--admin-font-mono), monospace !important;
 }

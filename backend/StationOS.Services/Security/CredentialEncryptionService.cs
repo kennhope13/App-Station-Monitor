@@ -208,9 +208,7 @@ public class CredentialEncryptionService
                     }
                     else 
                     {
-                        // Decrypt to get the actual length, then mask it
-                        var decrypted = Decrypt(encryptedVal);
-                        dict[p.Name] = new string('*', decrypted.Length);
+                        dict[p.Name] = "***";
                     }
                 }
                 else

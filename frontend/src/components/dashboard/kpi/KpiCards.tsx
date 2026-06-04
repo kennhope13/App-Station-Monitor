@@ -107,7 +107,7 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
         width: '100%',
         background: 'var(--admin-overlay)', backdropFilter: 'blur(12px)',
         border: `1px solid ${dangerCount > 0 ? 'rgba(239,68,68,0.4)' : 'var(--admin-border)'}`,
-        borderRadius: 4, overflow: 'hidden', boxShadow: 'var(--admin-shadow)'
+        borderRadius: 0, overflow: 'hidden', boxShadow: 'var(--admin-shadow)'
       }}
     >
       {/* Header */}
@@ -117,19 +117,19 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
             GIÁM SÁT TỦ ĐIỆN
           </span>
           {dangerCount > 0 && (
-            <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#EF4444', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 3, padding: '1px 5px' }}>
+            <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#EF4444', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 0, padding: '1px 5px' }}>
               {dangerCount} NGUY HIỂM
             </span>
           )}
           {warningCount > 0 && !dangerCount && (
-            <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#F59E0B', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 3, padding: '1px 5px' }}>
+            <span style={{ fontSize: '0.55rem', fontWeight: 800, color: '#F59E0B', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 0, padding: '1px 5px' }}>
               {warningCount} CẢNH BÁO
             </span>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: '0.58rem', fontWeight: 700, color: plcOnline ? '#10B981' : '#EF4444', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: plcOnline ? '#10B981' : '#EF4444', display: 'inline-block' }} />
+            <span style={{ width: 5, height: 5, borderRadius: 0, background: plcOnline ? '#10B981' : '#EF4444', display: 'inline-block' }} />
             PLC
           </span>
           <button
@@ -171,8 +171,8 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
                 >
                   {/* Row 1: Name and status badge */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
-                    {/* Dot */}
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    {/* Square Dot */}
+                    <div style={{ width: 6, height: 6, borderRadius: 0, background: color, flexShrink: 0 }} />
 
                     {/* Name */}
                     <span style={{ flex: 1, fontSize: '0.72rem', fontWeight: 700, color: isOffline ? '#9CA3AF' : 'var(--admin-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -180,32 +180,32 @@ export default function KpiCards({ plcOnline, devices = [], sensors = [] }: KpiC
                     </span>
 
                     {/* Status badge */}
-                    <span style={{ fontSize: '0.52rem', fontWeight: 800, color: isOffline ? '#EF4444' : color, background: isOffline ? 'rgba(239,68,68,0.08)' : `${color}18`, border: `1px solid ${isOffline ? 'rgba(239,68,68,0.25)' : `${color}40`}`, borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>
+                    <span style={{ fontSize: '0.52rem', fontWeight: 800, color: isOffline ? '#EF4444' : color, background: isOffline ? 'rgba(239,68,68,0.08)' : `${color}18`, border: `1px solid ${isOffline ? 'rgba(239,68,68,0.25)' : `${color}40`}`, borderRadius: 0, padding: '1px 4px', flexShrink: 0 }}>
                       {statusLabel}
                     </span>
                   </div>
 
                   {/* Row 2: Grid of Pha A, B, C, PD */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: 2, marginTop: 1, width: '100%' }}>
-                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 0, textAlign: 'center' }}>
                       <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA A</div>
                       <div style={{ fontSize: '0.62rem', fontWeight: 800, color: getTempColor(cab.t1), fontFamily: 'Consolas,monospace' }}>
                         {isOffline || cab.t1 === null ? '--' : `${cab.t1}°C`}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 0, textAlign: 'center' }}>
                       <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA B</div>
                       <div style={{ fontSize: '0.62rem', fontWeight: 800, color: getTempColor(cab.t2), fontFamily: 'Consolas,monospace' }}>
                         {isOffline || cab.t2 === null ? '--' : `${cab.t2}°C`}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 0, textAlign: 'center' }}>
                       <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>PHA C</div>
                       <div style={{ fontSize: '0.62rem', fontWeight: 800, color: getTempColor(cab.t3), fontFamily: 'Consolas,monospace' }}>
                         {isOffline || cab.t3 === null ? '--' : `${cab.t3}°C`}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 2, textAlign: 'center' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', padding: '2px 4px', borderRadius: 0, textAlign: 'center' }}>
                       <div style={{ fontSize: '0.42rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>P.ĐIỆN</div>
                       <div style={{ fontSize: '0.6rem', fontWeight: 800, color: getPdColor(cab.pdCount, isOffline), fontFamily: 'Consolas,monospace' }}>
                         {isOffline ? '--' : `${cab.pdCount}dB`}

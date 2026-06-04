@@ -5,20 +5,42 @@ import { GO2RTC_URL } from '@/utils/env';
 interface CameraLiveViewerProps {
   cameraSrc?: string;
   headerAddon?: React.ReactNode;
+  hasAlert?: boolean;
 }
 
-export default function CameraLiveViewer({ cameraSrc = '', headerAddon }: CameraLiveViewerProps) {
+export default function CameraLiveViewer({ cameraSrc = '', headerAddon, hasAlert = false }: CameraLiveViewerProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const navigate = useNavigate();
 
   return (
-    <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: '#000', borderRadius: 4, overflow: 'hidden', boxShadow: 'var(--admin-shadow)', minHeight: isCollapsed ? 26 : 0 }}
-    >
+    <>
+      {hasAlert && (
+        <style>{`
+          @keyframes border-pulse {
+            0% { border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+            50% { border-color: rgba(239, 68, 68, 1); box-shadow: 0 0 16px rgba(239, 68, 68, 0.8), inset 0 0 8px rgba(239, 68, 68, 0.4); }
+            100% { border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+          }
+        `}</style>
+      )}
+      <div
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#000',
+          borderRadius: 0,
+          overflow: 'hidden',
+          minHeight: isCollapsed ? 26 : 0,
+          border: hasAlert ? '2px solid rgba(239, 68, 68, 0.8)' : '1px solid rgba(255,255,255,0.08)',
+          animation: hasAlert ? 'border-pulse 1.5s infinite ease-in-out' : 'none',
+          boxShadow: hasAlert ? '0 0 12px rgba(239, 68, 68, 0.6)' : 'var(--admin-shadow)',
+        }}
+      >
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 8px',
@@ -61,5 +83,6 @@ export default function CameraLiveViewer({ cameraSrc = '', headerAddon }: Camera
         </div>
       )}
     </div>
+    </>
   );
 }

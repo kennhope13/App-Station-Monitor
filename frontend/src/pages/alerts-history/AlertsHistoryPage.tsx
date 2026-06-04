@@ -6,7 +6,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Calendar, RefreshCw, Clock } from 'lucide-react';
+import { Calendar, RefreshCw, Play, Camera } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { stationApi, AlertItem, AlertHistoryEntry } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore } from '@/store';
@@ -14,6 +14,7 @@ import { ALERT_STATUS, ALERT_LEVEL, alertStatusLabel, alertLevelLabel } from '@/
 import { createRealtimeHub } from '@/services/realtime.service';
 import { fmtDateTime } from '@/utils/format';
 import { confirmDialog } from '@/utils/confirm';
+import { GO2RTC_URL } from '@/utils/env';
 import './AlertsHistoryPage.css';
 
 type SortCol = 'time' | 'level';
@@ -31,14 +32,14 @@ const getAlertSummary = (msg: string) => {
   
   // Nếu là cảnh báo nhiệt độ: "Vùng/Điểm Tên: 32.0°C — chi tiết..." -> Lấy trước dấu "—"
   if (clean.includes(' — ')) {
-    clean = clean.split(' — ')[0];
+    clean = clean.split(' — ')[0] || '';
   }
   
   // Nếu là cảnh báo hệ thống quá dài: "NGUY CẤP: Ổ đĩa /path/to/something..." -> Lấy trước dấu chấm hoặc dấu !
   if (clean.includes('!')) {
-    clean = clean.split('!')[0] + '!';
+    clean = (clean.split('!')[0] || '') + '!';
   } else if (clean.includes('.')) {
-    clean = clean.split('.')[0] + '.';
+    clean = (clean.split('.')[0] || '') + '.';
   }
 
   return clean;
@@ -423,59 +424,88 @@ export default function AlertsHistoryPage() {
                     {/* COL 1: ẢNH */}
                     <div>
                       {a.thumbnailUrl ? (
-                        <div style={{ position: 'relative', width: 44, height: 32, background: '#000', border: '1px solid var(--admin-border)', overflow: 'hidden' }}>
+                        <div style={{ position: 'relative', width: 50, height: 36, background: '#000', border: '1px solid var(--admin-border)', overflow: 'hidden' }}>
                           <img src={a.thumbnailUrl} alt="Thumb" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          {a.videoUrl && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: '.6rem', filter: 'drop-shadow(0 0 2px #000)' }}>▶️</div>}
+                          {a.videoUrl && (
+                            <div style={{ 
+                              position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                              background: 'rgba(0,0,0,0.3)', color: 'var(--admin-accent)', fontSize: '1rem' 
+                            }}>
+                              <Play size={16} fill="currentColor" />
+                            </div>
+                          )}
+                        </div>
+                      ) : a.videoUrl ? (
+                        <div style={{ position: 'relative', width: 50, height: 36, background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-accent)' }}>
+                          <Play size={14} fill="currentColor" />
                         </div>
                       ) : (
-                        <div style={{ width: 44, height: 32, background: 'rgba(255,255,255,0.03)', border: '1px dashed var(--admin-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-text-muted)', fontSize: '0.45rem', fontWeight: 900 }}>N/A</div>
+                        <div style={{ width: 50, height: 36, background: 'rgba(255,255,255,0.03)', border: '1px dashed var(--admin-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--admin-text-muted)', fontSize: '0.45rem', fontWeight: 900 }}>N/A</div>
                       )}
                     </div>
 
                     {/* COL 2: THỜI GIAN */}
-                    <div style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                      <div style={{ fontWeight: 800, fontSize: '.8rem', fontFamily: 'monospace', color: 'var(--admin-text)' }}>{fmtDateTime(a.triggeredAt).split(' ')[0]}</div>
-                      <div style={{ fontWeight: 600, fontSize: '.65rem', fontFamily: 'monospace', color: 'var(--admin-text-muted)', opacity: .6 }}>{fmtDateTime(a.triggeredAt).split(' ')[1]}</div>
+                    <div className="ah-time-cell">
+                      <div className="ah-time-val">{fmtDateTime(a.triggeredAt).split(' ')[1]}</div>
+                      <div className="ah-date-val">{fmtDateTime(a.triggeredAt).split(' ')[0]}</div>
                     </div>
 
                     {/* COL 3: MỨC ĐỘ */}
                     <div>
                       {a.level === ALERT_LEVEL.ALARM
-                        ? <span className="ah-tag" style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>{alertLevelLabel(a.level)}</span>
-                        : <span className="ah-tag" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.2)' }}>{alertLevelLabel(a.level)}</span>}
+                        ? <span className="ah-badge ah-badge-alarm">{alertLevelLabel(a.level)}</span>
+                        : <span className="ah-badge ah-badge-warning">{alertLevelLabel(a.level)}</span>}
                     </div>
 
-                    {/* COL 4: NỘI DUNG TÓM TẮT */}
-                    <div className="ah-col-msg">
-                       {a.message.startsWith('[') ? (() => {
-                         const match = a.message.match(/^\[(.*?)\]\s*(.*)$/);
-                         if (match) return (
-                           <>
-                             <span className="ah-msg-source">{match[1]}</span>
-                             <span className="ah-msg-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-                               {getAlertSummary(match[2])}
-                             </span>
-                           </>
-                         );
-                         return <span className="ah-msg-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{getAlertSummary(a.message)}</span>;
-                       })() : (
-                         <span className="ah-msg-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{getAlertSummary(a.message)}</span>
-                       )}
+                    {/* COL 4: NỘI DUNG */}
+                    <div className="ah-msg-cell">
+                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+                         {a.message.startsWith('[') ? (() => {
+                           const match = a.message.match(/^\[(.*?)\]\s*(.*)$/);
+                           if (match) return (
+                             <div style={{ flex: 1, minWidth: 0 }}>
+                               <div className="ah-msg-label">{match[1]}</div>
+                               <div className="ah-msg-body" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                 {getAlertSummary(match[2] || '')}
+                               </div>
+                             </div>
+                           );
+                           return <div className="ah-msg-body" style={{ flex: 1 }}>{getAlertSummary(a.message)}</div>;
+                         })() : (
+                           <div className="ah-msg-body" style={{ flex: 1 }}>{getAlertSummary(a.message)}</div>
+                         )}
+                         
+                         {a.videoUrl && (
+                           <span style={{ 
+                             background: 'rgba(var(--admin-accent-rgb), 0.1)', 
+                             color: 'var(--admin-accent)', 
+                             fontSize: '0.55rem', 
+                             fontWeight: 900, 
+                             padding: '2px 6px',
+                             border: '1px solid var(--admin-accent)',
+                             display: 'flex',
+                             alignItems: 'center',
+                             gap: 4
+                           }}>
+                             <Play size={8} fill="currentColor" /> VIDEO
+                           </span>
+                         )}
+                       </div>
                     </div>
 
                     {/* COL 5: TRẠNG THÁI */}
                     <div>
-                      {a.status === ALERT_STATUS.OPEN  ? <span className="ah-tag" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.15)' }}>{alertStatusLabel(a.status)}</span> :
-                       a.status === ALERT_STATUS.ACKED ? <span className="ah-tag" style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.15)' }}>{alertStatusLabel(a.status)}</span> :
-                                                        <span className="ah-tag" style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.15)' }}>{alertStatusLabel(a.status)}</span>}
+                      {a.status === ALERT_STATUS.OPEN  ? <span className="ah-badge ah-badge-status-open">{alertStatusLabel(a.status)}</span> :
+                       a.status === ALERT_STATUS.ACKED ? <span className="ah-badge ah-badge-warning" style={{ background: 'transparent' }}>{alertStatusLabel(a.status)}</span> :
+                                                        <span className="ah-badge" style={{ color: '#10B981' }}>{alertStatusLabel(a.status)}</span>}
                     </div>
 
                     {/* COL 6: HÀNH ĐỘNG */}
                     <div>
                       {a.status === ALERT_STATUS.OPEN ? (
-                        <button className="btn-industrial btn-sm btn-primary" style={{ height: 24, fontSize: '.6rem', padding: '0 8px', minWidth: 65 }} onClick={(e) => handleAckClick(e, a.id)}>Tiếp nhận</button>
+                        <button className="ah-btn-ack" onClick={(e) => handleAckClick(e, a.id)}>Tiếp nhận</button>
                       ) : a.status === ALERT_STATUS.ACKED ? (
-                        <button className="btn-industrial btn-sm" style={{ height: 24, fontSize: '.6rem', padding: '0 8px', minWidth: 65 }} onClick={(e) => handleCloseAlert(e, a.id)}>Đóng</button>
+                        <button className="btn-industrial btn-sm" style={{ height: 26, fontSize: '.65rem', padding: '0 10px' }} onClick={(e) => handleCloseAlert(e, a.id)}>Đóng</button>
                       ) : (
                         <div style={{ width: 14, height: 14, background: 'var(--admin-success)', opacity: .3 }}></div>
                       )}
@@ -508,6 +538,7 @@ export default function AlertsHistoryPage() {
                 onAck={() => handleAckClick({ stopPropagation: () => {} } as any, detailData.id)}
                 onCloseAlert={() => handleCloseAlert({ stopPropagation: () => {} } as any, detailData.id)}
                 onRefresh={() => loadDetail(detailData.id, true)}
+                devices={devices}
               />
             )}
           </div>
@@ -586,110 +617,264 @@ export default function AlertsHistoryPage() {
  * Panel chi tiết một cảnh báo: hiển thị ảnh/video bằng chứng,
  * thông tin cảnh báo và timeline lịch sử xử lý.
  */
-function AlertDetailView({ data, onClose, onAck, onCloseAlert, onRefresh }: { data: AlertDetail, onClose: () => void, onAck: () => void, onCloseAlert: () => void, onRefresh?: () => void }) {
+function AlertDetailView({ data, onClose, onAck, onCloseAlert, onRefresh, devices = [] }: { data: AlertDetail, onClose: () => void, onAck: () => void, onCloseAlert: () => void, onRefresh?: () => void, devices?: any[] }) {
   const isAlarm = data.level === 'alarm';
-  const color = isAlarm ? '#EF4444' : '#F59E0B';
+  const accentColor = isAlarm ? '#EF4444' : '#F59E0B';
   const levelText = isAlarm ? 'BÁO ĐỘNG' : 'CẢNH BÁO';
 
   const statusLabel: Record<string, string> = { open: 'Chưa xử lý', acked: 'Đang xử lý', closed: 'Đã đóng' };
-  const sourceLabel: Record<string, string> = { rule_engine: 'Quy tắc', ai_detection: 'AI Vision', manual: 'Thủ công', camera: 'Camera' };
+  const sourceLabel: Record<string, string> = { rule_engine: 'Hệ thống quy tắc', ai_detection: 'Phân tích AI', manual: 'Nhập thủ công', camera: 'Giám sát Camera' };
 
-  // Xác định đơn vị đo
+  // Phân tích tọa độ vùng từ metadata (hỗ trợ cả Point và ROI)
+  const overlayGeometry = useMemo(() => {
+    let meta: any = {};
+    if (typeof data.metadata === 'string') {
+      try { meta = JSON.parse(data.metadata); } catch {}
+    } else {
+      meta = data.metadata || {};
+    }
+
+    // Trường hợp 1: ROI đa giác (array of [x, y])
+    if (meta.polygon) {
+      try {
+        const pts = typeof meta.polygon === 'string' ? JSON.parse(meta.polygon) : meta.polygon;
+        if (Array.isArray(pts)) return { type: 'polygon', points: pts };
+      } catch {}
+    }
+
+    // Trường hợp 2: Điểm chấm nhiệt (tx, ty)
+    if (meta.tx != null && meta.ty != null) {
+      return { type: 'point', x: meta.tx, y: meta.ty };
+    }
+
+    // Trường hợp 3: Vùng ROI chữ nhật (x1, y1, x2, y2)
+    if (meta.x1 != null && meta.y1 != null) {
+      return { type: 'rect', x1: meta.x1, y1: meta.y1, x2: meta.x2, y2: meta.y2 };
+    }
+
+    return null;
+  }, [data.metadata]);
+
+  // Tự động tìm stream URL tương ứng với camera của Alert này
+  const liveCameraSrc = useMemo(() => {
+    if (!data.deviceId) return null;
+    const devIdLower = data.deviceId.toLowerCase();
+    const cam = devices.find(d => d.id.toLowerCase() === devIdLower);
+    if (!cam) return null;
+    const cfg = cam.config || {};
+    const isThermal = data.message.toLowerCase().includes('nhiệt độ') || data.message.toLowerCase().includes('°c');
+    const src = isThermal ? (cfg.go2rtc_thermal || cfg.go2rtc_optical) : (cfg.go2rtc_optical || cfg.go2rtc_thermal);
+    return src || cfg.go2rtc_id;
+  }, [data.deviceId, devices, data.message]);
+
+  const hasMediaOrGeometry = useMemo(() => {
+    return !!(data.imageUrl || data.videoUrl || liveCameraSrc || overlayGeometry);
+  }, [data.imageUrl, data.videoUrl, liveCameraSrc, overlayGeometry]);
+
   const unit = useMemo(() => {
     const msg = data.message.toLowerCase();
     if (msg.includes('người')) return 'NGƯỜI';
     if (msg.includes('nhiệt độ') || msg.includes('°c')) return '°C';
-    if (msg.includes('cháy') || msg.includes('khói')) return '%';
-    return 'UNIT';
+    return 'ĐƠN VỊ';
   }, [data.message]);
 
-  const expectsVideo = !data.videoUrl && (data.source === 'ai_detection' || data.source === 'camera');
-
-  // Auto-refresh detail if waiting for video
-  useEffect(() => {
-    if (expectsVideo && onRefresh) {
-      const timer = setInterval(() => {
-        onRefresh();
-      }, 5000); // Check every 5 seconds
-      return () => clearInterval(timer);
-    }
-  }, [expectsVideo, onRefresh]);
-
   return (
-    <>
+    <div className="ah-detail-inner">
       <div className="ah-detail-header">
-        <div style={{ width: 10, height: 10, background: color, flexShrink: 0 }}></div>
-        <span style={{ fontWeight: 900, fontSize: '.75rem', letterSpacing: '1px' }}>{levelText}</span>
-        <span style={{ fontFamily: 'monospace', fontSize: '.65rem', opacity: .6, flex: 1, textAlign: 'right', paddingRight: 10 }}>ID: {data.id.slice(0, 8)}</span>
+        <div style={{ width: 12, height: 12, background: accentColor, border: '2px solid rgba(255,255,255,0.2)' }}></div>
+        <span style={{ fontWeight: 900, fontSize: '0.85rem', color: 'var(--admin-text)', letterSpacing: '1px', textTransform: 'uppercase' }}>{levelText} CHI TIẾT</span>
+        <span style={{ fontFamily: 'var(--admin-font-mono)', fontSize: '0.65rem', opacity: 0.5, flex: 1, textAlign: 'right', paddingRight: 12 }}>ID: {data.id.slice(0, 8)}</span>
         
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button className="btn-industrial" style={{ width: 26, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.1)', color: '#fff' }} onClick={onRefresh} title="Tải lại">
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className="btn-industrial" style={{ width: 28, height: 24, padding: 0, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }} onClick={onRefresh} title="Cập nhật">
             <RefreshCw size={12} />
           </button>
-          <button className="btn-industrial" style={{ width: 22, height: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'rgba(255,255,255,0.1)', color: '#fff' }} onClick={onClose}>✕</button>
+          <button className="btn-industrial" style={{ width: 28, height: 24, padding: 0, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }} onClick={onClose}>✕</button>
         </div>
       </div>
 
       <div className="ah-detail-scroll">
-        {/* SNAPSHOT IMAGE */}
-        {data.imageUrl && (
-          <div style={{ padding: 16, background: 'var(--admin-layer-3)', borderBottom: '1px solid var(--admin-border)' }}>
-            <div style={{ position: 'relative', background: '#000', border: '1px solid var(--admin-border)', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <img src={data.imageUrl} style={{ width: '100%', maxHeight: 240, objectFit: 'contain' }} alt="Snapshot" />
-              <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', padding: '2px 8px', fontSize: '.55rem', fontWeight: 800, color: '#fff' }}>ẢNH CHỤP SỰ KIỆN</div>
+        {/* EVIDENCE MEDIA GROUP */}
+        {hasMediaOrGeometry && (
+          <div className="ah-detail-section" style={{ background: 'var(--admin-layer-1)' }}>
+            <div className="ah-section-title">Bằng chứng sự kiện</div>
+            
+            <div className="ah-evidence-box" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              {data.videoUrl ? (
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', maxHeight: 320, overflow: 'hidden' }}>
+                  <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', maxHeight: 320 }}>
+                    <video key={data.videoUrl} style={{ display: 'block', maxWidth: '100%', maxHeight: 320, width: 'auto', height: 'auto' }} controls autoPlay loop muted>
+                      <source src={data.videoUrl} type="video/mp4" />
+                    </video>
+                    
+                    {/* OVERLAY LAYER */}
+                    {overlayGeometry && (
+                      <svg 
+                        viewBox="0 0 1 1" 
+                        preserveAspectRatio="none"
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+                      >
+                        {overlayGeometry.type === 'polygon' && overlayGeometry.points && (
+                          <polygon 
+                            points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')}
+                            fill="rgba(239, 68, 68, 0.1)"
+                            stroke={accentColor}
+                            strokeWidth="0.01"
+                            vectorEffect="non-scaling-stroke"
+                          >
+                            <animate attributeName="stroke-opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite" />
+                          </polygon>
+                        )}
+                        {overlayGeometry.type === 'rect' && (
+                          <rect 
+                            x={overlayGeometry.x1} y={overlayGeometry.y1} 
+                            width={overlayGeometry.x2 - overlayGeometry.x1} 
+                            height={overlayGeometry.y2 - overlayGeometry.y1}
+                            fill="rgba(239, 68, 68, 0.1)"
+                            stroke={accentColor}
+                            strokeWidth="0.01"
+                          >
+                            <animate attributeName="stroke-opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite" />
+                          </rect>
+                        )}
+                        {overlayGeometry.type === 'point' && (
+                          <g transform={`translate(${overlayGeometry.x}, ${overlayGeometry.y})`}>
+                            <circle r="0.02" fill="none" stroke={accentColor} strokeWidth="0.005">
+                               <animate attributeName="r" values="0.01;0.04;0.01" dur="1.5s" repeatCount="indefinite" />
+                               <animate attributeName="stroke-opacity" values="1;0;1" dur="1.5s" repeatCount="indefinite" />
+                            </circle>
+                            <path d="M-0.03 0 L0.03 0 M0 -0.03 L0 0.03" stroke={accentColor} strokeWidth="0.005" />
+                          </g>
+                        )}
+                      </svg>
+                    )}
+                  </div>
+                  
+                  <div className="ah-evidence-label" style={{ background: 'var(--admin-accent)', zIndex: 11 }}>VIDEO DIỄN BIẾN</div>
+                </div>
+              ) : data.imageUrl ? (
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%' }}>
+                  <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', maxHeight: 320 }}>
+                    <img src={data.imageUrl} style={{ display: 'block', maxWidth: '100%', maxHeight: 320, width: 'auto', height: 'auto' }} alt="Snapshot" />
+                    
+                    {/* OVERLAY TRÊN ẢNH (Dùng chung logic với video) */}
+                    {overlayGeometry && (
+                       <svg viewBox="0 0 1 1" preserveAspectRatio="none" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                          {overlayGeometry.type === 'polygon' && overlayGeometry.points && <polygon points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')} fill="rgba(239, 68, 68, 0.15)" stroke={accentColor} strokeWidth="0.01" vectorEffect="non-scaling-stroke" />}
+                          {overlayGeometry.type === 'rect' && <rect x={overlayGeometry.x1} y={overlayGeometry.y1} width={overlayGeometry.x2 - overlayGeometry.x1} height={overlayGeometry.y2 - overlayGeometry.y1} fill="rgba(239, 68, 68, 0.15)" stroke={accentColor} strokeWidth="0.01" />}
+                          {overlayGeometry.type === 'point' && <circle cx={overlayGeometry.x} cy={overlayGeometry.y} r="0.02" fill={accentColor} stroke="#fff" strokeWidth="0.005" />}
+                       </svg>
+                    )}
+                  </div>
+                  <div className="ah-evidence-label">ẢNH CHỤP SỰ KIỆN</div>
+                </div>
+              ) : liveCameraSrc ? (
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', minHeight: 240, maxHeight: 320, overflow: 'hidden', aspectRatio: '16/9', background: '#000' }}>
+                  <iframe
+                    src={`/camera-stream.html?src=${liveCameraSrc}&mode=webrtc,mse&go2rtc=${GO2RTC_URL}`}
+                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', display: 'block' }}
+                    allow="autoplay"
+                    title="Camera Live Stream"
+                  />
+                  {/* OVERLAY TRÊN LIVE STREAM */}
+                  {overlayGeometry && (
+                    <svg 
+                      viewBox="0 0 1 1" 
+                      preserveAspectRatio="none"
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+                    >
+                      {overlayGeometry.type === 'polygon' && overlayGeometry.points && (
+                        <polygon 
+                          points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')}
+                          fill="rgba(239, 68, 68, 0.1)"
+                          stroke={accentColor}
+                          strokeWidth="0.01"
+                          vectorEffect="non-scaling-stroke"
+                        >
+                          <animate attributeName="stroke-opacity" values="1;0.3;1" dur="1s" repeatCount="indefinite" />
+                        </polygon>
+                      )}
+                      {overlayGeometry.type === 'rect' && (
+                        <rect 
+                          x={overlayGeometry.x1} y={overlayGeometry.y1} 
+                          width={overlayGeometry.x2 - overlayGeometry.x1} 
+                          height={overlayGeometry.y2 - overlayGeometry.y1}
+                          fill="rgba(239, 68, 68, 0.1)"
+                          stroke={accentColor}
+                          strokeWidth="0.01"
+                        />
+                      )}
+                      {overlayGeometry.type === 'point' && (
+                        <circle cx={overlayGeometry.x} cy={overlayGeometry.y} r="0.02" fill={accentColor} stroke="#fff" strokeWidth="0.005" />
+                      )}
+                    </svg>
+                  )}
+                  <div className="ah-evidence-label" style={{ background: 'var(--admin-accent)', zIndex: 11 }}>LUỒNG CAMERA TRỰC TUYẾN</div>
+                </div>
+              ) : (
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', minHeight: 240, maxHeight: 320, aspectRatio: '16/9', background: '#111' }}>
+                  <div style={{ opacity: 0.2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                    <Camera size={32} />
+                    <span style={{ fontSize: '0.65rem', fontWeight: 900 }}>BẢN ĐỒ VÙNG CẢNH BÁO</span>
+                  </div>
+                  {/* OVERLAY LAYER */}
+                  {overlayGeometry && (
+                    <svg viewBox="0 0 1 1" preserveAspectRatio="none" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                      {overlayGeometry.type === 'polygon' && overlayGeometry.points && <polygon points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')} fill="rgba(239, 68, 68, 0.15)" stroke={accentColor} strokeWidth="0.01" vectorEffect="non-scaling-stroke" />}
+                      {overlayGeometry.type === 'rect' && <rect x={overlayGeometry.x1} y={overlayGeometry.y1} width={overlayGeometry.x2 - overlayGeometry.x1} height={overlayGeometry.y2 - overlayGeometry.y1} fill="rgba(239, 68, 68, 0.15)" stroke={accentColor} strokeWidth="0.01" />}
+                      {overlayGeometry.type === 'point' && <circle cx={overlayGeometry.x} cy={overlayGeometry.y} r="0.02" fill={accentColor} stroke="#fff" strokeWidth="0.005" />}
+                    </svg>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* VIDEO CLIP SECTION */}
-        {(data.videoUrl || data.source === 'ai_detection' || data.source === 'camera') && (
-          <div style={{ padding: 16, background: 'var(--admin-layer-3)', borderBottom: '1px solid var(--admin-border)' }}>
-            {data.videoUrl ? (
-              <div style={{ position: 'relative', background: '#000', border: '1px solid var(--admin-border)', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <video style={{ width: '100%', maxHeight: 240, objectFit: 'contain' }} controls autoPlay loop muted>
-                  <source src={data.videoUrl} type="video/mp4" />
-                </video>
-                <div style={{ position: 'absolute', top: 8, right: 8, background: 'var(--admin-accent)', padding: '2px 8px', fontSize: '.55rem', fontWeight: 800, color: '#fff' }}>VIDEO CLIP DIỄN BIẾN</div>
-              </div>
-            ) : (
-              <div style={{ padding: '20px', border: '1px dashed var(--admin-border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, opacity: 0.5 }}>
-                <Clock size={24} />
-                <div style={{ fontSize: '.7rem', fontWeight: 800, textAlign: 'center' }}>VIDEO CLIP ĐANG ĐƯỢC XỬ LÝ...<br/><small style={{ fontWeight: 400 }}>Thường mất từ 10-30 giây sau khi phát hiện</small></div>
-                <button className="btn-industrial" style={{ fontSize: '.6rem', height: 24, padding: '0 10px' }} onClick={onRefresh}>Kiểm tra lại</button>
+        <div className="ah-detail-section">
+          <div className="ah-section-title">Thông báo hệ thống</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 900, lineHeight: 1.4, color: 'var(--admin-text)', marginBottom: 12 }}>{data.message}</div>
+          <div className="ah-info-item highlight">
+            <span className="ah-info-key">Thời gian kích hoạt</span>
+            <span className="ah-info-val" style={{ fontFamily: 'var(--admin-font-mono)' }}>{fmtDateTime(data.triggeredAt)}</span>
+          </div>
+        </div>
+
+        <div className="ah-detail-section">
+          <div className="ah-section-title">Dữ liệu kỹ thuật</div>
+          <div className="ah-info-grid">
+            <div className="ah-info-item">
+              <span className="ah-info-key">Trạng thái hiện tại</span>
+              <span className="ah-info-val" style={{ color: accentColor }}>{statusLabel[data.status] || data.status}</span>
+            </div>
+            <div className="ah-info-item">
+              <span className="ah-info-key">Nguồn phát hiện</span>
+              <span className="ah-info-val">{sourceLabel[data.source] || data.source}</span>
+            </div>
+            {data.value != null && (
+              <div className="ah-info-item highlight" style={{ borderLeft: '4px solid var(--admin-accent)' }}>
+                <span className="ah-info-key" style={{ color: 'var(--admin-accent)' }}>Giá trị đo lường</span>
+                <span className="ah-info-val" style={{ fontSize: '1.2rem', color: accentColor }}>
+                  {data.value.toFixed(2)}
+                  <small style={{ fontSize: '0.7rem', marginLeft: 6, opacity: 0.5 }}>{unit}</small>
+                </span>
               </div>
             )}
           </div>
-        )}
-
-        <div className="ah-detail-section">
-          <div style={{ fontSize: '.95rem', fontWeight: 800, lineHeight: 1.4, color: 'var(--admin-text)' }}>{data.message}</div>
-          <div style={{ marginTop: 8, fontSize: '.68rem', color: 'var(--admin-text-muted)', fontFamily: 'monospace' }}>Kích hoạt: {fmtDateTime(data.triggeredAt)}</div>
         </div>
 
         <div className="ah-detail-section">
-          <div className="ah-section-label">Thông tin chi tiết</div>
-          <div className="ah-info-row"><span className="ah-info-key">Trạng thái</span><span className="ah-info-val" style={{ color }}>{statusLabel[data.status] || data.status}</span></div>
-          <div className="ah-info-row"><span className="ah-info-key">Nguồn phát hiện</span><span className="ah-info-val">{sourceLabel[data.source] || data.source}</span></div>
-          {data.value != null && (
-            <div className="ah-info-row" style={{ marginTop: 4, background: 'rgba(255,255,255,0.02)', padding: '8px 10px', border: '1px solid var(--admin-border-light)' }}>
-              <span className="ah-info-key" style={{ color: 'var(--admin-accent)' }}>Giá trị ghi nhận</span>
-              <span className="ah-info-val" style={{ fontSize: '1.1rem', color }}>{data.value.toFixed(2)}<small style={{ fontSize: '.6rem', marginLeft: 4, opacity: .6 }}>{unit}</small></span>
-            </div>
-          )}
-        </div>
-
-        <div className="ah-detail-section">
-          <div className="ah-section-label">Nhật ký xử lý</div>
+          <div className="ah-section-title">Nhật ký xử lý</div>
           <div className="ah-timeline">
             <div className="ah-tl-item">
               <div className="ah-tl-line"></div>
-              <div className="ah-tl-dot" style={{ borderColor: color }}></div>
+              <div className="ah-tl-dot" style={{ borderColor: accentColor }}></div>
               <div className="ah-tl-content">
                 <div className="ah-tl-header">
                   <span className="ah-tl-time">{fmtDateTime(data.triggeredAt)}</span>
                   <span className="ah-tl-actor">SYSTEM</span>
                 </div>
-                <div className="ah-tl-msg">Phát hiện cảnh báo {levelText.toLowerCase()}</div>
+                <div className="ah-tl-msg">Hệ thống phát sinh cảnh báo {levelText.toLowerCase()}</div>
               </div>
             </div>
             {data.history.map((h, i) => (
@@ -699,9 +884,9 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert, onRefresh }: { da
                 <div className="ah-tl-content">
                   <div className="ah-tl-header">
                     <span className="ah-tl-time">{fmtDateTime(h.changedAt)}</span>
-                    <span className="ah-tl-actor">{(h.changedBy || 'USER').toUpperCase()}</span>
+                    <span className="ah-tl-actor">{(h.changedBy || 'VẬN HÀNH').toUpperCase()}</span>
                   </div>
-                  <div className="ah-tl-msg">Trạng thái chuyển sang: <b>{statusLabel[h.status] || h.status}</b></div>
+                  <div className="ah-tl-msg">Chuyển trạng thái sang: <b>{statusLabel[h.status] || h.status}</b></div>
                   {h.note && <div className="ah-tl-note">{h.note}</div>}
                 </div>
               </div>
@@ -710,15 +895,15 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert, onRefresh }: { da
         </div>
       </div>
 
-      <div className="ah-actions-bar">
+      <div className="ah-actions-footer">
         {data.status !== 'closed' && (
-          <button className="btn-industrial btn-danger" style={{ flex: 1, height: 36, fontWeight: 800, fontSize: '.75rem' }} onClick={onCloseAlert}>ĐÓNG CẢNH BÁO</button>
+          <button className="ah-btn-footer ah-btn-footer-danger" onClick={onCloseAlert}>Đóng cảnh báo</button>
         )}
         {data.status === 'open' && (
-          <button className="btn-industrial btn-primary" style={{ flex: 1, height: 36, fontWeight: 800, fontSize: '.75rem' }} onClick={onAck}>TIẾP NHẬN XỬ LÝ</button>
+          <button className="ah-btn-footer ah-btn-footer-primary" onClick={onAck}>Tiếp nhận xử lý</button>
         )}
       </div>
-    </>
+    </div>
   );
 }
 

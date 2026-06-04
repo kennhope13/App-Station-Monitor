@@ -22,7 +22,7 @@ for _d in (DATA_DIR, RECEIVED_DIR): _d.mkdir(parents=True, exist_ok=True)
 def _load_config() -> dict:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f: return json.load(f)
-    except Exception: return {"targets": ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"], "window_size": 6, "horizon": 1}
+    except Exception: return {"targets": ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"], "window_size": 30, "horizon": 5}
 
 def save_raw_payload(payload: dict) -> Path:
     ts_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
@@ -42,23 +42,40 @@ def thermal_json_to_row(payload: dict, targets: list[str]) -> dict:
     return row
 
 def check_and_rotate_csv(file_path: Path, expected_fields: list[str]) -> None:
+    """Cập nhật header nếu có thêm điểm đo mới mà không làm mất dữ liệu cũ."""
     if not file_path.exists(): return
     try:
-        with open(file_path, "r", encoding="utf-8") as f: header = f.readline().strip().split(",")
-        if len(header) != len(expected_fields):
-            bak = file_path.with_name(f"{file_path.name}.bak")
-            if bak.exists(): bak.unlink()
-            file_path.rename(bak)
-    except Exception: pass
+        with open(file_path, "r", encoding="utf-8") as f: 
+            reader = csv.reader(f)
+            header = next(reader)
+        
+        # Nếu có trường mới, chúng ta sẽ viết lại file với header mới
+        new_fields = [f for f in expected_fields if f not in header]
+        if new_fields:
+            logger.info("[Forecaster] Adding new fields to history CSV: %s", new_fields)
+            with open(file_path, "r", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=expected_fields)
+                writer.writeheader()
+                for r in rows:
+                    writer.writerow(r)
+    except Exception as e:
+        logger.error("[Forecaster] Header update failed: %s", e)
 
 def append_history_row(row: dict, targets: list[str]) -> None:
     fields = ["timestamp"] + targets
     check_and_rotate_csv(HISTORY_CSV, fields)
+    
+    # Đọc lại header thực tế sau khi update
+    with open(HISTORY_CSV, "r", encoding="utf-8") as f:
+        actual_fields = f.readline().strip().split(",")
+    
     exists = HISTORY_CSV.exists()
     try:
         with open(HISTORY_CSV, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
-            if not exists: writer.writeheader()
+            writer = csv.DictWriter(f, fieldnames=actual_fields, extrasaction="ignore")
             writer.writerow(row)
     except Exception: pass
 
@@ -102,36 +119,14 @@ def save_prediction(prediction: dict, targets: list[str]) -> dict:
                         existing = rows[-1]
             except Exception: pass
             
-        # 2. Hợp nhất (Merge): Giữ lại các dự đoán cũ chưa hết hạn nếu dự đoán mới bị trống (null)
-        merged = prediction.copy()
-        
-        from datetime import datetime, timedelta
-        old_valid = False
-        if existing and prediction.get("issued_at"):
-            try:
-                issued_str = existing.get("issued_at")
-                if issued_str:
-                    new_ts = datetime.strptime(prediction["issued_at"], "%Y-%m-%d %H:%M:%S")
-                    old_ts = datetime.strptime(issued_str, "%Y-%m-%d %H:%M:%S")
-                    if abs(new_ts - old_ts) <= timedelta(minutes=5, seconds=30):
-                        old_valid = True
-            except Exception: pass
-            
-        if old_valid:
-            for t in targets:
-                key = f"{t}_pred"
-                if merged.get(key) is None or merged.get(key) == "":
-                    if existing.get(key) is not None and existing.get(key) != "":
-                        merged[key] = existing[key]
-                        
-        # 3. Ghi đè tệp tin với bộ dữ liệu đã được merge đầy đủ
+        # 2. Ghi đè tệp tin với bộ dữ liệu dự đoán mới nhận
         try:
             with open(PREDICTIONS_CSV, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
                 writer.writeheader()
-                writer.writerow(merged)
+                writer.writerow(prediction)
         except Exception: pass
-    return merged
+    return prediction
 
 def append_prediction_history(prediction: dict, targets: list[str]) -> None:
     fields = ["issued_at", "input_timestamp", "forecast_timestamp"] + [f"{t}_pred" for t in targets]
@@ -152,9 +147,11 @@ def process_thermal_payload(payload: dict) -> dict:
     try: row = thermal_json_to_row(payload, targets)
     except Exception: return {"success": False}
     append_history_row(row, targets)
-    # Commented out local fallback to ensure predictions only come from Jetson Edge
+    
+    # Re-enable local AI prediction (linear regression) as a backup
     # prediction = compute_prediction(targets, w_size, hor)
     # if prediction: save_prediction(prediction, targets)
+    
     return {"success": True, "timestamp": row["timestamp"]}
 
 def load_latest_prediction(targets: list[str]) -> Optional[dict]:
@@ -165,12 +162,14 @@ def load_latest_prediction(targets: list[str]) -> Optional[dict]:
             if not rows: return None
             last = rows[-1]
             res = {"issued_at": last.get("issued_at"), "input_timestamp": last.get("input_timestamp"), "forecast_timestamp": last.get("forecast_timestamp")}
-            for t in targets: res[f"{t}_pred"] = float(last[f"{t}_pred"]) if last.get(f"{t}_pred") is not None and last.get(f"{t}_pred") != "" else None
+            for t in targets: 
+                v = last.get(f"{t}_pred")
+                res[f"{t}_pred"] = float(v) if v is not None and v != "" else None
             return res
         except Exception: return None
 
-def find_matched_prediction(dt: datetime, pred_list: list[dict], max_delta_s: int = 150) -> Optional[dict]:
-    """Tăng max_delta lên 150s (2.5 phút) cho chu kỳ 5 phút."""
+def find_matched_prediction(dt: datetime, pred_list: list[dict], max_delta_s: int = 60) -> Optional[dict]:
+    """Max delta 60s for 1-minute cycle."""
     best, min_d = None, timedelta(seconds=max_delta_s)
     for p in pred_list:
         try: fts = datetime.strptime(p["forecast_timestamp"], "%Y-%m-%d %H:%M:%S")
@@ -179,106 +178,104 @@ def find_matched_prediction(dt: datetime, pred_list: list[dict], max_delta_s: in
         if d < min_d: min_d, best = d, p
     return best
 
-def load_history_for_chart(targets: list[str], window_points: int = 12, horizon: int = 5) -> list[dict]:
-    """12 điểm = 60 phút lịch sử ở chu kỳ 5 phút."""
-    if not HISTORY_CSV.exists(): return []
+def load_history_for_chart(targets: list[str], window_points: int = 60, horizon: int = 5, date_str: Optional[str] = None) -> list[dict]:
+    """Trả về dữ liệu từ mốc thời gian sớm nhất có dữ liệu (tối đa 24h) của ngày được chọn."""
+    now_dt = datetime.now()
     
-    with _csv_lock:
+    # 1. Xác định ngày mục tiêu
+    if date_str:
         try:
-            with open(HISTORY_CSV, "r", encoding="utf-8") as f: all_rows = list(csv.DictReader(f))
-        except Exception: return []
+            target_date = datetime.strptime(date_str.strip(), "%Y-%m-%d")
+        except Exception:
+            target_date = now_dt
+    else:
+        target_date = now_dt
         
-        raw_preds = []
-        if PREDICTIONS_HISTORY_CSV.exists():
+    is_today = (target_date.date() == now_dt.date())
+    
+    start_dt = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    if is_today:
+        base_dt = now_dt.replace(second=0, microsecond=0)
+        # Giới hạn mốc bắt đầu không quá window_points phút trước (mặc định 60, nhưng frontend đang gọi 1440)
+        # Để đảm bảo chỉ hiển thị trong ngày hôm nay, ta lấy max của đầu ngày hôm nay và mốc lùi window_points
+        start_dt = max(start_dt, base_dt - timedelta(minutes=window_points))
+    else:
+        base_dt = target_date.replace(hour=23, minute=59, second=0, microsecond=0)
+    
+    all_rows = []
+    if HISTORY_CSV.exists():
+        with _csv_lock:
             try:
-                with open(PREDICTIONS_HISTORY_CSV, "r", encoding="utf-8") as f: 
-                    raw_preds = list(csv.DictReader(f))
+                with open(HISTORY_CSV, "r", encoding="utf-8") as f: all_rows = list(csv.DictReader(f))
             except Exception: pass
             
-    # BUCKETING LOGIC: Gom nhóm dữ liệu theo từng 5 phút để biểu đồ cực kỳ sạch
-    bucketed_history: dict[str, dict] = {}
+    # 2. Bucketing dữ liệu (dùng Full Key)
+    history_map: dict[str, dict] = {}
     for r in all_rows:
         try:
-            dt = datetime.strptime(r["timestamp"], "%Y-%m-%d %H:%M:%S")
-            # Làm tròn xuống mốc 5 phút (ví dụ 09:34:22 -> 09:30:00)
-            bucket_dt = dt.replace(minute=(dt.minute // 5) * 5, second=0, microsecond=0)
-            bucket_key = bucket_dt.strftime("%Y-%m-%d %H:%M")
-            
-            # Trộn các giá trị không rỗng từ các camera/mốc ghi khác nhau vào cùng một bucket 5 phút
-            if bucket_key not in bucketed_history:
-                bucketed_history[bucket_key] = r.copy()
+            ts = r.get("timestamp", "")
+            dt = datetime.strptime(ts[:19], "%Y-%m-%d %H:%M:%S") if len(ts) > 16 else datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+            key = dt.strftime("%Y-%m-%d %H:%M")
+            if key not in history_map: history_map[key] = r.copy()
             else:
-                for k, v in r.items():
-                    if v is not None and v != "":
-                        bucketed_history[bucket_key][k] = v
+                for t in targets:
+                    v = r.get(t)
+                    if v and v.strip(): history_map[key][t] = v
         except Exception: continue
 
-    # Lấy 12 bucket gần nhất
-    sorted_keys = sorted(bucketed_history.keys())
-    recent_keys = sorted_keys[-window_points:]
-    
-    pred_list = []
-    # Hợp nhất dự đoán theo forecast_timestamp làm tròn 5 phút để tránh ghi đè chéo
-    bucketed_preds: dict[str, dict] = {}
+    raw_preds = []
+    if PREDICTIONS_HISTORY_CSV.exists():
+        with _csv_lock:
+            try:
+                with open(PREDICTIONS_HISTORY_CSV, "r", encoding="utf-8") as f: raw_preds = list(csv.DictReader(f))
+            except Exception: pass
+
+    pred_map: dict[str, dict] = {}
     for p in raw_preds:
         try:
-            fts_str = p.get("forecast_timestamp")
+            fts_str = p.get("forecast_timestamp", "")
             if not fts_str: continue
-            fts_dt = datetime.strptime(fts_str, "%Y-%m-%d %H:%M:%S")
-            # Làm tròn xuống 5 phút
-            b_dt = fts_dt.replace(minute=(fts_dt.minute // 5) * 5, second=0, microsecond=0)
-            b_key = b_dt.strftime("%Y-%m-%d %H:%M:00")
-            
-            if b_key not in bucketed_preds:
-                bucketed_preds[b_key] = p.copy()
+            fts_dt = datetime.strptime(fts_str[:19], "%Y-%m-%d %H:%M:%S")
+            key = fts_dt.strftime("%Y-%m-%d %H:%M")
+            if key not in pred_map: pred_map[key] = p.copy()
             else:
-                for k, v in p.items():
-                    if v is not None and v != "":
-                        bucketed_preds[b_key][k] = v
+                for t in targets:
+                    v = p.get(f"{t}_pred")
+                    if v and v.strip(): pred_map[key][f"{t}_pred"] = v
         except Exception: continue
-    pred_list = list(bucketed_preds.values())
 
+    # 3. Tạo dải thời gian liên tục từ start_dt đến base_dt
     res = []
-    series_map: dict[str, list[float]] = {t: [] for t in targets}
-
-    for lbl in recent_keys:
-        r = bucketed_history[lbl]
-        display_ts = lbl.split(" ")[1] if " " in lbl else lbl
-        p = {"timestamp": display_ts}
-        # Thử tìm matched pred cho mốc bucket này
-        try: dt = datetime.strptime(r["timestamp"], "%Y-%m-%d %H:%M:%S")
-        except: dt = None
-        m_p = find_matched_prediction(dt, pred_list) if dt else None
-
-        for t in targets:
-            val = r.get(t)
-            actual = float(val) if (val is not None and val != "") else None
-            p[f"{t}_actual"] = actual
-            if actual is not None: series_map[t].append(actual)
-            
-            p_val = m_p.get(f"{t}_pred") if m_p else None
-            p[f"{t}_pred"] = float(p_val) if (p_val is not None and p_val != "") else None
-        res.append(p)
-
-    if res:
-        last_lbl = res[-1]["timestamp"]
-        try: l_dt = datetime.strptime(last_lbl, "%H:%M")
-        except: l_dt = datetime.now()
+    curr = start_dt
+    while curr <= base_dt:
+        full_key = curr.strftime("%Y-%m-%d %H:%M")
+        display_key = curr.strftime("%H:%M")
         
-        for h in range(1, horizon + 1):
-            f_dt = l_dt + timedelta(minutes=h*5)
-            lbl = f_dt.strftime("%H:%M")
-            p = {"timestamp": lbl}
-            # Tìm dự báo tương lai
-            # Note: find_matched_prediction dùng full timestamp, ở đây chỉ có HH:MM
-            # Chúng ta sẽ giả định date là today.
-            full_f_dt = datetime.now().replace(hour=f_dt.hour, minute=f_dt.minute, second=0, microsecond=0)
-            m_p = find_matched_prediction(full_f_dt, pred_list)
+        r = history_map.get(full_key, {})
+        p_data = pred_map.get(full_key, {})
+        
+        item = {"timestamp": display_key, "full_ts": full_key}
+        for t in targets:
+            v = r.get(t)
+            item[f"{t}_actual"] = float(v) if (v and v.strip()) else None
+            pv = p_data.get(f"{t}_pred")
+            item[f"{t}_pred"] = float(pv) if (pv and pv.strip()) else None
+        res.append(item)
+        curr += timedelta(minutes=1)
+
+    # 4. Thêm mốc dự báo tương lai (chỉ thêm nếu là hôm nay)
+    if is_today:
+        for i in range(1, horizon + 1):
+            target_dt = base_dt + timedelta(minutes=i)
+            full_key = target_dt.strftime("%Y-%m-%d %H:%M")
+            display_key = target_dt.strftime("%H:%M")
+            p_data = pred_map.get(full_key, {})
             
+            item = {"timestamp": display_key, "full_ts": full_key, "is_future": True}
             for t in targets:
-                p[f"{t}_actual"] = None
-                p_val = m_p.get(f"{t}_pred") if m_p else None
-                if p_val is not None and p_val != "": p[f"{t}_pred"] = float(p_val)
-                else: p[f"{t}_pred"] = None
-            res.append(p)
+                item[f"{t}_actual"] = None
+                pv = p_data.get(f"{t}_pred")
+                item[f"{t}_pred"] = float(pv) if (pv and pv.strip()) else None
+            res.append(item)
+
     return res

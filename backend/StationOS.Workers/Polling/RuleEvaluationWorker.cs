@@ -88,7 +88,13 @@ public class RuleEvaluationWorker : BackgroundService
             _globalConfirmReadings = Math.Max(1, (int)Math.Round(secs / (CheckIntervalMs / 1000.0)));
 
         var rules = await db.Rules.Where(r => r.Enabled).ToListAsync(ct);
-        if (rules.Count == 0) return;
+        
+        // ── BỔ SUNG: Đọc cả các Vùng PD (Boundaries) để đánh giá như Rules ──
+        var pdBoundaries = await db.Boundaries
+            .Where(b => b.Type == "pd" && b.Enabled)
+            .ToListAsync(ct);
+
+        if (rules.Count == 0 && pdBoundaries.Count == 0) return;
 
         var cache = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
         Dictionary<string, SensorReading>? latestReadings;
@@ -98,9 +104,76 @@ public class RuleEvaluationWorker : BackgroundService
             latestReadings = new Dictionary<string, SensorReading>();
         }
 
+        // 1. Đánh giá Rules chuẩn
         foreach (var rule in rules)
         {
             await EvaluateRuleAsync(scope.ServiceProvider, db, rule, latestReadings, ct);
+        }
+
+        // 2. Đánh giá các Vùng PD
+        foreach (var b in pdBoundaries)
+        {
+            await EvaluatePdBoundaryAsync(scope.ServiceProvider, db, b, latestReadings, ct);
+        }
+    }
+
+    private async Task EvaluatePdBoundaryAsync(
+        IServiceProvider services,
+        AppDbContext db,
+        Boundary b,
+        Dictionary<string, SensorReading> latestReadings,
+        CancellationToken ct)
+    {
+        try 
+        {
+            // 1. Kiểm tra Hotspot AI trong cache (điều kiện VÀ)
+            var cache = services.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            bool hasHotspot = cache.TryGetValue($"hotspot_{b.DeviceId}_{b.Name}", out _) || 
+                              cache.TryGetValue($"hotspot_{b.DeviceId}_pd", out _);
+            
+            if (!hasHotspot) return;
+
+            // 2. Kiểm tra chỉ số dB
+            if (!latestReadings.TryGetValue(b.Name, out var reading) && 
+                !latestReadings.TryGetValue(b.Id.ToString(), out reading) &&
+                !latestReadings.TryGetValue("pd", out reading)) return;
+            
+            if (reading.Value == null) return;
+            var currentValue = reading.Value.Value;
+
+            // 3. Parse ngưỡng
+            var t = JsonSerializer.Deserialize<JsonElement>(b.Thresholds ?? "{}");
+            double warnLimit = t.TryGetProperty("warn", out var w) ? w.GetDouble() : 20;
+            double alarmLimit = t.TryGetProperty("alarm", out var al) ? al.GetDouble() : 35;
+            string fullName = t.TryGetProperty("fullName", out var fn) ? fn.GetString() ?? b.Name : b.Name;
+
+            bool alarmTriggered = currentValue >= alarmLimit;
+            bool warningTriggered = currentValue >= warnLimit && !alarmTriggered;
+            bool triggered = alarmTriggered || warningTriggered;
+            
+            if (!triggered) return; // Nếu âm thanh chưa vượt ngưỡng thì cũng chưa báo
+
+            string level = alarmTriggered ? "alarm" : "warning";
+            
+            // Giả lập Rule object
+            var virtualRule = new Rule
+            {
+                Id = b.Id,
+                Name = $"PD: {fullName}",
+                StationId = b.StationId,
+                DeviceId = b.DeviceId,
+                Actions = $"[{{\"type\":\"alert\",\"level\":\"{level}\"}}]"
+            };
+
+            await HandleAlertActionAsync(services, db, virtualRule, b.Name, ">=", 
+                                         alarmTriggered ? alarmLimit : warnLimit, 
+                                         (alarmTriggered ? alarmLimit : warnLimit) - 2, 
+                                         5, 1, currentValue, 
+                                         true, level, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PD Rules] Lỗi đánh giá vùng {name}", b.Name);
         }
     }
 

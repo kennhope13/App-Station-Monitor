@@ -50,20 +50,30 @@ public class ReportGeneratorService
             .Take(100)
             .ToListAsync();
 
-        // Sensor readings — lấy avg theo ngày
-        var readingStats = await db.SensorReadings
+        // Sensor readings — lấy thống kê theo thiết bị và điểm đo
+        var readings = await db.SensorReadings
             .Where(r => r.StationId == opts.StationId
                      && r.Time >= opts.PeriodFrom
                      && r.Time <= opts.PeriodTo)
-            .GroupBy(r => r.PointId)
+            .ToListAsync();
+
+        var readingStats = readings
+            .GroupBy(r => new { r.DeviceId, r.PointId })
             .Select(g => new {
-                PointId = g.Key,
-                Min     = g.Min(r => r.Value),
-                Max     = g.Max(r => r.Value),
-                Avg     = g.Average(r => r.Value),
+                g.Key.DeviceId,
+                g.Key.PointId,
+                Min     = g.Min(r => r.Value) ?? 0,
+                Max     = g.Max(r => r.Value) ?? 0,
+                Avg     = g.Average(r => r.Value) ?? 0,
                 Count   = g.Count()
             })
-            .ToListAsync();
+            .OrderBy(s => s.DeviceId).ThenBy(s => s.PointId)
+            .ToList();
+
+        // Metadata để resolve tên thân thiện
+        var devices = await db.Devices.Where(d => d.StationId == opts.StationId).ToDictionaryAsync(d => d.Id);
+        var roiPoints = await db.RoiPoints.Where(r => devices.Keys.Contains(r.DeviceId)).ToListAsync();
+        var boundaries = await db.Boundaries.Where(b => devices.Keys.Contains(b.DeviceId)).ToListAsync();
 
         // ── Tạo PDF ──────────────────────────────────────────
         var titleMap = new Dictionary<string, string>
@@ -152,22 +162,52 @@ public class ReportGeneratorService
 
                             var pointLabels = new Dictionary<string, string>
                             {
-                                ["nhiet_do_pha_1"] = "Nhiệt độ Pha 1 (°C)",
-                                ["nhiet_do_pha_2"] = "Nhiệt độ Pha 2 (°C)",
-                                ["nhiet_do_pha_3"] = "Nhiệt độ Pha 3 (°C)",
-                                ["phong_dien"]     = "Phóng điện PD (dB)",
+                                ["nhiet_do_pha_1"] = "Nhiệt độ Pha 1",
+                                ["temp_1"]         = "Nhiệt độ Pha 1",
+                                ["nhiet_do_pha_2"] = "Nhiệt độ Pha 2",
+                                ["temp_2"]         = "Nhiệt độ Pha 2",
+                                ["nhiet_do_pha_3"] = "Nhiệt độ Pha 3",
+                                ["temp_3"]         = "Nhiệt độ Pha 3",
+                                ["phong_dien"]     = "Phóng điện PD",
+                                ["pd"]             = "Phóng điện PD",
                             };
 
                             bool alt = false;
                             foreach (var s in readingStats)
                             {
                                 var bg = alt ? "#f9fafb" : "#ffffff";
-                                var label = pointLabels.GetValueOrDefault(s.PointId, s.PointId);
-                                table.Cell().Background(bg).Padding(4).Text(label).FontSize(8);
-                                table.Cell().Background(bg).Padding(4).AlignCenter().Text($"{s.Min:F1}").FontSize(8);
-                                table.Cell().Background(bg).Padding(4).AlignCenter().Text($"{s.Max:F1}").FontSize(8);
-                                table.Cell().Background(bg).Padding(4).AlignCenter().Text($"{s.Avg:F1}").FontSize(8);
-                                table.Cell().Background(bg).Padding(4).AlignCenter().Text(s.Count.ToString()).FontSize(8);
+                                
+                                // Tìm tên thiết bị
+                                devices.TryGetValue(s.DeviceId, out var dev);
+                                var devName = dev?.Name ?? "Thiết bị lạ";
+
+                                // Tìm tên điểm đo (ROI / Boundary / Static)
+                                var pIdLower = s.PointId.ToLower();
+                                var friendlyPointName = pointLabels.GetValueOrDefault(pIdLower, s.PointId);
+                                
+                                if (friendlyPointName == s.PointId)
+                                {
+                                    // Thử tìm trong ROI
+                                    var roi = roiPoints.FirstOrDefault(r => r.DeviceId == s.DeviceId && 
+                                        (r.PointId?.ToLower() == pIdLower || r.Id.ToString().ToLower() == pIdLower));
+                                    if (roi != null) friendlyPointName = roi.Name;
+                                    else
+                                    {
+                                        // Thử tìm trong Boundaries
+                                        var bnd = boundaries.FirstOrDefault(b => b.DeviceId == s.DeviceId && 
+                                            (b.Name.ToLower() == pIdLower || b.Id.ToString().ToLower() == pIdLower));
+                                        if (bnd != null) friendlyPointName = bnd.Name;
+                                    }
+                                }
+
+                                var fullLabel = $"{devName} - {friendlyPointName}";
+                                if (fullLabel.Length > 40) fullLabel = fullLabel.Substring(0, 37) + "...";
+
+                                table.Cell().Background(bg).Padding(4).Text(fullLabel).FontSize(7.5f);
+                                table.Cell().Background(bg).Padding(4).AlignCenter().Text($"{FormatNum(s.Min)}").FontSize(7.5f);
+                                table.Cell().Background(bg).Padding(4).AlignCenter().Text($"{FormatNum(s.Max)}").FontSize(7.5f);
+                                table.Cell().Background(bg).Padding(4).AlignCenter().Text($"{FormatNum(s.Avg)}").FontSize(7.5f);
+                                table.Cell().Background(bg).Padding(4).AlignCenter().Text(s.Count.ToString()).FontSize(7.5f);
                                 alt = !alt;
                             }
                         });
@@ -270,7 +310,15 @@ public class ReportGeneratorService
         return report;
     }
 
-    // ── Helper: KPI card ─────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────
+    private static string FormatNum(double val)
+    {
+        if (double.IsNaN(val) || double.IsInfinity(val)) return "0.0";
+        // Nếu số quá lớn (rác), giới hạn hiển thị để tránh vỡ layout
+        if (Math.Abs(val) > 1000000) return val.ToString("E1"); 
+        return val.ToString("F1");
+    }
+
     private static void KpiBox(IContainer container, string label, string value, string hexColor)
     {
         container

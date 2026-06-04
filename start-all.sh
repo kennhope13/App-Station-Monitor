@@ -71,14 +71,13 @@ nohup dotnet run --project backend/StationOS.Api > backend.log 2>&1 &
 BACKEND_PID=$!
 echo "✅ Backend đang khởi chạy ngầm (PID: $BACKEND_PID, Port: 5000)"
 
-# Đợi backend khởi chạy xong
-echo "Đang đợi Backend sẵn sàng (30 giây)..."
-for i in {1..15}; do
+# Đợi backend sẵn sàng (tối đa 15 giây, dừng ngay khi OK)
+for i in {1..5}; do
+    sleep 3
     if curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/v1/stations 2>/dev/null | grep -q "200"; then
         echo "✅ Backend đã SẴN SÀNG!"
         break
     fi
-    sleep 2
 done
 
 echo ""

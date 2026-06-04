@@ -21,10 +21,14 @@ export default function LoginPage() {
 
   const usernameRef = useRef<HTMLInputElement>(null);
 
-  // Focus vào ô tên đăng nhập ngay khi trang tải
+  // Nếu đã đăng nhập rồi thì không cho vào trang login nữa, đá về dashboard
   useEffect(() => {
-    usernameRef.current?.focus();
-  }, []);
+    if (authService.isAuthenticated()) {
+      navigate('/dashboard', { replace: true });
+    } else {
+      usernameRef.current?.focus();
+    }
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

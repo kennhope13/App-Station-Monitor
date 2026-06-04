@@ -129,6 +129,9 @@ export default function AlertDetailPage() {
   // Hàm trợ giúp: định dạng timestamp hoặc trả về '—' nếu không có giá trị
   const fmt = (ts?: string) => (ts ? fmtDateTime(ts) : '—');
 
+  // Parse metadata để lấy thêm thông tin (ví dụ link ảnh quang học/nhiệt song song)
+  const metadata = typeof alert.metadata === 'string' ? (() => { try { return JSON.parse(alert.metadata); } catch { return {}; } })() : (alert.metadata || {});
+
   /**
    * Render một dòng thông tin dạng label — value theo chiều ngang.
    * Dùng để hiển thị các trường như trạng thái, nguồn, giá trị...
@@ -273,14 +276,39 @@ export default function AlertDetailPage() {
 
       {/* Evidence Section (Image/Video) */}
       <div style={{ display: 'grid', gridTemplateColumns: alert.videoUrl ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 20 }}>
-        {alert.imageUrl && (
+        {(alert.imageUrl || metadata?.snapshotUrl) && (
           <div className="admin-card" style={{ padding: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>ẢNH CHỤP BẰNG CHỨNG</div>
-            <img 
-              src={alert.imageUrl.startsWith('http') ? alert.imageUrl : `${API_BASE_URL}${alert.imageUrl}`} 
-              alt="Evidence" 
-              style={{ width: '100%', height: 'auto', border: '1px solid var(--admin-border)' }}
-            />
+            
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {/* Ảnh Chính (Nếu có opticalSnapshotUrl thì ImageUrl là ảnh quang học) */}
+              <div style={{ flex: 1, minWidth: 280 }}>
+                {metadata?.opticalSnapshotUrl && (
+                  <div style={{ fontSize: '.7rem', color: 'var(--admin-accent)', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase' }}>
+                    📷 Ảnh Quang học (Chụp khẩn cấp)
+                  </div>
+                )}
+                <img 
+                  src={alert.imageUrl?.startsWith('http') ? alert.imageUrl : `${API_BASE_URL}${alert.imageUrl}`} 
+                  alt="Evidence" 
+                  style={{ width: '100%', height: 'auto', border: '1px solid var(--admin-border)', borderRadius: 4 }}
+                />
+              </div>
+
+              {/* Ảnh Nhiệt (Nếu có ảnh quang học riêng thì hiển thị ảnh nhiệt song song) */}
+              {metadata?.opticalSnapshotUrl && metadata?.snapshotUrl && (
+                <div style={{ flex: 1, minWidth: 280 }}>
+                  <div style={{ fontSize: '.7rem', color: 'var(--admin-danger)', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase' }}>
+                    🌡️ Ảnh Nhiệt (Gốc)
+                  </div>
+                  <img 
+                    src={metadata.snapshotUrl.startsWith('http') ? metadata.snapshotUrl : `${API_BASE_URL}${metadata.snapshotUrl}`} 
+                    alt="Thermal Evidence" 
+                    style={{ width: '100%', height: 'auto', border: '1px solid var(--admin-border)', borderRadius: 4 }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
         {alert.videoUrl && (
@@ -289,7 +317,7 @@ export default function AlertDetailPage() {
             <video 
               src={alert.videoUrl.startsWith('http') ? alert.videoUrl : `${API_BASE_URL}/api/v1/events/${(alert as any).detectionId || alert.id}/video`} 
               controls 
-              style={{ width: '100%', height: 'auto', background: '#000' }}
+              style={{ width: '100%', height: 'auto', background: '#000', borderRadius: 4 }}
             />
             <div style={{ marginTop: 10, textAlign: 'right' }}>
               <a 

@@ -5,14 +5,15 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
-import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff, ShieldAlert } from 'lucide-react';
+import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff, ShieldAlert, Flame } from 'lucide-react';
 import { stationApi, Device, CameraDevice, Rule } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
 import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS, CAM_POINT_LABELS } from '@/constants/points';
 import ThermalConfigTab from './components/ThermalConfigTab';
 import PdRegionTab from './components/PdRegionTab';
-import SldConfigTab from './components/SldConfigTab';
+import FireAlarmConfigTab from './components/FireAlarmConfigTab';
+
 import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
 
@@ -31,10 +32,7 @@ const TYPE_LABELS = DEVICE_TYPE_LABELS;
  * Trang quản lý thiết bị — hỗ trợ thêm/sửa/xóa thiết bị,
  * kiểm tra kết nối, quét LAN/ONVIF và cấu hình nhiệt/PD/vùng giám sát.
  */
-import { useSearchParams } from 'react-router-dom';
-
 export default function DeviceManagementPage() {
-  const [searchParams] = useSearchParams();
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,9 +61,10 @@ export default function DeviceManagementPage() {
   });
 
 
-  const [roiTab, setRoiTab] = useState(0); // page tabs: 0=all, 1=camera, 2=roi (thermal config)
+  const [roiTab, setRoiTab] = useState(0); // page tabs: 0=all, 2=pd region, 3=thermal, 4=fire config
   const [selectedRoiDevice, setSelectedRoiDevice] = useState<CameraDevice | null>(null);
   const [selectedPdDevice, setSelectedPdDevice] = useState<CameraDevice | null>(null);
+  const [selectedFireDevice, setSelectedFireDevice] = useState<CameraDevice | null>(null);
 
   // PD Refactor hook
 
@@ -502,6 +501,20 @@ export default function DeviceManagementPage() {
             </h2>
           </div>
         </div>
+      ) : roiTab === 4 ? (
+        <div className="page-toolbar-row">
+          <div className="page-title-cell">
+            <button
+              className="btn-industrial btn-sm"
+              onClick={() => { setRoiTab(0); setSelectedFireDevice(null); }}
+            >
+              ← QUAY LẠI
+            </button>
+            <h2 style={{ fontSize: '1rem', marginLeft: 15 }}>
+              CẤU HÌNH CẢNH BÁO CHÁY: {selectedFireDevice?.name || '---'}
+            </h2>
+          </div>
+        </div>
       ) : roiTab === 2 ? (
         <div className="page-toolbar-row">
           <div className="page-title-cell">
@@ -557,7 +570,7 @@ export default function DeviceManagementPage() {
                 <th>IP / Địa chỉ</th>
                 <th>Trạng thái</th>
                 <th>Ngày thêm</th>
-                <th>Hành động</th>
+                <th style={{ width: 80 }}>Hành động</th>
               </tr>
             </thead>
             <tbody>
@@ -590,6 +603,9 @@ export default function DeviceManagementPage() {
                         <ActionDropdownItem icon={<ShieldAlert size={14} />} label="Quy tắc giám sát" onClick={() => handleOpenRulesModal(d)} />
                         {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
                           <ActionDropdownItem icon={<Thermometer size={14} />} label="Cấu hình nhiệt" onClick={() => { setSelectedRoiDevice(d as CameraDevice); setRoiTab(3); }} />
+                        )}
+                        {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
+                          <ActionDropdownItem icon={<Flame size={14} />} label="Cấu hình cảnh báo cháy" onClick={() => { setSelectedFireDevice(d as CameraDevice); setRoiTab(4); }} />
                         )}
                         {d.type === 'camera_pd' && (
                           <ActionDropdownItem icon={<Zap size={14} />} label="Vẽ vùng PD" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(2); }} />
@@ -632,6 +648,16 @@ export default function DeviceManagementPage() {
           <ThermalConfigTab
             device={selectedRoiDevice}
             onBack={() => { setRoiTab(0); setSelectedRoiDevice(null); }}
+          />
+        </div>
+      )}
+
+      {/* ═══ TAB 4: CẤU HÌNH CẢNH BÁO CHÁY ═══ */}
+      {roiTab === 4 && selectedFireDevice && (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          <FireAlarmConfigTab
+            device={selectedFireDevice}
+            onBack={() => { setRoiTab(0); setSelectedFireDevice(null); }}
           />
         </div>
       )}

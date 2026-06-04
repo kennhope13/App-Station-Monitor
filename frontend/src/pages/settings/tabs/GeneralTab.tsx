@@ -213,48 +213,45 @@ export default function GeneralTab() {
       {/* Tiêu đề & Trạng thái tải */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-text)' }}>THÔNG SỐ VẬN HÀNH HỆ THỐNG</h2>
-          <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginTop: 2 }}>Điều khiển chu kỳ quét cảm biến Modbus PLC, tối ưu hóa ghi đĩa cứng, và cấu hình email khẩn cấp</div>
+          <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--admin-text)' }}>CẤU HÌNH VẬN HÀNH</h2>
+          <div style={{ fontSize: '0.75rem', color: 'var(--admin-text-muted)', marginTop: 2 }}>Điều chỉnh tốc độ cập nhật dữ liệu và thiết lập thông báo cho trạm</div>
         </div>
-        {loading && <span style={{ fontSize: '0.75rem', color: 'var(--admin-accent)' }}>Đang tải dữ liệu...</span>}
+        {loading && <span style={{ fontSize: '0.7rem', color: 'var(--admin-accent)', fontWeight: 700 }}>ĐANG TẢI...</span>}
       </div>
 
-      {/* ── BỘ CHẾ ĐỘ VẬN HÀNH CÀI ĐẶT SẴN (INDUSTRIAL PRESETS) ── */}
-      <div className="setting-section">
-        <div className="section-header">Chọn nhanh chế độ vận hành định sẵn</div>
+      {/* ── CHỌN NHANH CHẾ ĐỘ ── */}
+      <div className="setting-section" style={{ borderRadius: 0 }}>
+        <div className="section-header">CHẾ ĐỘ VẬN HÀNH NHANH</div>
         <div style={{ display: 'flex', gap: 12 }}>
           
-          <div className="preset-card" onClick={() => applyPreset('standard')}>
-            <div style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--admin-text)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Chế độ Tiêu Chuẩn (Khuyên Dùng)</span>
-              <span style={{ fontSize: '0.65rem', background: 'rgba(14,165,233,0.15)', color: 'var(--admin-accent)', padding: '1px 5px', borderRadius: 3 }}>Mặc Định</span>
+          <div className="preset-card" style={{ borderRadius: 0 }} onClick={() => applyPreset('standard')}>
+            <div style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--admin-text)', display: 'flex', justifyContent: 'space-between', textTransform: 'uppercase' }}>
+              <span>Tiêu Chuẩn</span>
+              <span style={{ fontSize: '0.6rem', border: '1px solid var(--admin-accent)', color: 'var(--admin-accent)', padding: '0 4px', borderRadius: 0 }}>KHUYÊN DÙNG</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 6, lineHeight: 1.3 }}>
-              PLC: <b>5 giây</b> · Lưu DB: <b>60 giây</b> · Video: <b>15 giây</b> · Ping: <b>30 giây</b>
+            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 8 }}>
+              Cân bằng giữa độ chính xác và tuổi thọ linh kiện. Phù hợp cho mọi trạm điện.
             </div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--admin-success)', marginTop: 6 }}>Tối ưu nhất giữa tuổi thọ phần cứng và dữ liệu báo cáo.</div>
           </div>
 
-          <div className="preset-card" onClick={() => applyPreset('high')}>
-            <div style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--admin-text)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Chế độ Đọc Liên Tục (Hiệu Năng Cao)</span>
-              <span style={{ fontSize: '0.65rem', background: 'rgba(239,68,68,0.15)', color: 'var(--admin-danger)', padding: '1px 5px', borderRadius: 3 }}>Quét Nhanh</span>
+          <div className="preset-card" style={{ borderRadius: 0 }} onClick={() => applyPreset('high')}>
+            <div style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--admin-text)', display: 'flex', justifyContent: 'space-between', textTransform: 'uppercase' }}>
+              <span>Ưu tiên tốc độ</span>
+              <span style={{ fontSize: '0.6rem', border: '1px solid var(--admin-danger)', color: 'var(--admin-danger)', padding: '0 4px', borderRadius: 0 }}>PHẢN ỨNG NHANH</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 6, lineHeight: 1.3 }}>
-              PLC: <b>2 giây</b> · Lưu DB: <b>30 giây</b> · Video: <b>20 giây</b> · Ping: <b>15 giây</b>
+            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 8 }}>
+              Cập nhật dữ liệu liên tục. Dùng khi cần theo dõi sát sao một sự cố đang diễn ra.
             </div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--admin-warning)', marginTop: 6 }}>Phản ứng tức thì nhưng yêu cầu máy chủ hiệu năng cao.</div>
           </div>
 
-          <div className="preset-card" onClick={() => applyPreset('saver')}>
-            <div style={{ fontWeight: 800, fontSize: '0.8rem', color: 'var(--admin-text)', display: 'flex', justifyContent: 'space-between' }}>
-              <span>Chế độ Tiết Kiệm Lưu Trữ & Băng Thông</span>
-              <span style={{ fontSize: '0.65rem', background: 'rgba(34,197,94,0.15)', color: 'var(--admin-success)', padding: '1px 5px', borderRadius: 3 }}>Bền Bỉ</span>
+          <div className="preset-card" style={{ borderRadius: 0 }} onClick={() => applyPreset('saver')}>
+            <div style={{ fontWeight: 800, fontSize: '0.75rem', color: 'var(--admin-text)', display: 'flex', justifyContent: 'space-between', textTransform: 'uppercase' }}>
+              <span>Ưu tiên bền bỉ</span>
+              <span style={{ fontSize: '0.6rem', border: '1px solid var(--admin-success)', color: 'var(--admin-success)', padding: '0 4px', borderRadius: 0 }}>TIẾT KIỆM</span>
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 6, lineHeight: 1.3 }}>
-              PLC: <b>10 giây</b> · Lưu DB: <b>120 giây</b> · Video: <b>10 giây</b> · Ping: <b>60 giây</b>
+            <div style={{ fontSize: '0.7rem', color: 'var(--admin-text-muted)', marginTop: 8 }}>
+              Giảm thiểu ghi chép để bảo vệ ổ cứng. Dùng cho các trạm hoạt động ổn định.
             </div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--admin-text-muted)', marginTop: 6 }}>Giảm thiểu tối đa hao mòn ổ đĩa SSD/HDD công nghiệp.</div>
           </div>
 
         </div>
@@ -263,122 +260,105 @@ export default function GeneralTab() {
       {/* ── CẤU HÌNH CHI TIẾT ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         
-        {/* Cột 1: Thu thập & Lưu trữ dữ liệu */}
-        <div className="setting-section">
-          <div className="section-header">Thu thập và Lưu trữ dữ liệu cảm biến</div>
+        {/* Cột 1: Dữ liệu & Ghi hình */}
+        <div className="setting-section" style={{ borderRadius: 0 }}>
+          <div className="section-header">DỮ LIỆU & GHI HÌNH</div>
           
-          {/* PLC Poll Interval */}
           <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
-              CHU KỲ QUÉT PLC / MODBUS (giây) <span className="default-badge">Mặc định: 5 giây</span>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Tần suất đọc dữ liệu tủ điện (giây)
             </label>
             <input 
               type="number" 
               className="form-input" 
-              style={{ width: '100%', boxSizing: 'border-box', borderColor: errors.plcPoll ? 'var(--admin-danger)' : 'var(--admin-border)' }}
-              min="1" 
-              max="60" 
-              value={plcPoll} 
+              style={{ width: '100%', boxSizing: 'border-box', borderRadius: 0, borderColor: errors.plcPoll ? 'var(--admin-danger)' : 'var(--admin-border)' }}
+              min="1" max="60" value={plcPoll} 
               onChange={e => handleFieldChange('plcPoll', e.target.value, setPlcPoll)} 
             />
             {errors.plcPoll && <div className="err-label">✕ {errors.plcPoll}</div>}
-            <div className="hint-text">Thời gian giữa 2 lần đọc thanh ghi từ PLC Siemens / Modbus. Dữ liệu realtime sẽ gửi lên UI ngay lập tức.</div>
+            <div className="hint-text">Thời gian hệ thống hỏi dữ liệu mới từ các cảm biến tủ điện.</div>
           </div>
 
-          {/* Database Save Interval */}
           <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
-              CHU KỲ GHI VÀO Ổ CỨNG (giây) <span className="default-badge">Mặc định: 60 giây</span>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Tần suất sao lưu vào bộ nhớ (giây)
             </label>
             <input 
               type="number" 
               className="form-input" 
-              style={{ width: '100%', boxSizing: 'border-box', borderColor: errors.dbSave ? 'var(--admin-danger)' : 'var(--admin-border)' }}
-              min="5" 
-              max="3600" 
-              value={dbSave} 
+              style={{ width: '100%', boxSizing: 'border-box', borderRadius: 0, borderColor: errors.dbSave ? 'var(--admin-danger)' : 'var(--admin-border)' }}
+              min="5" max="3600" value={dbSave} 
               onChange={e => handleFieldChange('dbSave', e.target.value, setDbSave)} 
             />
             {errors.dbSave && <div className="err-label">✕ {errors.dbSave}</div>}
-            <div className="hint-text">Dữ liệu quét liên tục được lưu tạm trên RAM, sau mỗi chu kỳ này mới ghi xuống ổ đĩa cứng để tránh hỏng thiết bị lưu trữ.</div>
+            <div className="hint-text">Càng lâu thì càng bảo vệ tốt ổ cứng của máy chủ trạm.</div>
           </div>
 
-          {/* Camera Record Duration */}
           <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
-              THỜI LƯỢNG CLIP GHI HÌNH SỰ CỐ (giây) <span className="default-badge">Mặc định: 12 giây</span>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Độ dài video bằng chứng (giây)
             </label>
             <input 
               type="number" 
               className="form-input" 
-              style={{ width: '100%', boxSizing: 'border-box', borderColor: errors.camRecord ? 'var(--admin-danger)' : 'var(--admin-border)' }}
-              min="3" 
-              max="300" 
-              value={camRecord} 
+              style={{ width: '100%', boxSizing: 'border-box', borderRadius: 0, borderColor: errors.camRecord ? 'var(--admin-danger)' : 'var(--admin-border)' }}
+              min="3" max="300" value={camRecord} 
               onChange={e => handleFieldChange('camRecord', e.target.value, setCamRecord)} 
             />
             {errors.camRecord && <div className="err-label">✕ {errors.camRecord}</div>}
-            <div className="hint-text">Độ dài file video MP4 làm bằng chứng do camera trích xuất (qua FFmpeg) khi có cảnh báo điểm nhiệt vượt ngưỡng.</div>
+            <div className="hint-text">Độ dài đoạn clip camera tự trích xuất khi có phóng điện hoặc quá nhiệt.</div>
           </div>
-
         </div>
 
-        {/* Cột 2: Sức khỏe & Thông tin liên lạc */}
-        <div className="setting-section">
-          <div className="section-header">Vận hành và Cảnh báo từ xa</div>
+        {/* Cột 2: Thông báo & Kết nối */}
+        <div className="setting-section" style={{ borderRadius: 0 }}>
+          <div className="section-header">THÔNG BÁO & KẾT NỐI</div>
 
-          {/* Health Check Interval */}
           <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
-              CHU KỲ KIỂM TRA SỨC KHỎE THIẾT BỊ (giây) <span className="default-badge">Mặc định: 30 giây</span>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Tần suất kiểm tra kết nối (giây)
             </label>
             <input 
               type="number" 
               className="form-input" 
-              style={{ width: '100%', boxSizing: 'border-box', borderColor: errors.healthCheck ? 'var(--admin-danger)' : 'var(--admin-border)' }}
-              min="5" 
-              max="1800" 
-              value={healthCheck} 
+              style={{ width: '100%', boxSizing: 'border-box', borderRadius: 0, borderColor: errors.healthCheck ? 'var(--admin-danger)' : 'var(--admin-border)' }}
+              min="5" max="1800" value={healthCheck} 
               onChange={e => handleFieldChange('healthCheck', e.target.value, setHealthCheck)} 
             />
             {errors.healthCheck && <div className="err-label">✕ {errors.healthCheck}</div>}
-            <div className="hint-text">Chu kỳ ping / kiểm tra kết nối để xác định thiết bị mạng (Camera, PLC, Gateway) còn sống hay đã ngắt kết nối.</div>
+            <div className="hint-text">Thời gian hệ thống tự động kiểm tra xem các thiết bị còn hoạt động không.</div>
           </div>
 
-          {/* Alert Email */}
           <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
-              EMAIL NHẬN THÔNG BÁO SỰ CỐ KHẨN CẤP
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Email nhận cảnh báo sự cố
             </label>
             <input 
               type="email" 
               className="form-input" 
-              style={{ width: '100%', boxSizing: 'border-box', borderColor: errors.email ? 'var(--admin-danger)' : 'var(--admin-border)' }}
-              placeholder="operator@stationos.vn" 
+              style={{ width: '100%', boxSizing: 'border-box', borderRadius: 0, borderColor: errors.email ? 'var(--admin-danger)' : 'var(--admin-border)' }}
+              placeholder="nhan.thong.bao@congty.com" 
               value={email} 
               onChange={e => handleFieldChange('email', e.target.value, setEmail)} 
             />
             {errors.email && <div className="err-label">✕ {errors.email}</div>}
-            <div className="hint-text">Địa chỉ email của ban quản lý trạm. Hệ thống sẽ tự động gửi email báo cáo khi có sự cố vượt ngưỡng đỏ xảy ra.</div>
+            <div className="hint-text">Hệ thống gửi thư báo ngay khi có sự cố Báo động đỏ xảy ra.</div>
           </div>
 
-          {/* Timezone */}
           <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
-              MÚI GIỜ HỆ THỐNG
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Giờ hệ thống
             </label>
             <select 
               className="form-select" 
-              style={{ width: '100%' }}
+              style={{ width: '100%', borderRadius: 0 }}
               value={timezone} 
               onChange={e => setTimezone(e.target.value)}
             >
-              <option value="Asia/Ho_Chi_Minh">Asia/Ho_Chi_Minh (UTC +07:00 - Việt Nam)</option>
-              <option value="Asia/Bangkok">Asia/Bangkok (UTC +07:00)</option>
-              <option value="Asia/Singapore">Asia/Singapore (UTC +08:00)</option>
-              <option value="UTC">Múi giờ quốc tế phối hợp (UTC +00:00)</option>
+              <option value="Asia/Ho_Chi_Minh">Việt Nam (GMT+07:00)</option>
+              <option value="UTC">Giờ Quốc Tế (UTC+00:00)</option>
             </select>
-            <div className="hint-text">Tất cả nhật ký vận hành và biểu đồ thống kê sẽ được chuẩn hóa thời gian hiển thị theo múi giờ này.</div>
+            <div className="hint-text">Đảm bảo thời gian trên biểu đồ khớp với đồng hồ thực tế.</div>
           </div>
 
         </div>
@@ -386,29 +366,29 @@ export default function GeneralTab() {
       </div>
 
       {/* ── FOOTER THAO TÁC ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--admin-layer-1)', border: '1px solid var(--admin-border)', padding: '12px 16px', borderRadius: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--admin-layer-1)', border: '1px solid var(--admin-border)', padding: '12px 16px', borderRadius: 0 }}>
         <div>
-          <button className="btn-industrial" style={{ background: 'var(--admin-layer-3)', marginRight: 8 }} onClick={resetToFactoryDefaults}>
-            Khôi phục mặc định nhà máy
+          <button className="btn-industrial" style={{ background: 'var(--admin-layer-3)', marginRight: 8, borderRadius: 0, fontSize: '.7rem' }} onClick={resetToFactoryDefaults}>
+            CÀI LẠI MẶC ĐỊNH
           </button>
-          <button className="btn-industrial" style={{ background: 'var(--admin-layer-2)' }} onClick={loadSettings}>
-            Tải lại từ máy chủ
+          <button className="btn-industrial" style={{ background: 'var(--admin-layer-2)', borderRadius: 0, fontSize: '.7rem' }} onClick={loadSettings}>
+            TẢI LẠI DỮ LIỆU
           </button>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {saveStatus && (
-            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: saveStatus.includes('Lỗi') ? 'var(--admin-danger)' : 'var(--admin-success)' }}>
-              {saveStatus}
+            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: saveStatus.includes('Lỗi') ? 'var(--admin-danger)' : 'var(--admin-success)' }}>
+              {saveStatus.toUpperCase()}
             </span>
           )}
           <button 
             className="btn-industrial btn-primary" 
-            style={{ padding: '8px 24px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }} 
+            style={{ padding: '8px 24px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', borderRadius: 0 }} 
             onClick={handleSave}
             disabled={Object.keys(errors).length > 0}
           >
-            Lưu cấu hình vận hành
+            LƯU THAY ĐỔI
           </button>
         </div>
       </div>

@@ -71,7 +71,10 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
 
     const sensorMap = useMemo(() => {
       const m = new Map<string, SensorPoint>();
-      sensors.forEach(s => m.set(`${s.deviceId}|${s.pointId}`, s));
+      sensors.forEach(s => {
+        const key = `${s.deviceId?.toLowerCase()}|${s.pointId?.toLowerCase()}`;
+        m.set(key, s);
+      });
       return m;
     }, [sensors]);
 
@@ -294,7 +297,8 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
       const p = points.find(pt => pt.id === hoveredNodeId);
       if (!p) return null;
       
-      const sensor = p.deviceId && p.pointId ? sensorMap.get(`${p.deviceId}|${p.pointId}`) : undefined;
+      const sensorKey = `${p.deviceId?.toLowerCase()}|${p.pointId?.toLowerCase()}`;
+      const sensor = p.deviceId && p.pointId ? sensorMap.get(sensorKey) : undefined;
       const { sx, sy } = toScreenPos(p.x, p.y, transform);
       
       return (
@@ -341,7 +345,8 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
             </g>
             <g id="dash-dots">
               {points.map(p => {
-                const sensor = p.deviceId && p.pointId ? sensorMap.get(`${p.deviceId}|${p.pointId}`) : undefined;
+                const sensorKey = `${p.deviceId?.toLowerCase()}|${p.pointId?.toLowerCase()}`;
+                const sensor = p.deviceId && p.pointId ? sensorMap.get(sensorKey) : undefined;
                 const cfg = { ...DEFAULT_BADGE, ...(badgeCfgs[p.id] || {}) };
                 const label = sensor ? `${Math.round(sensor.value * 10) / 10}${sensor.unit || ''}` : '--';
                 const bh = cfg.size + 6;

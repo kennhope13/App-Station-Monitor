@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # Khoảng thời gian giữa hai lần xử lý frame (giây)
     # 0 = xử lý mọi frame (tốn CPU), 0.04 = 25 FPS, 1.0 = mỗi giây 1 frame
-    process_interval: float = 0.04
+    process_interval: float = 0.1
 
     # Khoảng cooldown tối thiểu giữa hai lần gửi alert cùng loại (giây)
     alert_cooldown: float = 30.0

@@ -6,6 +6,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using StationOS.Data;
 using StationOS.Data.Entities;
 using StationOS.Services;
@@ -22,19 +23,21 @@ public class AiEventsController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<AiEventsController> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IMemoryCache _cache;
 
-    public AiEventsController(AppDbContext db, IRealtimeNotifier notifier, IWebHostEnvironment env, ILogger<AiEventsController> logger, IServiceScopeFactory scopeFactory)
+    public AiEventsController(AppDbContext db, IRealtimeNotifier notifier, IWebHostEnvironment env, ILogger<AiEventsController> logger, IServiceScopeFactory scopeFactory, IMemoryCache cache)
     {
         _db = db;
         _notifier = notifier;
         _env = env;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _cache = cache;
     }
 
     /// <summary>Báo event vừa bắt đầu → tạo DetectionEvent + Alert</summary>
     [HttpPost("start")]
-    [AllowAnonymous] // AI Engine/Jetson gọi trực tiếp, dùng trusted IP hoặc key sau này
+    [AllowAnonymous]
     public async Task<IActionResult> StartEvent([FromBody] AiEventStartRequest req)
     {
         var device = await _db.Devices.FindAsync(req.CameraId);
@@ -51,7 +54,7 @@ public class AiEventsController : ControllerBase
             Source = "yolo",
             DetectionType = req.Type,
             Label = req.Label,
-            Severity = req.Severity ?? "warning",
+            Severity = (req.Type.Contains("pd") || req.Type.Contains("hotspot")) ? "alarm" : (req.Severity ?? "warning"),
             DetectedAt = req.Timestamp ?? DateTime.UtcNow,
             Metadata = req.Metadata,
             MaxTemp = req.MaxTemp,
@@ -60,25 +63,46 @@ public class AiEventsController : ControllerBase
         };
         _db.DetectionEvents.Add(evt);
 
-        // 2. Tạo Alert nếu mức độ từ warning trở lên
+        // 2. ÉP TẠO ALERT NGAY LẬP TỨC (Dành cho Hotspot/PD)
         Alert? alert = null;
-        if (evt.Severity.ToLower() is "warning" or "alarm" or "critical")
+        bool isPdHotspot = evt.DetectionType.Contains("hotspot") || evt.DetectionType.Contains("pd");
+
+        if (isPdHotspot || evt.Severity.ToLower() is "warning" or "alarm" or "critical")
         {
+            // Tìm tên vùng chi tiết
+            string zoneDisplayName = evt.AffectedZone ?? "vùng chưa xác định";
+            if (!string.IsNullOrEmpty(evt.AffectedZone))
+            {
+                var boundary = await _db.Boundaries
+                    .Where(b => b.DeviceId == req.CameraId && (b.Name == evt.AffectedZone || b.Id.ToString() == evt.AffectedZone))
+                    .FirstOrDefaultAsync();
+                
+                if (boundary != null)
+                {
+                    try {
+                        var t = JsonSerializer.Deserialize<JsonElement>(boundary.Thresholds ?? "{}");
+                        zoneDisplayName = t.TryGetProperty("fullName", out var fn) ? fn.GetString() ?? boundary.Name : boundary.Name;
+                    } catch { zoneDisplayName = boundary.Name; }
+                }
+            }
+
+            var msg = isPdHotspot 
+                ? $"[AI] PHÁT HIỆN PHÓNG ĐIỆN TẠI {zoneDisplayName.ToUpper()}"
+                : $"[AI] {evt.Label ?? evt.DetectionType} detected on {device.Name}";
+
             alert = new Alert
             {
                 StationId = stationId,
                 DeviceId = req.CameraId,
                 DetectionId = evt.Id,
                 Source = "ai_detection",
-                Level = evt.Severity.ToLower() == "critical" ? "alarm" : evt.Severity.ToLower(),
+                Level = isPdHotspot ? "alarm" : (evt.Severity.ToLower() == "critical" ? "alarm" : evt.Severity.ToLower()),
                 Status = "open",
-                Message = $"[AI] {evt.Label ?? evt.DetectionType} detected on {device.Name}",
+                Message = msg,
                 Value = (double?)(evt.MaxTemp ?? (float?)evt.Confidence),
                 TriggeredAt = evt.DetectedAt
             };
             _db.Alerts.Add(alert);
-            
-            // Cần SaveChanges để có AlertId gắn ngược lại DetectionEvent
             await _db.SaveChangesAsync();
 
             evt.AlertId = alert.Id;
@@ -91,17 +115,10 @@ public class AiEventsController : ControllerBase
         }
 
         // 3. Broadcast SignalR
-        await _notifier.SendCameraEventAsync(new
-        {
-            type = "EventStarted",
-            eventId = evt.Id,
-            cameraId = evt.CameraId,
-            detectionType = evt.DetectionType,
-            severity = evt.Severity,
-            timestamp = evt.DetectedAt,
-            label = evt.Label
-        });
+        // Gửi sự kiện Camera
+        await _notifier.SendCameraEventAsync(new { type = "EventStarted", eventId = evt.Id, cameraId = evt.CameraId, detectionType = evt.DetectionType, severity = evt.Severity, timestamp = evt.DetectedAt, label = evt.Label, affectedZone = evt.AffectedZone });
 
+        // QUAN TRỌNG: Ép gửi AlertNew ngay để Dashboard hiện dòng mới
         if (alert != null)
         {
             await _notifier.SendAlertAsync(new
@@ -112,7 +129,38 @@ public class AiEventsController : ControllerBase
                 message = alert.Message,
                 source = alert.Source,
                 triggeredAt = alert.TriggeredAt,
-                deviceId = alert.DeviceId
+                deviceId = alert.DeviceId,
+                imageUrl = alert.ImageUrl,
+                thumbnailUrl = alert.ThumbnailUrl
+            });
+        }
+
+            // Tự động kích hoạt ghi hình clip cho sự kiện AI này (Module 5)
+            // Đợi 10s để có đủ diễn biến sau khi phát hiện
+            var eventId = evt.Id;
+            var alertId = alert.Id;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(10000); 
+                    using var scope = _scopeFactory.CreateScope();
+                    var recordingService = scope.ServiceProvider.GetRequiredService<StationOS.Services.Recording.EventRecordingService>();
+                    await recordingService.BuildClipAsync(eventId);
+
+                    // Thông báo lại Alert để UI cập nhật VideoUrl
+                    var db = scope.ServiceProvider.GetRequiredService<StationOS.Data.AppDbContext>();
+                    var updatedAlert = await db.Alerts.FindAsync(alertId);
+                    if (updatedAlert != null && !string.IsNullOrEmpty(updatedAlert.VideoUrl))
+                    {
+                        var notifier = scope.ServiceProvider.GetRequiredService<StationOS.Services.IRealtimeNotifier>();
+                        await notifier.SendAlertUpdatedAsync(new { id = updatedAlert.Id, videoUrl = updatedAlert.VideoUrl });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[AI] Lỗi khi tạo clip tự động cho event {id}", eventId);
+                }
             });
         }
 
@@ -194,6 +242,9 @@ public class AiEventsController : ControllerBase
         // Lấy trạm đầu tiên làm mặc định nếu không có thông tin
         var stationId = await _db.Stations.Select(s => s.Id).FirstOrDefaultAsync();
 
+        // Cập nhật IMemoryCache để RuleEngine dùng mà không cần query DB (Key = LatestReadings)
+        var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
+
         foreach (var req in reqs)
         {
             var reading = new SensorReading
@@ -206,6 +257,9 @@ public class AiEventsController : ControllerBase
                 Unit = req.Unit
             };
             _db.SensorReadings.Add(reading);
+
+            // Cập nhật cache để các RuleEngine có thể đánh giá ngay lập tức
+            cachedDict[reading.PointId] = reading;
             
             // Push SignalR để dashboard cập nhật gauge/chart ngay lập tức
             await _notifier.SendSensorUpdateAsync(new {

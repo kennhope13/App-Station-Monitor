@@ -37,31 +37,56 @@ export default function ReportTab({ stationId }: { stationId: string }) {
   const [cabinetList, setCabinetList] = useState<any[]>([]);
 
   useEffect(() => {
-    const fetchCabs = async () => {
+    const fetchMonitoringPoints = async () => {
       try {
         const [devs, latestPoints, scores] = await Promise.all([
           stationApi.getDevices(stationId),
           stationApi.getLatestPoints(stationId),
           stationApi.getHealthScores(stationId)
         ]);
-        const cabinetDevs = devs.filter(d => d.type === 'plc_s7' || d.type === 'cabinet');
-        const list = cabinetDevs.map(cab => {
-          const hInfo = scores.find(s => s.deviceId.toLowerCase() === cab.id.toLowerCase()) || { score: 100, risk: 'good' };
-          const t1Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_1' || s.pointId === 'temp_1'))?.value;
-          const t2Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_2' || s.pointId === 'temp_2'))?.value;
-          const t3Raw = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'nhiet_do_pha_3' || s.pointId === 'temp_3'))?.value;
-          const pdVal = latestPoints.find(s => s.deviceId === cab.id && (s.pointId === 'phong_dien' || s.pointId === 'pd'))?.value ?? 0;
+
+        const filteredDevs = devs.filter(d => 
+          d.type === 'plc_s7' || 
+          d.type === 'cabinet' || 
+          d.type === 'camera_pd' || 
+          d.type === 'camera_thermal' || 
+          d.type === 'camera_dual'
+        );
+
+        const list = filteredDevs.map(dev => {
+          const hInfo = scores.find(s => s.deviceId.toLowerCase() === dev.id.toLowerCase()) || { score: 100, risk: 'good' };
+          
+          // Identify points for this device
+          const devPoints = latestPoints.filter(p => p.deviceId.toLowerCase() === dev.id.toLowerCase());
+          
+          let t1Raw = devPoints.find(s => s.pointId === 'nhiet_do_pha_1' || s.pointId === 'temp_1')?.value;
+          let t2Raw = devPoints.find(s => s.pointId === 'nhiet_do_pha_2' || s.pointId === 'temp_2')?.value;
+          let t3Raw = devPoints.find(s => s.pointId === 'nhiet_do_pha_3' || s.pointId === 'temp_3')?.value;
+          let pdVal = devPoints.find(s => s.pointId === 'phong_dien' || s.pointId === 'pd')?.value ?? 0;
+
+          // If it's a thermal camera, use ROI points (P1, P2...) as T1, T2...
+          if (dev.type === 'camera_thermal' || dev.type === 'camera_dual') {
+             const roiTemps = devPoints
+               .filter(p => p.pointId.toLowerCase().startsWith('p') && !isNaN(Number(p.pointId.substring(1))))
+               .sort((a, b) => a.pointId.localeCompare(b.pointId, undefined, { numeric: true }));
+             
+             if (roiTemps[0]) t1Raw = roiTemps[0].value;
+             if (roiTemps[1]) t2Raw = roiTemps[1].value;
+             if (roiTemps[2]) t3Raw = roiTemps[2].value;
+          }
 
           const t1 = t1Raw !== undefined && t1Raw !== null ? Math.round(t1Raw * 10) / 10 : null;
           const t2 = t2Raw !== undefined && t2Raw !== null ? Math.round(t2Raw * 10) / 10 : null;
           const t3 = t3Raw !== undefined && t3Raw !== null ? Math.round(t3Raw * 10) / 10 : null;
 
-          const tempMax = t1 !== null && t2 !== null && t3 !== null ? Math.max(t1, t2, t3) : null;
+          const tempMax = t1 !== null && t2 !== null && t3 !== null ? Math.max(t1, t2, t3) : (t1 || t2 || t3 || null);
           const healthStatus = hInfo.risk || (hInfo.score >= 80 ? 'good' : hInfo.score >= 50 ? 'warning' : 'danger');
           const pdLevel = pdVal > 50 ? 'high' : pdVal > 20 ? 'medium' : 'low';
+
           return {
-            id: cab.id,
-            name: cab.name || 'Tủ điện',
+            id: dev.id,
+            name: dev.name || 'Điểm giám sát',
+            type: dev.type,
             t1,
             t2,
             t3,
@@ -70,7 +95,7 @@ export default function ReportTab({ stationId }: { stationId: string }) {
             pdLevel,
             healthScore: hInfo.score,
             healthStatus,
-            urgencyReason: tempMax !== null && tempMax > 60 ? `Nhiệt độ các pha tăng cao đạt mức ${tempMax}°C` : 'Trạng thái hoạt động bình thường.',
+            urgencyReason: tempMax !== null && tempMax > 60 ? `Nhiệt độ tăng cao đạt mức ${tempMax}°C` : 'Trạng thái hoạt động bình thường.',
             trendDirection: 'stable',
             trendRate: 0.0,
             forecastDays: null,
@@ -82,10 +107,10 @@ export default function ReportTab({ stationId }: { stationId: string }) {
         });
         setCabinetList(list);
       } catch (err) {
-        console.warn('[Report] Lỗi tải tủ điện:', err);
+        console.warn('[Report] Lỗi tải dữ liệu giám sát:', err);
       }
     };
-    fetchCabs();
+    fetchMonitoringPoints();
   }, [stationId]);
 
   useEffect(() => {

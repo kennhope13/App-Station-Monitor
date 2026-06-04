@@ -8,7 +8,7 @@ import PdAnalyticsTab from './tabs/PdAnalyticsTab';
  * Layout trang Phân tích: bao bọc nội dung phân tích tủ điện, nhiệt độ và phóng điện.
  */
 export default function AnalyticsLayout() {
-  const [activeTab, setActiveTab] = useState<'cabinet' | 'thermal' | 'pd'>('cabinet');
+  const [activeTab, setActiveTab] = useState<'cabinet' | 'thermal' | 'pd'>('thermal');
 
   return (
     <div className="admin-page-container">
@@ -21,12 +21,6 @@ export default function AnalyticsLayout() {
           {/* TAB SELECTOR */}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
-              onClick={() => setActiveTab('cabinet')}
-              className={`btn-industrial ${activeTab === 'cabinet' ? 'btn-primary' : ''}`}
-            >
-              PHÂN TÍCH TỦ ĐIỆN
-            </button>
-            <button
               onClick={() => setActiveTab('thermal')}
               className={`btn-industrial ${activeTab === 'thermal' ? 'btn-primary' : ''}`}
             >
@@ -38,12 +32,17 @@ export default function AnalyticsLayout() {
             >
               PHÂN TÍCH PHÓNG ĐIỆN
             </button>
+            <button
+              onClick={() => setActiveTab('cabinet')}
+              className={`btn-industrial ${activeTab === 'cabinet' ? 'btn-primary' : ''}`}
+            >
+              PHÂN TÍCH TỦ ĐIỆN
+            </button>
           </div>
         </div>
       </div>
 
-      {/* CONTENT */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div className="analytics-content-area" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {activeTab === 'cabinet' && <CabinetAnalyticsTab />}
         {activeTab === 'thermal' && <ThermalForecastTab />}
         {activeTab === 'pd' && <PdAnalyticsTab />}

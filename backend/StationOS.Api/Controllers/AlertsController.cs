@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // AlertsController — Danh sách + ACK + Close alert
 // GET /api/v1/alerts
 // POST /api/v1/alerts/{id}/ack
@@ -77,13 +77,20 @@ public class AlertsController : ControllerBase
         var alerts = await q
             .OrderByDescending(a => a.TriggeredAt)
             .Take(limit)
-            .Select(a => new {
-                a.Id, a.Source, a.Level, a.Status,
-                a.Message, a.Value,
-                a.DeviceId, a.RuleId,
-                a.TriggeredAt, a.AckedAt, a.ClosedAt,
-                a.AckNote,
-                a.ImageUrl, a.VideoUrl, a.ThumbnailUrl
+            .GroupJoin(
+                _db.DetectionEvents,
+                a => a.Id,
+                e => e.AlertId,
+                (a, events) => new { Alert = a, Detection = events.FirstOrDefault() }
+            )
+            .Select(x => new {
+                x.Alert.Id, x.Alert.Source, x.Alert.Level, x.Alert.Status,
+                x.Alert.Message, x.Alert.Value,
+                x.Alert.DeviceId, x.Alert.RuleId,
+                x.Alert.TriggeredAt, x.Alert.AckedAt, x.Alert.ClosedAt,
+                x.Alert.AckNote,
+                x.Alert.ImageUrl, x.Alert.VideoUrl, x.Alert.ThumbnailUrl,
+                metadata = x.Detection != null ? x.Detection.Metadata : null
             })
             .ToListAsync();
 
@@ -97,23 +104,40 @@ public class AlertsController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var alert = await _db.Alerts.FindAsync(id);
-        if (alert == null) return NotFound();
+        try 
+        {
+            var alertData = await _db.Alerts
+                .Where(a => a.Id == id)
+                .GroupJoin(
+                    _db.DetectionEvents,
+                    a => a.Id,
+                    e => e.AlertId,
+                    (a, events) => new { Alert = a, Detection = events.FirstOrDefault() }
+                )
+                .FirstOrDefaultAsync();
 
-        var history = await _db.AlertHistories
-            .Where(h => h.AlertId == id)
-            .OrderBy(h => h.ChangedAt)
-            .Select(h => new { h.Status, h.ChangedAt, h.Note, h.ChangedBy })
-            .ToListAsync();
+            if (alertData == null) return NotFound();
 
-        return Ok(new {
-            alert.Id, alert.Source, alert.Level, alert.Status,
-            alert.Message, alert.Value,
-            alert.DeviceId, alert.RuleId,
-            alert.TriggeredAt, alert.AckedAt, alert.ClosedAt, alert.AckNote,
-            alert.ImageUrl, alert.VideoUrl, alert.ThumbnailUrl,
-            History = history
-        });
+            var history = await _db.AlertHistories
+                .Where(h => h.AlertId == id)
+                .OrderBy(h => h.ChangedAt)
+                .Select(h => new { h.Status, h.ChangedAt, h.Note, h.ChangedBy })
+                .ToListAsync() ?? new List<object>();
+
+            return Ok(new {
+                alertData.Alert.Id, alertData.Alert.Source, alertData.Alert.Level, alertData.Alert.Status,
+                alertData.Alert.Message, alertData.Alert.Value,
+                alertData.Alert.DeviceId, alertData.Alert.RuleId,
+                alertData.Alert.TriggeredAt, alertData.Alert.AckedAt, alertData.Alert.ClosedAt, alertData.Alert.AckNote,
+                alertData.Alert.ImageUrl, alertData.Alert.VideoUrl, alertData.Alert.ThumbnailUrl,
+                metadata = alertData.Detection?.Metadata,
+                History = history
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Lỗi truy vấn dữ liệu chi tiết", message = ex.Message });
+        }
     }
 
     /// <summary>

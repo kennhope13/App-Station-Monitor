@@ -289,7 +289,7 @@ export default function AiForecastPanel() {
               <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid rgba(255,255,255,0.05)', paddingLeft: 3 }}>
                 <span style={{ fontSize: 6, fontWeight: 700, color: '#93C5FD', transform: 'scale(0.8)', transformOrigin: 'left' }}>DỰ</span>
                 <span style={{ fontSize: 11, fontWeight: 900, color: '#93C5FD', lineHeight: 1 }}>
-                  {m.pred !== null ? `${m.pred.toFixed(1)}°` : '--'}
+                  {m.pred !== null ? `${m.pred.toFixed(1)}°` : '----'}
                 </span>
               </div>
             </div>

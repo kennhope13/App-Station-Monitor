@@ -20,7 +20,7 @@ const EMPTY_FORM = {
 const pct = (v:number) => `${(v*100).toFixed(2)}%`;
 const clr = (t:number|null, w:number, a:number) => t==null?'#9ca3af':t>=a?'#ef4444':t>=w?'#f59e0b':'#10b981';
 
-export default function ThermalConfigTab({ device: dev, onBack }: { device:CameraDevice, onBack:()=>void, onConfigChange?:()=>void, loading?:boolean }) {
+export default function ThermalConfigTab({ device: dev }: { device:CameraDevice, onBack?:()=>void, onConfigChange?:()=>void, loading?:boolean }) {
   const did = dev.id;
   const [markers, setMarkers] = useState<any[]>([]);
   const [rois, setRois] = useState<any[]>([]);
@@ -33,7 +33,6 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
   const dragMkRef = useRef<string|null>(null);
   const [dragRoi, setDragRoi] = useState<{sx:number,sy:number,ex:number,ey:number}|null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [formTemp, setFormTemp] = useState<number|null>(null);
   const [cursor, setCursor] = useState<{temp:number, px:number, py:number}|null>(null);
   const [hoverPos, setHoverPos] = useState<{nx:number,ny:number}|null>(null);
 
@@ -128,11 +127,6 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
           if(d.mapping) setVvr(d.mapping);
           if(d.temps)   setMarkers(prev => prev.map(m => { const t=d.temps.find((x:any)=>x.id===m.id); return t?.temp!=null?{...m,temp:t.temp}:m; }));
           if(d.rois)    setRois(prev => prev.map(r => { const t=d.rois.find((x:any)=>x.id===r.id); return t?{...r,maxTemp:t.max}:r; }));
-          
-          if(form.open && form.type==='marker' && form.tx) {
-            const t = d.temps?.find((x:any)=>x.id==='__form__');
-            if(t?.temp!=null) setFormTemp(t.temp);
-          }
         }
       } catch {}
       timer = setTimeout(poll, 600);
@@ -156,7 +150,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
   const onDown = (e:React.MouseEvent) => {
     if(e.button!==0) return;
     e.preventDefault();
-    if(drawMode === 'rect') {
+    if(drawMode === 'rect' || (drawMode === 'none' && form.open && form.isNew && form.type === 'roi')) {
       const [nx,ny] = getPos(e);
       setDragRoi({ sx:nx, sy:ny, ex:nx, ey:ny });
     }
@@ -167,13 +161,19 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
     if(drawMode === 'point') setHoverPos({nx,ny});
     else if(hoverPos) setHoverPos(null);
     if(dragRoi)   setDragRoi(p => p?{...p,ex:nx,ey:ny}:null);
+    
     if(dragMkRef.current && drawMode === 'none') {
       const [tx,ty] = toThermal(nx,ny);
       const {ox,oy} = t2o(tx,ty,vvr);
-      setMarkers(prev => prev.map(m => m.id===dragMkRef.current ? {...m,tx,ty,ox,oy} : m));
-      // Cập nhật cả tọa độ trong form đang mở
-      if (form.open && form.id === dragMkRef.current) {
+      
+      if (dragMkRef.current === '__new_marker__') {
         setForm(f => ({ ...f, tx: tx.toFixed(4), ty: ty.toFixed(4) }));
+      } else {
+        setMarkers(prev => prev.map(m => m.id===dragMkRef.current ? {...m,tx,ty,ox,oy} : m));
+        // Cập nhật cả tọa độ trong form đang mở
+        if (form.open && form.id === dragMkRef.current) {
+          setForm(f => ({ ...f, tx: tx.toFixed(4), ty: ty.toFixed(4) }));
+        }
       }
     }
     
@@ -196,7 +196,6 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
 
   // Mở form để người dùng xác nhận trước khi lưu
   const autoPlaceMarker = (tx:number, ty:number) => {
-    const {ox,oy} = t2o(tx,ty,vvr);
     
     // Tìm chỉ số nhỏ nhất còn trống bắt đầu từ 1
     const usedIndices = new Set<number>();
@@ -241,12 +240,24 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
 
   const onUp = (e:React.MouseEvent) => {
     if(dragMkRef.current) {
-      const m = markers.find(x=>x.id===dragMkRef.current);
-      if(m) stationApi.updateRoiPoint(did, m.id, { tx:m.tx, ty:m.ty, ox:m.ox, oy:m.oy, x:m.tx*100, y:m.ty*100 } as any).catch(()=>{});
+      if (dragMkRef.current !== '__new_marker__') {
+        const m = markers.find(x=>x.id===dragMkRef.current);
+        if(m) stationApi.updateRoiPoint(did, m.id, { tx:m.tx, ty:m.ty, ox:m.ox, oy:m.oy, x:m.tx*100, y:m.ty*100 } as any).catch(()=>{});
+        syncAI();
+      }
       dragMkRef.current = null;
-      syncAI();
       return;
     }
+    
+    // Nếu form đang mở để thêm điểm mới, cho phép click để chọn lại vị trí
+    if (drawMode === 'none' && form.open && form.isNew && form.type === 'marker') {
+      const [nx,ny] = getPos(e);
+      const [tx,ty] = toThermal(nx,ny);
+      if(viewMode==='op' && (nx<vvr.x||nx>vvr.x+vvr.width||ny<vvr.y||ny>vvr.y+vvr.height)) return;
+      setForm(f => ({ ...f, tx: tx.toFixed(4), ty: ty.toFixed(4) }));
+      return;
+    }
+
     if(drawMode === 'point') {
       const [nx,ny] = getPos(e);
       const [tx,ty] = toThermal(nx,ny);
@@ -261,7 +272,13 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
       if(Math.abs(ex-sx)<0.02 || Math.abs(ey-sy)<0.02) return;
       let tx1=sx,ty1=sy,tx2=ex,ty2=ey;
       if(viewMode==='op'){const tl=o2t(sx,sy,vvr);const br=o2t(ex,ey,vvr);tx1=tl.tx;ty1=tl.ty;tx2=br.tx;ty2=br.ty;}
-      autoPlaceRoi(tx1,ty1,tx2,ty2);
+      
+      if (form.open && form.isNew && form.type === 'roi') {
+         // Cập nhật lại tọa độ nếu đang mở form thêm mới vùng
+         setForm(f => ({ ...f, tx1: tx1.toFixed(4), ty1: ty1.toFixed(4), tx2: tx2.toFixed(4), ty2: ty2.toFixed(4) }));
+      } else {
+         autoPlaceRoi(tx1,ty1,tx2,ty2);
+      }
     }
   };
 
@@ -306,7 +323,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
           await stationApi.updateBoundary(form.id, { name: form.name, thresholds } as any);
         }
       }
-      setForm(EMPTY_FORM); setFormTemp(null);
+      setForm(EMPTY_FORM);
       load(); // Reload data from DB
       syncAI();
     } catch(e) { alert("Lưu thất bại!"); }
@@ -343,19 +360,23 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
       <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0 }}>
 
         {/* Toolbar & View Tabs */}
-        <div style={{ display:'flex', alignItems:'center', gap:16, padding:'6px 10px', background:'var(--admin-layer-1)', borderBottom:'1px solid var(--admin-border)', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'6px 12px', background:'var(--admin-layer-1)', borderBottom:'1px solid var(--admin-border)', flexShrink:0 }}>
           
-          <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius: 0, padding:2 }}>
-            <button className={`btn-industrial btn-sm ${viewMode==='op'?'btn-primary':''}`} onClick={() => setViewMode('op')}>Ảnh quang học</button>
-            <button className={`btn-industrial btn-sm ${viewMode==='th'?'btn-primary':''}`} onClick={() => setViewMode('th')}>Ảnh nhiệt độ</button>
-          </div>
-
-          <div style={{ width:1, height:24, background:'var(--admin-border)' }} />
-
-          <div style={{ display:'flex', background:'var(--admin-layer-2)', borderRadius: 0, padding:2 }}>
-            <button className={`btn-industrial btn-sm ${drawMode==='point'?'btn-primary':''}`} onClick={() => setDrawMode(drawMode==='point'?'none':'point')}>📍 Chấm Điểm</button>
-            <button className={`btn-industrial btn-sm ${drawMode==='rect'?'btn-primary':''}`} onClick={() => setDrawMode(drawMode==='rect'?'none':'rect')}>🟧 Vẽ Vùng</button>
-            <button className={`btn-industrial btn-sm ${drawMode==='none'?'btn-primary':''}`} onClick={() => setDrawMode('none')}>✋ Di chuyển</button>
+          <div style={{ display:'flex', border:'1px solid var(--admin-border)', borderRadius: 0, padding: 0, overflow: 'hidden' }}>
+            <button 
+              className={`btn-industrial btn-sm ${viewMode==='op'?'btn-primary':''}`} 
+              style={{ border: 'none', borderRadius: 0, height: 28, padding: '0 12px' }}
+              onClick={() => setViewMode('op')}
+            >
+              ẢNH QUANG HỌC
+            </button>
+            <button 
+              className={`btn-industrial btn-sm ${viewMode==='th'?'btn-primary':''}`} 
+              style={{ border: 'none', borderLeft: '1px solid var(--admin-border)', borderRadius: 0, height: 28, padding: '0 12px' }}
+              onClick={() => setViewMode('th')}
+            >
+              ẢNH NHIỆT ĐỘ
+            </button>
           </div>
 
         </div>
@@ -440,6 +461,25 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
               );
             })}
 
+            {/* Preview New Marker (Ghi chú: hiển thị ngay khi form thêm mới đang mở) */}
+            {form.open && form.isNew && form.type === 'marker' ? (() => {
+               const tx = parseFloat(form.tx), ty = parseFloat(form.ty);
+               const {ox, oy} = viewMode === 'th' ? {ox:tx, oy:ty} : t2o(tx, ty, vvr);
+               const armLen = parseInt(form.markerSize) || 28;
+               return (
+                <div style={{ position:'absolute', left:pct(ox), top:pct(oy), transform:'translate(-50%,-50%)', zIndex:25, cursor: 'move', pointerEvents: 'auto' }}
+                     onMouseDown={e=>{ if(e.button===0){ e.stopPropagation(); dragMkRef.current = '__new_marker__'; }}}>
+                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:2, background:'var(--admin-accent)', transform:'translate(-50%,-50%)', boxShadow:'0 0 8px var(--admin-accent)', pointerEvents:'none' }} />
+                   <div style={{ position:'absolute', top:0, left:0, width:2, height:armLen, background:'var(--admin-accent)', transform:'translate(-50%,-50%)', boxShadow:'0 0 8px var(--admin-accent)', pointerEvents:'none' }} />
+                   {/* Hit area */}
+                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
+                   <div style={{ position:'absolute', top:0, left:Math.round(armLen/2)+5, transform:'translateY(-50%)', background:'var(--admin-accent)', color:'#fff', padding:'2px 8px', fontSize:10, fontWeight:800, whiteSpace:'nowrap', pointerEvents:'none' }}>
+                      ĐANG THÊM: {form.name}
+                   </div>
+                </div>
+               );
+            })() : null}
+
             {/* Hover preview dấu + khi đang ở chế độ chấm điểm */}
             {drawMode==='point' && hoverPos && (
               <div style={{ position:'absolute', left:pct(hoverPos.nx), top:pct(hoverPos.ny), transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:20 }}>
@@ -448,13 +488,39 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
               </div>
             )}
 
+            {/* Instructions Overlay */}
+            {drawMode === 'point' && (
+              <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', background: 'var(--admin-accent)', color: '#fff', padding: '8px 16px', borderRadius: 0, fontWeight: 800, fontSize: '.75rem', zIndex: 30, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>
+                📍 BẤM VÀO HÌNH ẢNH ĐỂ CHỌN VỊ TRÍ ĐIỂM ĐO
+              </div>
+            )}
+            {drawMode === 'rect' && (
+              <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', background: 'var(--admin-accent)', color: '#fff', padding: '8px 16px', borderRadius: 0, fontWeight: 800, fontSize: '.75rem', zIndex: 30, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>
+                🟧 KÉO CHUỘT TRÊN HÌNH ẢNH ĐỂ VẼ VÙNG ĐO
+              </div>
+            )}
 
-            {/* Dragging ROI */}
-            {dragRoi && (() => {
+            {dragRoi ? (() => {
               const x1=Math.min(dragRoi.sx,dragRoi.ex), y1=Math.min(dragRoi.sy,dragRoi.ey);
               const x2=Math.max(dragRoi.sx,dragRoi.ex), y2=Math.max(dragRoi.sy,dragRoi.ey);
               return <div style={{ position:'absolute', left:pct(x1), top:pct(y1), width:pct(x2-x1), height:pct(y2-y1), border:'2px dashed #ff9900', background:'rgba(255,153,0,.06)', pointerEvents:'none' }} />;
-            })()}
+            })() : null}
+
+            {/* Preview New ROI (Ghi chú: hiển thị ngay khi form thêm mới đang mở) */}
+            {form.open && form.isNew && form.type === 'roi' ? (() => {
+               const tx1 = parseFloat(form.tx1), ty1 = parseFloat(form.ty1), tx2 = parseFloat(form.tx2), ty2 = parseFloat(form.ty2);
+               const nx1 = viewMode==='th' ? tx1 : t2o(tx1, ty1, vvr).ox;
+               const ny1 = viewMode==='th' ? ty1 : t2o(tx1, ty1, vvr).oy;
+               const nx2 = viewMode==='th' ? tx2 : t2o(tx2, ty2, vvr).ox;
+               const ny2 = viewMode==='th' ? ty2 : t2o(tx2, ty2, vvr).oy;
+               return (
+                <div style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:'2px solid var(--admin-accent)', background:'rgba(59,130,246,0.1)', pointerEvents:'none', zIndex:25 }}>
+                   <div style={{ position:'absolute', top:'-24px', left:0, background:'var(--admin-accent)', color:'#fff', padding:'2px 8px', fontSize:10, fontWeight:800, whiteSpace:'nowrap' }}>
+                      ĐANG VẼ: {form.name}
+                   </div>
+                </div>
+               );
+            })() : null}
 
           </div>
 
@@ -532,7 +598,7 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
                 </>
               )}
               <div style={{ display:'flex', gap:10, marginTop:6 }}>
-                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:0, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:600 }} onClick={()=>{ setForm(EMPTY_FORM); setFormTemp(null); }}>
+                <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', borderRadius:0, display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:600 }} onClick={()=>{ setForm(EMPTY_FORM); }}>
                   <X size={14}/> Hủy
                 </button>
                 <button className="btn-industrial" style={{ flex:1, height:32, padding:'0 12px', background:'var(--admin-accent)', border:'none', borderRadius:0, color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:6, fontSize:'.8rem', fontWeight:700, boxShadow:'0 2px 4px rgba(0,0,0,0.1)' }} onClick={saveForm}>
@@ -568,74 +634,63 @@ export default function ThermalConfigTab({ device: dev, onBack }: { device:Camer
               </button>
             </div>
 
-            <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--admin-border)' }}>
-              <button 
-                className="btn-industrial btn-primary" 
-                style={{ width: '100%', fontSize: '.7rem', height: 28 }}
-                onClick={() => setDrawMode(activeSideTab === 'marker' ? 'point' : 'rect')}
-              >
-                + Thêm {activeSideTab === 'marker' ? 'điểm đo' : 'vùng đo'}
-              </button>
+            <div style={{ flex:1, overflowY:'auto' }}>
+              {activeSideTab === 'marker' ? (
+                <div style={{ padding:10, display:'flex', flexDirection:'column', gap:8 }}>
+                  <button className="btn-industrial" style={{ width:'100%', height:30, background:'rgba(59,130,246,0.1)', border:'1px dashed var(--admin-accent)', color:'var(--admin-accent)', fontWeight:800, fontSize:'.7rem' }} onClick={()=>setDrawMode(drawMode==='point'?'none':'point')}>
+                    {drawMode==='point' ? 'HỦY CHẤM ĐIỂM' : '+ THÊM ĐIỂM ĐO'}
+                  </button>
+                  {markers.map(m => (
+                    <div key={m.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'var(--admin-layer-2)', border:'1px solid var(--admin-border)', borderRadius:0 }}>
+                      <div style={{ width:8, height:8, borderRadius:'50%', background:clr(m.temp,m.preAlarm,m.alarm) }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:'.75rem', fontWeight:700, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{m.name}</div>
+                        <div style={{ fontSize:'.65rem', color:'var(--admin-text-muted)' }}>ID: {m.shortName}</div>
+                      </div>
+                      <div style={{ textAlign:'right', marginRight:4 }}>
+                        <div style={{ fontSize:'.85rem', fontWeight:800, color:clr(m.temp,m.preAlarm,m.alarm), fontFamily:'monospace' }}>{m.temp?.toFixed(1)??'--'}°C</div>
+                      </div>
+                      <div style={{ display:'flex', gap:4 }}>
+                        <button className="btn-industrial btn-sm" onClick={() => setForm({ ...EMPTY_FORM, open:true, isNew:false, id:m.id, name:m.name, shortName:m.shortName, tx:m.tx.toFixed(4), ty:m.ty.toFixed(4), preAlarm:m.preAlarm.toString(), alarm:m.alarm.toString(), markerSize:m.markerSize.toString(), labelPos:m.labelPos||'top', type:'marker' })}><Edit2 size={12}/></button>
+                        <button className="btn-industrial btn-sm" style={{color:'var(--admin-danger)'}} onClick={()=>delMarker(m.id)}><Trash2 size={12}/></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding:10, display:'flex', flexDirection:'column', gap:8 }}>
+                  <button className="btn-industrial" style={{ width:'100%', height:30, background:'rgba(59,130,246,0.1)', border:'1px dashed var(--admin-accent)', color:'var(--admin-accent)', fontWeight:800, fontSize:'.7rem' }} onClick={()=>setDrawMode(drawMode==='rect'?'none':'rect')}>
+                    {drawMode==='rect' ? 'HỦY VẼ VÙNG' : '⬜ VẼ VÙNG ĐO MỚI'}
+                  </button>
+                  {rois.map(r => {
+                    const c = clr(r.maxTemp, r.preAlarm, r.alarm);
+                    return (
+                      <div key={r.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', background:'var(--admin-layer-2)', border:'1px solid var(--admin-border)', borderRadius:0 }}>
+                        <div style={{ width:8, height:8, background:c+'44', border:`1px solid ${c}` }} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:'.75rem', fontWeight:700, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</div>
+                          <div style={{ fontSize:'.65rem', color:'var(--admin-text-muted)' }}>Vùng đa giác</div>
+                        </div>
+                        <div style={{ textAlign:'right', marginRight:4 }}>
+                          <div style={{ fontSize:'.85rem', fontWeight:800, color:c, fontFamily:'monospace' }}>{r.maxTemp?.toFixed(1)??'--'}°C</div>
+                        </div>
+                        <div style={{ display:'flex', gap:4 }}>
+                          <button className="btn-industrial btn-sm" onClick={() => setForm({ ...EMPTY_FORM, open:true, isNew:false, id:r.id, name:r.name, tx1:r.tx1.toFixed(4), ty1:r.ty1.toFixed(4), tx2:r.tx2.toFixed(4), ty2:r.ty2.toFixed(4), preAlarm:r.preAlarm.toString(), alarm:r.alarm.toString(), labelPos:r.labelPos||'top', fontSize:r.fontSize.toString(), borderWidth:r.borderWidth.toString(), type:'roi' })}><Edit2 size={12}/></button>
+                          <button className="btn-industrial btn-sm" style={{color:'var(--admin-danger)'}} onClick={()=>delRoi(r.id)}><Trash2 size={12}/></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-
-            {activeSideTab === 'marker' && (
-              <div style={{ flex:1, overflowY:'auto' }}>
-                {markers.length === 0 ? (
-                  <div style={{ padding:20, textAlign:'center', color:'var(--admin-text-muted)', fontSize:'.75rem' }}>Chưa có điểm đo</div>
-                ) : [...markers].sort((a, b) => (a.shortName || a.name).localeCompare(b.shortName || b.name, undefined, { numeric: true })).map(m => {
-                  const c = clr(m.temp, m.preAlarm, m.alarm);
-                  return (
-                    <div key={m.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
-                      <div style={{width:8, height:8, borderRadius:'50%', background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
-                      <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{(m.shortName||m.name).replace(/Điểm\s*/gi, 'D').replace(/P\s*/g, 'D')}</div>
-                        <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
-                          <span style={{fontWeight:800, color:c}}>{m.temp!=null?`${m.temp.toFixed(1)}°C`:'--°C'}</span>
-                          <span style={{opacity:0.25, fontWeight:100}}>|</span>
-                          <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {m.preAlarm}°</span>
-                          <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {m.alarm}°</span>
-                        </div>
-                      </div>
-                      <div style={{display:'flex', gap:6}}>
-                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'marker',id:m.id,name:m.name,shortName:m.shortName,markerSize:String(m.markerSize||28),preAlarm:String(m.preAlarm),alarm:String(m.alarm),tx:m.tx.toFixed(4),ty:m.ty.toFixed(4)})}><Edit2 size={13} style={{display:'block'}}/></button>
-                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.2)', color:'var(--admin-danger)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>delMarker(m.id)}><Trash2 size={13} style={{display:'block'}}/></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {activeSideTab === 'roi' && (
-              <div style={{flex:1, overflowY:'auto'}}>
-                {rois.length === 0 ? (
-                  <div style={{ padding:20, textAlign:'center', color:'var(--admin-text-muted)', fontSize:'.75rem' }}>Chưa có vùng đo</div>
-                ) : [...rois].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })).map(r => {
-                  const c = clr(r.maxTemp, r.preAlarm, r.alarm);
-                  return (
-                    <div key={r.id} style={{padding:'10px 12px', borderBottom:'1px solid var(--admin-border)', display:'flex', alignItems:'center', gap:10}}>
-                      <div style={{width:8, height:8, background:c, flexShrink:0, boxShadow:`0 0 4px ${c}88`}}/>
-                      <div style={{flex:1, minWidth:0}}>
-                        <div style={{fontSize:'.85rem', fontWeight:800, color:'var(--admin-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{r.name.replace(/Vùng\s*/g, 'V')}</div>
-                        <div style={{display:'flex', alignItems:'center', gap:8, marginTop:2, fontSize:'.72rem', color:'var(--admin-text-muted)', fontFamily:'monospace'}}>
-                          <span style={{fontWeight:800, color:c}}>{r.maxTemp!=null?`Max ${r.maxTemp.toFixed(1)}°C`:'Max --°C'}</span>
-                          <span style={{opacity:0.25, fontWeight:100}}>|</span>
-                          <span style={{color:'#f59e0b', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px', transform:'translateY(-1px)'}}>△</span> {r.preAlarm}°</span>
-                          <span style={{color:'#ef4444', display:'flex', alignItems:'center', gap:3}}><span style={{fontSize:'10px'}}>●</span> {r.alarm}°</span>
-                        </div>
-                      </div>
-                      <div style={{display:'flex', gap:6}}>
-                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'var(--admin-layer-3)', border:'1px solid var(--admin-border)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>setForm({...EMPTY_FORM,open:true,isNew:false,type:'roi',id:r.id,name:r.name,labelPos:r.labelPos||'top',fontSize:String(r.fontSize||11),borderWidth:String(r.borderWidth||0.5),preAlarm:String(r.preAlarm),alarm:String(r.alarm),tx1:r.tx1.toFixed(4),ty1:r.ty1.toFixed(4),tx2:r.tx2.toFixed(4),ty2:r.ty2.toFixed(4)})}><Edit2 size={13} style={{display:'block'}}/></button>
-                        <button className="btn-industrial" style={{width:26, height:26, padding:0, background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.2)', color:'var(--admin-danger)', display:'flex', alignItems:'center', justifyContent:'center', lineHeight:0}} onClick={()=>delRoi(r.id)}><Trash2 size={13} style={{display:'block'}}/></button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </>
         )}
       </div>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:translateX(0); } }
+      `}</style>
     </div>
   );
 }

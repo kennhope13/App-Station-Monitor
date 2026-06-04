@@ -1,12 +1,10 @@
-// ============================================================
-// CloudSyncTab.tsx — Tab "Cloud Sync"
-// Hiển thị trạng thái đồng bộ Supabase: pending/sent/failed counts,
-// URL kết nối, thời điểm sync cuối, kích hoạt sync thủ công
-// ============================================================
-
 import { useState, useEffect, useCallback } from 'react';
 import { stationApi } from '@/services/StationApiService';
 import { showToast } from '@/utils/toast';
+import { 
+  CheckCircle, AlertCircle, RefreshCw, 
+  ArrowUp, Info, Activity, Database, ShieldCheck
+} from 'lucide-react';
 
 interface SyncStatus {
   isConfigured: boolean;
@@ -51,59 +49,129 @@ export default function CloudSyncTab() {
   };
 
   return (
-    <div>
-      <div className="card-title">CLOUD SYNC — SUPABASE</div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div className="card-title" style={{ marginBottom: 0 }}>CLOUD SYNC — SUPABASE</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
+      {/* KPI Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
         {[
-          { label: 'CHỜ SYNC', value: syncStatus?.pendingCount, color: 'var(--admin-accent)' },
-          { label: 'ĐÃ SYNC', value: syncStatus?.sentCount, color: 'var(--admin-success)' },
-          { label: 'LỖI', value: syncStatus?.failedCount, color: 'var(--admin-danger)' },
-        ].map(({ label, value, color }) => (
-          <div key={label} style={{ background: 'var(--admin-hover)', border: '1px solid var(--admin-border-light)', borderRadius: 8, padding: 16, textAlign: 'center' }}>
-            <div style={{ fontSize: '1.6rem', fontWeight: 700, color }}>{value ?? '—'}</div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)', marginTop: 4, fontWeight: 700 }}>{label}</div>
+          { label: 'CHỜ ĐỒNG BỘ', value: syncStatus?.pendingCount, color: 'var(--admin-accent)', icon: <Activity size={18} /> },
+          { label: 'ĐÃ ĐỒNG BỘ', value: syncStatus?.sentCount, color: 'var(--admin-success)', icon: <CheckCircle size={18} /> },
+          { label: 'LỖI KẾT NỐI', value: syncStatus?.failedCount, color: 'var(--admin-danger)', icon: <AlertCircle size={18} /> },
+        ].map(({ label, value, color, icon }) => (
+          <div key={label} style={{ 
+            background: 'var(--admin-hover)', 
+            border: `1px solid ${value && value > 0 && label === 'LỖI KẾT NỐI' ? 'var(--admin-danger)' : 'var(--admin-border)'}`, 
+            borderRadius: 0, padding: '16px 12px', textAlign: 'center',
+            boxShadow: value && value > 0 && label === 'LỖI KẾT NỐI' ? 'inset 0 0 10px rgba(239,68,68,0.05)' : 'none'
+          }}>
+            <div style={{ color, display: 'flex', justifyContent: 'center', marginBottom: 8, opacity: 0.8 }}>{icon}</div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color, fontFamily: 'var(--font-mono)' }}>{value ?? '—'}</div>
+            <div style={{ fontSize: '0.62rem', color: 'var(--admin-text-muted)', marginTop: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>{label}</div>
           </div>
         ))}
       </div>
 
-      <div style={{ background: 'var(--admin-hover)', border: '1px solid var(--admin-border-light)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--admin-text-muted)', textTransform: 'uppercase' }}>Trạng thái kết nối</span>
+      {/* Connection Details */}
+      <div style={{ background: 'var(--admin-panel)', border: '1px solid var(--admin-border)', borderRadius: 0, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--admin-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.72rem', fontWeight: 800, color: 'var(--admin-text)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
+            <Database size={13} strokeWidth={2.5} style={{ color: 'var(--admin-accent)' }} />
+            Cấu hình Cloud
+          </div>
           {syncStatus ? (
             syncStatus.isConfigured ? (
-              <span className="tag" style={{ background: 'var(--admin-tag-success-bg)', color: 'var(--admin-success)', padding: '3px 8px', borderRadius: 4, fontWeight: 700, fontSize: '0.72rem' }}>Đã kết nối</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--admin-success)', fontSize: '0.68rem', fontWeight: 800 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 0, background: 'currentColor' }} />
+                ĐÃ KẾT NỐI
+              </div>
             ) : (
-              <span className="tag" style={{ background: 'var(--admin-tag-danger-bg)', color: 'var(--admin-danger)', padding: '3px 8px', borderRadius: 4, fontWeight: 700, fontSize: '0.72rem' }}>Chưa cấu hình</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--admin-danger)', fontSize: '0.68rem', fontWeight: 800 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 0, background: 'currentColor' }} />
+                CHƯA CẤU HÌNH
+              </div>
             )
           ) : (
-            <span className="tag" style={{ color: 'var(--admin-text-muted)' }}>Đang tải...</span>
+            <span style={{ fontSize: '0.68rem', color: 'var(--admin-text-muted)' }}>ĐANG KIỂM TRA...</span>
           )}
         </div>
-        <div style={{ fontSize: '0.82rem', color: 'var(--admin-text-muted)', lineHeight: 1.6 }}>
-          <div>Supabase URL: <code style={{ color: 'var(--admin-info-text)', fontFamily: 'monospace' }}>{syncStatus?.supabaseUrl ?? '—'}</code></div>
-          <div style={{ marginTop: 6 }}>
-            Lần sync cuối: <span>{syncStatus?.lastSyncAt ? new Date(syncStatus.lastSyncAt).toLocaleString('vi-VN') : 'Chưa có'}</span>
+        
+        <div style={{ padding: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--admin-text-muted)', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>ĐỊA CHỈ CLOUD (ENDPOINT)</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--admin-text)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all', opacity: 0.9 }}>
+                {syncStatus?.supabaseUrl ?? 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--admin-text-muted)', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>LẦN ĐỒNG BỘ CUỐI</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--admin-text)', fontWeight: 600 }}>
+                {syncStatus?.lastSyncAt ? new Date(syncStatus.lastSyncAt).toLocaleString('vi-VN') : '—'}
+              </div>
+            </div>
           </div>
-          <div style={{ marginTop: 6, fontSize: '0.72rem' }}>Tự động sync mỗi 5 phút. Sync Alerts và Maintenance Tasks lên Supabase cloud.</div>
+          
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--admin-border)', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <Info size={14} style={{ marginTop: 2, color: 'var(--admin-accent)', flexShrink: 0 }} />
+            <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)', lineHeight: 1.5 }}>
+              Hệ thống tự động đồng bộ dữ liệu Cảnh báo (Alerts) và Lịch bảo trì (Maintenance Tasks) lên đám mây Supabase mỗi <b>5 phút</b> để phục vụ giám sát từ xa.
+            </div>
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button className="btn-industrial btn-primary" onClick={handleTriggerSync} disabled={triggeringSync}>
-          {triggeringSync ? 'ĐANG ĐỒNG BỘ...' : '⬆ SYNC NGAY'}
+      {/* Action Buttons */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button 
+          className="btn-industrial btn-primary" 
+          onClick={handleTriggerSync} 
+          disabled={triggeringSync}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: '0 16px', borderRadius: 0, fontSize: '.7rem' }}
+        >
+          {triggeringSync ? <RefreshCw size={12} className="spin" /> : <ArrowUp size={12} />}
+          {triggeringSync ? 'ĐANG ĐỒNG BỘ...' : 'ĐỒNG BỘ NGAY'}
         </button>
-        <button className="btn-industrial" onClick={loadSyncStatus}>↻ LÀM MỚI</button>
+        <button 
+          className="btn-industrial" 
+          onClick={loadSyncStatus}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, height: 32, padding: '0 16px', borderRadius: 0, fontSize: '.7rem' }}
+        >
+          <RefreshCw size={12} /> LÀM MỚI
+        </button>
+        
         {syncActionStatus && (
-          <span style={{ fontSize: '.82rem', color: syncActionStatus.startsWith('Lỗi') ? 'var(--admin-danger)' : 'var(--admin-success)' }}>
-            {syncActionStatus}
-          </span>
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: 6, fontSize: '.75rem', 
+            color: syncActionStatus.toLowerCase().includes('lỗi') ? 'var(--admin-danger)' : 'var(--admin-success)',
+            marginLeft: 10, fontWeight: 700
+          }}>
+            <Activity size={12} /> {syncActionStatus}
+          </div>
         )}
       </div>
 
-      <div style={{ marginTop: 20, padding: '12px 16px', background: 'var(--admin-info-bg)', border: '1px solid var(--admin-info-border)', borderRadius: 8, fontSize: '0.72rem', color: 'var(--admin-info-text)' }}>
-        <b>Dùng cho mobile app:</b> Anon key để mobile đọc data từ Supabase không cần VPN vào trạm.<br />
-        Anon key: <code style={{ color: 'var(--admin-text-muted)', fontSize: '0.68rem', fontFamily: 'monospace' }}>sb_publishable_****</code>
+      {/* Mobile App Info */}
+      <div style={{ 
+        marginTop: 10, padding: '16px', background: 'rgba(0,0,0,0.1)', 
+        border: '1px solid var(--admin-border)', borderRadius: 0,
+        display: 'flex', gap: 14
+      }}>
+        <div style={{ width: 36, height: 36, borderRadius: 0, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--admin-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <ShieldCheck size={18} style={{ color: 'var(--admin-accent)' }} />
+        </div>
+        <div>
+          <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--admin-text)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>DÀNH CHO ỨNG DỤNG DI ĐỘNG (MOBILE)</div>
+          <div style={{ fontSize: '0.72rem', color: 'var(--admin-text-muted)', lineHeight: 1.6 }}>
+            Sử dụng <b>Mã khách (Anon key)</b> dưới đây để ứng dụng Mobile có thể đọc dữ liệu trực tiếp từ đám mây mà không cần thiết lập VPN.
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.62rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>MÃ KHÁCH (ANON KEY):</span>
+              <code style={{ background: 'var(--admin-hover)', padding: '3px 10px', borderRadius: 0, color: 'var(--admin-text)', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', border: '1px solid var(--admin-border)' }}>
+                sb_publishable_live_4492...
+              </code>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

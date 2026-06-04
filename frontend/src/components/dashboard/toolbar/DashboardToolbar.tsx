@@ -29,7 +29,7 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
         position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 30,
         display: 'flex', flexDirection: 'column', gap: 6,
         background: 'var(--admin-overlay)', backdropFilter: 'blur(12px)',
-        border: '1px solid var(--admin-border)', borderRadius: 10, padding: '6px 14px',
+        border: '1px solid var(--admin-border)', borderRadius: 0, padding: '6px 14px',
         transition: 'all 0.25s ease',
         boxShadow: 'var(--admin-shadow)',
         alignItems: 'center'
@@ -53,7 +53,7 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
                 position: 'absolute', top: -5, right: -5,
                 background: 'var(--admin-danger)', color: '#fff',
                 fontSize: 9, fontWeight: 900,
-                width: 14, height: 14, borderRadius: '50%',
+                width: 14, height: 14, borderRadius: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 boxShadow: '0 0 5px var(--admin-danger)',
                 animation: 'pulse 1.5s infinite'
@@ -74,7 +74,7 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
               alignItems: 'center',
               justifyContent: 'center',
               padding: 4,
-              borderRadius: '50%',
+              borderRadius: 0,
               transition: 'background 0.2s',
             }}
             onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--admin-hover)'; }}
@@ -122,7 +122,7 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
               type="color" 
               defaultValue="#38bdf8"
               onChange={e => onColorChange(e.target.value)}
-              style={{ width: 18, height: 14, border: 'none', padding: 0, background: 'none', cursor: 'pointer', borderRadius: 2 }} 
+              style={{ width: 18, height: 14, border: 'none', padding: 0, background: 'none', cursor: 'pointer', borderRadius: 0 }} 
             />
           </label>
         </div>

@@ -13,7 +13,7 @@ import NotificationTab from './tabs/NotificationTab';
 import CloudSyncTab from './tabs/CloudSyncTab';
 import './SettingsPage.css';
 
-const TABS = ['', '', ''];
+const TABS = ['CHUNG', 'THÔNG BÁO', 'CLOUD SYNC'];
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(0);

@@ -11,26 +11,32 @@ using Microsoft.EntityFrameworkCore;
 using System.Diagnostics;
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Hosting;
+
 namespace StationOS.Services.Recording;
 
 public class EventRecordingService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<EventRecordingService> _logger;
+    private readonly IWebHostEnvironment _env;
     private readonly string _bufferRoot;
     private readonly string _recordingsRoot;
     private readonly string _ffmpegPath;
 
-    public EventRecordingService(AppDbContext db, ILogger<EventRecordingService> logger, IConfiguration cfg)
+    public EventRecordingService(AppDbContext db, ILogger<EventRecordingService> logger, IConfiguration cfg, IWebHostEnvironment env)
     {
         _db = db;
         _logger = logger;
+        _env = env;
         
-        var bufferRoot = cfg["Recorder:BufferRoot"] ?? "wwwroot/media/buffer";
-        _bufferRoot = Path.IsPathRooted(bufferRoot) ? bufferRoot : Path.Combine(AppContext.BaseDirectory, bufferRoot);
+        var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+
+        var bufferSubDir = cfg["Recorder:BufferRoot"]?.Replace("wwwroot/", "") ?? "media/buffer";
+        _bufferRoot = Path.IsPathRooted(bufferSubDir) ? bufferSubDir : Path.Combine(webRoot, bufferSubDir);
         
-        var recRoot = cfg["Recorder:RecordingsRoot"] ?? "wwwroot/media/recordings";
-        _recordingsRoot = Path.IsPathRooted(recRoot) ? recRoot : Path.Combine(AppContext.BaseDirectory, recRoot);
+        var recSubDir = cfg["Recorder:RecordingsRoot"]?.Replace("wwwroot/", "") ?? "media/recordings";
+        _recordingsRoot = Path.IsPathRooted(recSubDir) ? recSubDir : Path.Combine(webRoot, recSubDir);
         
         _ffmpegPath = cfg["Media:FFmpegPath"] ?? "ffmpeg";
     }
@@ -38,7 +44,7 @@ public class EventRecordingService
     /// <summary>
     /// Xây dựng clip cho sự kiện: tìm các segment buffer quanh thời gian event và nối lại.
     /// </summary>
-    public async Task BuildClipAsync(Guid eventId)
+    public async Task BuildClipAsync(Guid eventId, DateTime? eventEndTime = null)
     {
         var evt = await _db.DetectionEvents
             .Include(e => e.Camera)
@@ -51,8 +57,9 @@ public class EventRecordingService
             return;
         }
 
-        var start = evt.DetectedAt.AddSeconds(-15); // Pre-roll 15s
-        var end = DateTime.UtcNow; // Thời điểm hiện tại (lúc kết thúc)
+        // Nếu là sự kiện tức thời, ta lấy 15s trước và 10s sau
+        var start = evt.DetectedAt.AddSeconds(-15); 
+        var end = eventEndTime ?? evt.DetectedAt.AddSeconds(10);
         
         _logger.LogInformation("[ClipBuilder] Đang tạo clip cho event {Id} ({Type}) từ {Start} đến {End}", 
             eventId, evt.DetectionType, start, end);
@@ -64,16 +71,16 @@ public class EventRecordingService
             return;
         }
 
-        // 1. Tìm các segment liên quan
+        // 1. Tìm các segment liên quan (mở rộng cửa sổ thời gian để chắc chắn không hụt)
         var segments = Directory.GetFiles(camDir, "seg_*.mp4")
             .Select(f => new FileInfo(f))
-            .Where(fi => fi.LastWriteTimeUtc >= start && fi.CreationTimeUtc <= end) // CreationTime có thể không chính xác trên Linux, dùng LastWriteTime
+            .Where(fi => fi.LastWriteTimeUtc >= start.AddSeconds(-10) && fi.LastWriteTimeUtc <= end.AddSeconds(10))
             .OrderBy(fi => fi.Name)
             .ToList();
 
         if (segments.Count == 0)
         {
-            _logger.LogWarning("[ClipBuilder] Không tìm thấy segment nào cho event {Id}", eventId);
+            _logger.LogWarning("[ClipBuilder] Không tìm thấy segment nào cho event {Id} trong khoảng {Start} - {End}", eventId, start, end);
             return;
         }
 

@@ -43,7 +43,11 @@ class AcousticAnalyzer:
     # Biến trạng thái thời gian thực
     live_db:     float = field(default=0.0, init=False)
     live_freq:   float = field(default=0.0, init=False)
+    _last_db_time: float = field(default=0.0, init=False, repr=False)
     _state_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    # Flag: camera đang ở trạng thái audioexception (kích hoạt cảnh báo ngay cả khi không có hotspot thị giác)
+    _audio_exception_active: bool = field(default=False, init=False, repr=False)
+    _last_exception_time: float = field(default=0.0, init=False, repr=False)
 
     def start(self) -> None:
         """Khởi động toàn bộ luồng xử lý âm thanh & hình ảnh"""
@@ -108,15 +112,25 @@ class AcousticAnalyzer:
         if frame is None:
             return
 
+        import time as _time
+        now = _time.time()
         with self._state_lock:
+            # Nếu quá 8 giây không có cập nhật decibel mới, reset về 0 để không kích hoạt ngưỡng cảnh báo
+            if now - self._last_db_time > 8.0:
+                self.live_db = 0.0
+                self.live_freq = 0.0
+            # Reset exception flag sau 8 giây nếu không có exception mới
+            if now - self._last_exception_time > 8.0:
+                self._audio_exception_active = False
             db_val = self.live_db
             freq_val = self.live_freq
+            exception_active = self._audio_exception_active
 
         import cv2
 
         # Bước 1: Vẽ vùng PD polygon (OpenCV fillPoly + polylines)
         if self._pd_analyzer is not None:
-            annotated = self._pd_analyzer.process_frame(frame, db_val, freq_val)
+            annotated = self._pd_analyzer.process_frame(frame, db_val, freq_val, audio_exception=exception_active)
         else:
             annotated = frame.copy()
 
@@ -171,12 +185,18 @@ class AcousticAnalyzer:
                                 now = time.time()
                                 updated = False
                                 
-                                # Log to see what we receive
+                                # Log to see what we receive (throttled)
                                 if now - getattr(self, '_last_xml_log', 0) > 2.0:
                                     logger.info("[Acoustic] Received ISAPI Event: type=%s, xml=%s", alarm_type, xml_str[:300].replace('\n', ' '))
                                     self._last_xml_log = now
                                 
-                                val_db = extract_tag(xml_str, "audioDecibel")
+                                # --- Lấy dB từ nhiều tag khác nhau ---
+                                val_db = (
+                                    extract_tag(xml_str, "audioDecibel")
+                                    or extract_tag(xml_str, "soundIntensity")
+                                    or extract_tag(xml_str, "maxAlarmLevel")
+                                    or extract_tag(xml_str, "decibel")
+                                )
                                 if val_db:
                                     with self._state_lock:
                                         self.live_db = float(val_db)
@@ -188,7 +208,33 @@ class AcousticAnalyzer:
                                         self.live_freq = float(val_freq)
                                     updated = True
                                 
+                                # --- Xử lý audioexception: Camera Hikvision gửi sự kiện này
+                                #     khi ÂM THANH BẤT THƯỜNG đã vượt ngưỡng nội bộ của camera.
+                                #     Camera KHÔNG gửi audioDecibel trong XML này → ta dùng
+                                #     chính sự kiện để trigger PD alert trực tiếp.
+                                is_audio_exception = alarm_type in (
+                                    "audioexception", "AudioException", "audio-exception",
+                                    "acousticexception", "AcousticException",
+                                    "pddetection", "dischargedetection"
+                                )
+                                if is_audio_exception:
+                                    trigger_db = self.live_db if self.live_db > 0 else 55.0
+                                    with self._state_lock:
+                                        self.live_db = trigger_db
+                                        self._audio_exception_active = True
+                                        self._last_exception_time = now
+                                    updated = True
+                                    logger.info("[Acoustic] audioexception received → set live_db to %.1f, exception_active=True", trigger_db)
+
+                                    # Trigger alert trực tiếp — không chờ process_frame (RTSP có thể chưa có frame)
+                                    if self._pd_analyzer and self._pd_analyzer.regions:
+                                        try:
+                                            self._pd_analyzer.trigger_audio_alert(trigger_db, self.live_freq)
+                                        except Exception as _ae:
+                                            logger.debug("[Acoustic] trigger_audio_alert failed: %s", _ae)
+                                
                                 if updated:
+                                    self._last_db_time = now
                                     # Push vào pd_monitor_state → frontend poll được realtime
                                     try:
                                         from api.routes import _update_pd_state

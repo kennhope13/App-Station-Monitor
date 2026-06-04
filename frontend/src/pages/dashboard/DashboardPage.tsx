@@ -45,6 +45,7 @@ export default function DashboardPage() {
   const [sldColorMatrix, setSldColorMatrix] = useState<string | undefined>(undefined);
   const [sldRefreshTick, setSldRefreshTick] = useState(0);
   const [unpinnedCount, setUnpinnedCount] = useState(0);
+  const [pointNamesMap, setPointNamesMap] = useState<Record<string, string>>({});
 
   // ── Global stores ─────────────────────────────────────────────
   const stations = useStationStore(s => s.stations);
@@ -84,15 +85,6 @@ export default function DashboardPage() {
     }).length;
   }, [alerts, devices]);
 
-  const cameraSensors: CameraSensor[] = useMemo(() => {
-    const camDeviceIds = new Set(devices
-      .filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)))
-      .map(d => d.id.toLowerCase()));
-
-    return sensors
-      .filter(s => camDeviceIds.has(s.deviceId.toLowerCase()) && s.pointId !== PT_PD)
-      .map(s => ({ pid: s.pointId.toUpperCase(), value: s.value }));
-  }, [sensors, devices]);
 
   const liveCameraSrc = useMemo(() => {
     const cam = devices.find(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)));
@@ -135,6 +127,40 @@ export default function DashboardPage() {
     }).catch(() => {});
   }, [stationId, fetchSensors, fetchDevices, fetchAlerts, sldRefreshTick]);
 
+  // Fetch friendly names for points (Thermal ROI & PD Regions)
+  useEffect(() => {
+    if (!stationId || devices.length === 0) return;
+    const cams = devices.filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t)));
+    if (cams.length === 0) return;
+
+    const fetchAllNames = async () => {
+      const newMap: Record<string, string> = {};
+      await Promise.all(cams.map(async (cam) => {
+        try {
+          const [pts, rois] = await Promise.all([
+            stationApi.getRoiPoints(cam.id).catch(() => []),
+            stationApi.getBoundaries(cam.id).catch(() => [])
+          ]);
+          pts.forEach(p => {
+            if (p.pointId) newMap[`${cam.id}_${p.pointId}`.toUpperCase()] = p.label || p.name || '';
+          });
+          rois.forEach(r => {
+            let descriptiveName = r.name;
+            try {
+              const t = JSON.parse(r.thresholds || '{}');
+              if (t.fullName) descriptiveName = t.fullName;
+            } catch {}
+            
+            newMap[`${cam.id}_${r.id}`.toUpperCase()] = descriptiveName;
+            newMap[`${cam.id}_${r.name}`.toUpperCase()] = descriptiveName;
+          });
+        } catch {}
+      }));
+      setPointNamesMap(newMap);
+    };
+    fetchAllNames();
+  }, [stationId, devices]);
+
   // Keep track of the last seen alert ID to detect when a new alert actually arrives
   const lastAlertIdRef = useRef<string>('');
 
@@ -151,6 +177,7 @@ export default function DashboardPage() {
     }
 
     if (newestAlert.id !== lastAlertIdRef.current) {
+      if (devices.length === 0) return; // Đợi danh sách thiết bị tải xong
       lastAlertIdRef.current = newestAlert.id;
       const streamId = findCameraStreamForDevice(newestAlert, devices);
       if (streamId) {
@@ -199,6 +226,9 @@ export default function DashboardPage() {
   const camOptionsGroups = useMemo(() => {
     const groups: Record<string, { id: string, label: string }[]> = { 'Khác': [] };
     devices.filter(d => DEV_CAM_TYPES.some(t => d.type?.includes(t))).forEach(cam => {
+      // Bỏ qua hoàn toàn các camera chuyên đo phóng điện (PD)
+      if (cam.type === 'camera_pd' || cam.name.toUpperCase().includes('PD') || cam.name.toUpperCase().includes('PHÓNG ĐIỆN')) return;
+
       const cfg = (cam as any).config || {};
       const zone = cfg.zone?.trim() || 'Khác';
       if (!groups[zone]) groups[zone] = [];
@@ -220,6 +250,71 @@ export default function DashboardPage() {
     if (validCameraIds.includes(desired)) return desired;
     return validCameraIds[0] || '';
   }, [camOptionsGroups, dashboardCam, liveCameraSrc]);
+
+  const activeCamHasAlert = useMemo(() => {
+    return alerts.some(alert => findCameraStreamForDevice(alert, devices) === activeCameraSrc);
+  }, [alerts, devices, activeCameraSrc]);
+
+  const cameraSensors: CameraSensor[] = useMemo(() => {
+    const activeCamDevice = devices.find(d => {
+      const cfg = (d as any).config || {};
+      return cfg.go2rtc_optical === activeCameraSrc || 
+             cfg.go2rtc_thermal === activeCameraSrc || 
+             cfg.go2rtc_id === activeCameraSrc;
+    });
+
+    const result: CameraSensor[] = [];
+
+    // 1. Thêm các điểm đo của camera đang chọn
+    if (activeCamDevice) {
+      sensors
+        .filter(s => s.deviceId.toLowerCase() === activeCamDevice.id.toLowerCase())
+        .forEach(s => {
+          const rawPid = s.pointId.toUpperCase();
+          const uniqueKey = `${s.deviceId}_${rawPid}`.toUpperCase();
+          result.push({
+            pid: uniqueKey,
+            value: s.value,
+            unit: s.unit,
+            deviceName: activeCamDevice.name || '',
+            pointName: pointNamesMap[uniqueKey]
+          });
+        });
+    }
+
+    // 2. Thêm TẤT CẢ các điểm đo Phóng điện (PD) từ toàn bộ trạm (nếu chưa có)
+    // Để mục ĐIỂM PHÓNG ĐIỆN luôn hiển thị cảnh báo dù đang xem camera nào
+    sensors.forEach(s => {
+      const rawPid = s.pointId.toUpperCase();
+      const dev = devices.find(d => d.id.toLowerCase() === s.deviceId.toLowerCase());
+      const devName = dev?.name || '';
+      
+      const isPd = rawPid === PT_PD.toUpperCase() || 
+                   rawPid === 'PD' ||
+                   rawPid.startsWith('PD_') || 
+                   rawPid.includes('_PD') ||
+                   rawPid.includes('PHONG_DIEN') ||
+                   dev?.type === 'camera_pd' ||
+                   devName.toUpperCase().includes('PD') ||
+                   devName.toUpperCase().includes('PHÓNG ĐIỆN');
+
+      if (isPd) {
+        const uniquePid = `${s.deviceId}_${rawPid}`.toUpperCase();
+        if (!result.some(r => r.pid === uniquePid)) {
+
+          result.push({
+            pid: uniquePid,
+            value: s.value,
+            unit: s.unit,
+            deviceName: devName,
+            pointName: pointNamesMap[uniquePid]
+          });
+        }
+      }
+    });
+
+    return result;
+  }, [sensors, devices, activeCameraSrc, pointNamesMap]);
 
   return (
     <div className="dashboard-page new-dash-theme" style={{ position: 'relative', overflow: 'hidden', height: '100%', background: 'var(--admin-bg)' }}>
@@ -269,7 +364,13 @@ export default function DashboardPage() {
       {!isEditMode && (
         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 30, width: '20%', minWidth: 220, maxWidth: 270, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100% - 50px)', overflowY: 'auto' }}>
           <KpiCards plcOnline={plcOnline} devices={devices} sensors={sensors} />
-          <CameraGrid sensors={cameraSensors} alertsCount={camAlertsCount} />
+          <CameraGrid
+              sensors={cameraSensors}
+              alertsCount={camAlertsCount}
+              camOptionsGroups={camOptionsGroups}
+              activeCameraSrc={activeCameraSrc}
+              onCamChange={handleCamChange}
+            />
         </div>
       )}
 
@@ -286,25 +387,30 @@ export default function DashboardPage() {
           id="floatRightCol"
           style={{
             position: 'absolute', top: 10, right: 10, bottom: 40, zIndex: 30,
-            width: '18%', minWidth: 210, maxWidth: 250,
-            display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden',
+            width: 'auto',
+            display: 'flex', flexDirection: 'column', gap: 8, overflow: 'visible',
+            alignItems: 'flex-end',
+            justifyContent: 'space-between'
           }}
         >
-          <AlertPanel
-            alerts={alerts}
-            onAlertClick={(alert) => {
-              const streamId = findCameraStreamForDevice(alert, devices);
-              if (streamId) {
-                handleCamChange(streamId);
-              }
-            }}
-          />
-          <div style={{ flex: '0 0 auto' }}>
+          <div style={{ width: 120, display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 1 auto' }}>
+            <AlertPanel
+              alerts={alerts}
+              onAlertClick={(alert) => {
+                const streamId = findCameraStreamForDevice(alert, devices);
+                if (streamId) {
+                  handleCamChange(streamId);
+                }
+              }}
+            />
+          </div>
+          <div style={{ flex: '0 0 auto', width: 220 }}>
             <CameraLiveViewer
               cameraSrc={activeCameraSrc}
+              hasAlert={activeCamHasAlert}
               headerAddon={
                 <select
-                  style={{ fontSize: '0.55rem', padding: '1px 4px', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', borderRadius: 3, maxWidth: 100, cursor: 'pointer', outline: 'none' }}
+                  style={{ fontSize: '0.55rem', padding: '1px 4px', background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', borderRadius: 0, maxWidth: 100, cursor: 'pointer', outline: 'none' }}
                   value={activeCameraSrc}
                   onChange={e => handleCamChange(e.target.value)}
                 >
@@ -331,11 +437,11 @@ export default function DashboardPage() {
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-          <span style={{ width: 6, height: 6, background: plcOnline ? 'var(--admin-success)' : 'var(--admin-danger)', borderRadius: '50%', display: 'inline-block' }}></span>
+          <span style={{ width: 6, height: 6, background: plcOnline ? 'var(--admin-success)' : 'var(--admin-danger)', borderRadius: 0, display: 'inline-block' }}></span>
           PLC: {plcOnline ? 'Trực tuyến' : 'Ngoại tuyến'}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-          <span style={{ width: 6, height: 6, background: 'var(--admin-success)', borderRadius: '50%', display: 'inline-block' }}></span>
+          <span style={{ width: 6, height: 6, background: 'var(--admin-success)', borderRadius: 0, display: 'inline-block' }}></span>
           SignalR: Đã kết nối
         </span>
       </div>
@@ -353,11 +459,14 @@ function findCameraStreamForDevice(alert: AlertItem, devicesList: any[]) {
 
   // Helper chọn stream tối ưu dựa trên loại cảnh báo
   const selectStream = (cfg: any) => {
-    const isThermalAlert = (alert.message || '').toLowerCase().includes('nhiệt') || 
-                           (alert.message || '').toLowerCase().includes('roi') ||
-                           (alert.message || '').toLowerCase().includes('thermal') ||
-                           (alert.message || '').toLowerCase().includes('quá nhiệt') ||
-                           (alert.message || '').toLowerCase().includes('temp');
+    const msgLower = (alert.message || '').toLowerCase();
+    const isThermalAlert = msgLower.includes('nhiệt') || 
+                           msgLower.includes('nhiet') || 
+                           msgLower.includes('roi') ||
+                           msgLower.includes('thermal') ||
+                           msgLower.includes('quá nhiệt') ||
+                           msgLower.includes('qua nhiet') ||
+                           msgLower.includes('temp');
     if (isThermalAlert && cfg.go2rtc_thermal) {
       return cfg.go2rtc_thermal;
     }
@@ -377,6 +486,25 @@ function findCameraStreamForDevice(alert: AlertItem, devicesList: any[]) {
   });
   if (linkedCamera) {
     return selectStream(linkedCamera.config || {});
+  }
+
+  // 3. Fallback: Nếu thiết bị cảnh báo chia sẻ chung vùng (zone) với một camera
+  const alertingDevice = devicesList.find(d => d.id.toLowerCase() === devIdLower);
+  if (alertingDevice) {
+    const devZone = alertingDevice.config?.zone;
+    if (devZone) {
+      const devZoneLower = devZone.trim().toLowerCase();
+      const zoneCamera = devicesList.find(d => {
+        if (d.id.toLowerCase() === devIdLower) return false;
+        const isCam = DEV_CAM_TYPES.some(t => d.type?.includes(t));
+        if (!isCam) return false;
+        const camZone = d.config?.zone;
+        return camZone && camZone.trim().toLowerCase() === devZoneLower;
+      });
+      if (zoneCamera) {
+        return selectStream(zoneCamera.config || {});
+      }
+    }
   }
 
   return null;

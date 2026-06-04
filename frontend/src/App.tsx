@@ -26,8 +26,21 @@ const SettingsPage = React.lazy(() => import('@/pages/settings/SettingsPage'));
 const LoginPage = React.lazy(() => import('@/pages/login/LoginPage'));
 const LicensePage = React.lazy(() => import('@/pages/license/LicensePage'));
 
-// Bảo vệ route — Tạm thời tắt kiểm tra đăng nhập để bạn có thể xem trực tiếp giao diện trên trình duyệt của mình
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+import { authService } from '@/services/AuthService';
+
+// Bảo vệ route và phân quyền theo vai trò
+const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles?: string[] }) => {
+  const user = authService.getUser();
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (roles && !roles.includes(user.role)) {
+    // Nếu user không có quyền truy cập trang này, đưa về Dashboard
+    return <Navigate to="/dashboard" replace />;
+  }
+  
   return <>{children}</>;
 };
 
@@ -76,16 +89,16 @@ export default function App() {
             {/* Analytics — internal tabs, no nested routes */}
             <Route path="analytics" element={<AnalyticsLayout />} />
 
-            <Route path="reports" element={<ReportsPage />} />
-            <Route path="maintenance" element={<MaintenancePage />} />
-            <Route path="audit-log" element={<AuditLogPage />} />
+            <Route path="reports" element={<ProtectedRoute roles={['admin', 'manager']}><ReportsPage /></ProtectedRoute>} />
+            <Route path="maintenance" element={<ProtectedRoute roles={['admin', 'manager']}><MaintenancePage /></ProtectedRoute>} />
+            <Route path="audit-log" element={<ProtectedRoute roles={['admin']}><AuditLogPage /></ProtectedRoute>} />
             <Route path="multisite" element={<MultisitePage />} />
-            <Route path="device-management" element={<DeviceManagementPage />} />
-            <Route path="device-management/:deviceId/thermal-config" element={<ThermalConfigPage />} />
-            <Route path="user-management" element={<UserManagementPage />} />
-            <Route path="rule-engine" element={<RuleEnginePage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="license" element={<LicensePage />} />
+            <Route path="device-management" element={<ProtectedRoute roles={['admin']}><DeviceManagementPage /></ProtectedRoute>} />
+            <Route path="device-management/:deviceId/thermal-config" element={<ProtectedRoute roles={['admin']}><ThermalConfigPage /></ProtectedRoute>} />
+            <Route path="user-management" element={<ProtectedRoute roles={['admin']}><UserManagementPage /></ProtectedRoute>} />
+            <Route path="rule-engine" element={<ProtectedRoute roles={['admin']}><RuleEnginePage /></ProtectedRoute>} />
+            <Route path="settings" element={<ProtectedRoute roles={['admin']}><SettingsPage /></ProtectedRoute>} />
+            <Route path="license" element={<ProtectedRoute roles={['admin']}><LicensePage /></ProtectedRoute>} />
             <Route path="*" element={<div style={{color:'var(--admin-text)', padding:20}}>404 - Page not found</div>} />
           </Route>
         </Routes>

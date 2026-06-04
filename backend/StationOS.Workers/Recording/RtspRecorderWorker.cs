@@ -15,12 +15,15 @@ using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
+using Microsoft.AspNetCore.Hosting;
+
 namespace StationOS.Workers.Recording;
 
 public class RtspRecorderWorker : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RtspRecorderWorker> _logger;
+    private readonly IWebHostEnvironment _env;
     private readonly string _bufferRoot;
     private readonly int _segmentSeconds;
     private readonly int _bufferSeconds;
@@ -33,15 +36,18 @@ public class RtspRecorderWorker : BackgroundService
         IServiceProvider serviceProvider, 
         ILogger<RtspRecorderWorker> logger, 
         IConfiguration cfg,
-        CredentialEncryptionService crypto)
+        CredentialEncryptionService crypto,
+        IWebHostEnvironment env)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _crypto = crypto;
+        _env = env;
         
-        // Cấu hình đường dẫn lưu buffer
-        var webRoot = cfg["Recorder:BufferRoot"] ?? "wwwroot/media/buffer";
-        _bufferRoot = Path.IsPathRooted(webRoot) ? webRoot : Path.Combine(AppContext.BaseDirectory, webRoot);
+        // Cấu hình đường dẫn lưu buffer — Ưu tiên dùng WebRootPath để đồng bộ với API
+        var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var bufferSubDir = cfg["Recorder:BufferRoot"]?.Replace("wwwroot/", "") ?? "media/buffer";
+        _bufferRoot = Path.IsPathRooted(bufferSubDir) ? bufferSubDir : Path.Combine(webRoot, bufferSubDir);
         
         _segmentSeconds = cfg.GetValue("Recorder:SegmentSeconds", 5);
         _bufferSeconds = cfg.GetValue("Recorder:BufferSeconds", 60);
@@ -130,6 +136,8 @@ public class RtspRecorderWorker : BackgroundService
 
         var camDir = Path.Combine(_bufferRoot, cam.Id.ToString());
         if (!Directory.Exists(camDir)) Directory.CreateDirectory(camDir);
+
+        _logger.LogInformation("[NVR] Starting recorder for {Name} with URL: {Url}", cam.Name, rtspUrl);
 
         // Command FFmpeg để chia segment:
         // -rtsp_transport tcp: Dùng TCP cho ổn định
@@ -229,25 +237,38 @@ public class RtspRecorderWorker : BackgroundService
     {
         try
         {
-            // Giải mã config để lấy password thật
             var configJson = _crypto.DecryptPasswordInConfigJson(cam.Config);
             if (string.IsNullOrEmpty(configJson)) return null;
 
             using var doc = JsonDocument.Parse(configJson);
             var root = doc.RootElement;
 
-            // Ưu tiên các luồng theo thứ tự
-            if (root.TryGetProperty("rtsp_optical", out var optical) && !string.IsNullOrEmpty(optical.GetString()))
-                return optical.GetString();
-            if (root.TryGetProperty("rtsp_thermal", out var thermal) && !string.IsNullOrEmpty(thermal.GetString()))
-                return thermal.GetString();
-            if (root.TryGetProperty("rtsp_path", out var path) && !string.IsNullOrEmpty(path.GetString()))
-                return path.GetString();
+            // 1. Ưu tiên dùng go2rtc proxy (localhost:8554) vì nó ổn định và đã được go2rtc duy trì kết nối
+            string? go2rtcId = null;
+            if (root.TryGetProperty("go2rtc_thermal", out var gTherm)) go2rtcId = gTherm.GetString();
+            else if (root.TryGetProperty("go2rtc_optical", out var gOpt)) go2rtcId = gOpt.GetString();
+            else if (root.TryGetProperty("go2rtc_id", out var gId)) go2rtcId = gId.GetString();
+
+            if (!string.IsNullOrEmpty(go2rtcId)) {
+                var proxyUrl = $"rtsp://localhost:8554/{go2rtcId}";
+                _logger.LogInformation("[NVR] Using go2rtc proxy for {Name}: {Url}", cam.Name, proxyUrl);
+                return proxyUrl;
+            }
+
+            // 2. Fallback sang RTSP trực tiếp nếu không có go2rtc config
+            string? ip = root.TryGetProperty("ip", out var ipEl) ? ipEl.GetString() : null;
+            string? user = root.TryGetProperty("username", out var userEl) ? userEl.GetString() : null;
+            string? pass = root.TryGetProperty("password", out var passEl) ? passEl.GetString() : null;
             
-            // Fallback nếu chỉ có IP/user/pass mà chưa build RTSP URL
-            if (root.TryGetProperty("ip", out var ip) && root.TryGetProperty("username", out var user) && root.TryGetProperty("password", out var pass))
-            {
-                return $"rtsp://{user.GetString()}:{pass.GetString()}@{ip.GetString()}:554/Streaming/Channels/101";
+            string? directPath = null;
+            if (root.TryGetProperty("rtsp_thermal", out var therm)) directPath = therm.GetString();
+            else if (root.TryGetProperty("rtsp_optical", out var opt)) directPath = opt.GetString();
+            else if (root.TryGetProperty("rtsp_path", out var path)) directPath = path.GetString();
+
+            if (!string.IsNullOrEmpty(ip) && !string.IsNullOrEmpty(user)) {
+                var pathStr = directPath ?? "/Streaming/Channels/101";
+                if (!pathStr.StartsWith("/")) pathStr = "/" + pathStr;
+                return $"rtsp://{user}:{Uri.EscapeDataString(pass ?? "")}@{ip}:554{pathStr}";
             }
         }
         catch { }

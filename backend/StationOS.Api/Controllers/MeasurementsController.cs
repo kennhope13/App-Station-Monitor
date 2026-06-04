@@ -8,8 +8,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
 using StationOS.Api.Hubs;
 using StationOS.Data;
+using StationOS.Data.Entities;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -23,12 +25,14 @@ public class MeasurementsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IHubContext<RealtimeHub> _hubContext;
     private readonly IConfiguration _config;
+    private readonly IMemoryCache _cache;
 
-    public MeasurementsController(AppDbContext db, IHubContext<RealtimeHub> hubContext, IConfiguration config)
+    public MeasurementsController(AppDbContext db, IHubContext<RealtimeHub> hubContext, IConfiguration config, IMemoryCache cache)
     {
         _db = db;
         _hubContext = hubContext;
         _config = config;
+        _cache = cache;
     }
 
     // Cho phép: localhost + Docker bridge (172.x) + Tailscale (100.x) + LAN config
@@ -292,16 +296,24 @@ public class MeasurementsController : ControllerBase
         try
         {
             var stationId = (await _db.Stations.FirstOrDefaultAsync())?.Id ?? Guid.Empty;
-            var entities = readings.Select(r => new StationOS.Data.Entities.SensorReading
-            {
-                StationId = stationId,
-                DeviceId  = r.DeviceId,
-                PointId   = r.PointId,
-                Value     = r.Value,
-                Unit      = r.Unit ?? "°C",
-                Time      = DateTime.UtcNow,
-                Quality   = 0
-            });
+            var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
+
+            var entities = readings.Select(r => {
+                var reading = new StationOS.Data.Entities.SensorReading
+                {
+                    StationId = stationId,
+                    DeviceId  = r.DeviceId,
+                    PointId   = r.PointId,
+                    Value     = r.Value,
+                    Unit      = r.Unit ?? "°C",
+                    Time      = DateTime.UtcNow,
+                    Quality   = 0
+                };
+                // Cập nhật cache cho Rule Engine
+                cachedDict[reading.PointId] = reading;
+                return reading;
+            }).ToList();
+
             _db.SensorReadings.AddRange(entities);
             await _db.SaveChangesAsync();
         }
@@ -408,6 +420,13 @@ public class MeasurementsController : ControllerBase
         // Lưu toàn bộ bản ghi đo lường vào DB
         _db.SensorReadings.AddRange(readingsToSave);
         await _db.SaveChangesAsync();
+
+        // Cập nhật IMemoryCache cho Rule Engine
+        var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
+        foreach (var r in readingsToSave)
+        {
+            cachedDict[r.PointId] = r;
+        }
 
         // Broadcast realtime qua SignalR Hub
         await _hubContext.Clients.All.SendAsync("SensorUpdate", readingsToSave.Select(r => new {
