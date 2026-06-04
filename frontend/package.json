@@ -22,7 +22,9 @@
         "desktop:dev": "npx cross-env VITE_DESKTOP_RUNTIME=1 tauri dev",
         "desktop:build:full": "VITE_VARIANT=full VITE_DESKTOP_RUNTIME=1 tauri build",
         "desktop:build:tech": "VITE_VARIANT=tech VITE_DESKTOP_RUNTIME=1 tauri build --config src-tauri/tauri.tech.conf.json",
-        "desktop:build:finance": "VITE_VARIANT=finance VITE_DESKTOP_RUNTIME=1 tauri build --config src-tauri/tauri.finance.conf.json"
+        "desktop:build:finance": "VITE_VARIANT=finance VITE_DESKTOP_RUNTIME=1 tauri build --config src-tauri/tauri.finance.conf.json",
+        "desktop:build:thin": "tauri build --config src-tauri/tauri.thin.conf.json",
+        "desktop:dev:thin": "tauri dev --config src-tauri/tauri.thin.conf.json"
     },
     "devDependencies": {
         "@playwright/test": "^1.52.0",
