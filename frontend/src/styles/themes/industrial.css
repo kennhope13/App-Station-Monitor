@@ -1,0 +1,48 @@
+/* =================================================================
+   industrial.css - Steel Gray & Safety Orange
+   Dành cho môi trường vận hành công nghiệp, độ bền thị giác cao.
+   ================================================================= */
+
+.theme-industrial {
+  --admin-bg: #1a1c1e;         /* Gunmetal gray */
+  --admin-panel: #24272a;      /* Steel panel */
+  --admin-border: #33373b;     /* Slate border */
+  --admin-border-light: rgba(255, 255, 255, 0.05); 
+  --admin-text: #e1e2e1;       /* Cool white */
+  --admin-text-muted: #8c9196; /* Gray text */
+  --admin-accent: #f59e0b;     /* Safety Orange / Amber */
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-danger: #ef4444;
+  --admin-hover: rgba(245, 158, 11, 0.08);
+  --admin-overlay: rgba(26, 28, 30, 0.96);
+  --admin-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  --admin-card-bg: #24272a;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #000000;
+  --admin-btn-secondary-bg: #2d3135;
+  --admin-btn-secondary-border: #4a4f55;
+  --admin-btn-secondary-text: #f59e0b;
+  --admin-btn-secondary-hover: #383c42;
+
+  --admin-info-bg: rgba(245, 158, 11, 0.05);
+  --admin-info-border: rgba(245, 158, 11, 0.2);
+  --admin-info-text: #f59e0b;
+
+  --admin-tag-success-bg: rgba(16, 185, 129, 0.12);
+  --admin-tag-success-text: #10b981;
+  --admin-tag-warning-bg: rgba(245, 158, 11, 0.12);
+  --admin-tag-warning-text: #f59e0b;
+  --admin-tag-danger-bg: rgba(239, 68, 68, 0.12);
+  --admin-tag-danger-text: #ef4444;
+
+  /* Layering */
+  --admin-layer-1: rgba(255,255,255,.015);
+  --admin-layer-2: rgba(255,255,255,.03);
+  --admin-layer-3: rgba(255,255,255,.05);
+  --admin-layer-4: rgba(245, 158, 11, .15);
+  --admin-surface-btn: #2d3135;
+  --admin-scrollbar: #33373b;
+  --admin-scrollbar-hover: #4a4f55;
+}

@@ -1,0 +1,39 @@
+/* =================================================================
+   high-tech.css - Deep Navy & Emerald
+   Phong cách hiện đại, dịu mắt cho trực ca đêm.
+   ================================================================= */
+
+.theme-hightech {
+  --admin-bg: #050b1a;         /* Deep Midnight */
+  --admin-panel: #0a1628;      /* Navy Panel */
+  --admin-border: #122a42;     /* Subtle Navy Border */
+  --admin-border-light: rgba(16, 185, 129, 0.1); 
+  --admin-text: #d1d9e6;       /* Soft Blue White */
+  --admin-text-muted: #64748b; /* Slate */
+  --admin-accent: #10b981;     /* Emerald Green */
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-danger: #ef4444;
+  --admin-hover: rgba(16, 185, 129, 0.08);
+  --admin-overlay: rgba(5, 11, 26, 0.98);
+  --admin-shadow: 0 0 30px rgba(16, 185, 129, 0.1);
+  --admin-card-bg: #0a1628;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #ffffff;
+  --admin-btn-secondary-bg: #122a42;
+  --admin-btn-secondary-border: #10b981;
+  --admin-btn-secondary-text: #10b981;
+  --admin-btn-secondary-hover: #1a3a5a;
+
+  --admin-info-bg: rgba(16, 185, 129, 0.05);
+  --admin-info-border: rgba(16, 185, 129, 0.2);
+  --admin-info-text: #10b981;
+
+  /* Layering */
+  --admin-layer-1: rgba(16,185,129,.02);
+  --admin-layer-2: rgba(16,185,129,.04);
+  --admin-layer-3: rgba(16,185,129,.08);
+  --admin-layer-4: rgba(16,185,129,.12);
+  --admin-surface-btn: #122a42;
+}

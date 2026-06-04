@@ -1,0 +1,171 @@
+/* DashboardPage.css - Giao diện tối ưu & mượt mà cho StationOS */
+
+.dashboard-page-v2 {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  font-family: var(--admin-font);
+}
+
+/* Hiệu ứng vào trang (Entry Animations) */
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Các lớp phủ (Overlays) */
+.dash-layout-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  z-index: 30;
+  animation: fadeIn 0.8s ease-out;
+}
+
+.dash-main-content {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 12px;
+  gap: 12px;
+}
+
+/* Panel bên trái và bên phải */
+.side-panel {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding-bottom: 20px;
+}
+
+/* Custom Scrollbar mượt hơn */
+.side-panel::-webkit-scrollbar {
+  width: 4px;
+}
+.side-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+.side-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 0px;
+}
+.side-panel::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.side-panel-left { 
+  width: 285px; 
+  animation: slideInLeft 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.side-panel-right { 
+  width: 265px; 
+  animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Làm gọn các Card/Panel với hiệu ứng Hover */
+.glass-panel {
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-panel:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 15px rgba(59, 130, 246, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Toolbar Optimization */
+.dash-toolbar-container {
+  pointer-events: auto;
+  z-index: 40;
+  transition: opacity 0.3s ease;
+}
+
+/* Status Bar phía dưới */
+.bottom-status-bar {
+  pointer-events: auto;
+  display: flex;
+  gap: 24px;
+  padding: 10px 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--admin-text);
+  background: var(--admin-layer-1);
+  border-top: 1px solid var(--admin-border);
+  backdrop-filter: blur(10px);
+  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.2s ease;
+}
+
+.status-item:hover {
+  color: var(--admin-text);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  position: relative;
+}
+
+/* Hiệu ứng nháy nhẹ cho Status Dot */
+.status-dot::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.3;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+.dot-online { background: #10b981; color: #10b981; }
+.dot-offline { background: #ef4444; color: #ef4444; }

@@ -1,0 +1,35 @@
+/* =================================================================
+   cyberpunk.css - Deep Purple & Neon Cyan
+   Phong cách viễn tưởng, hiện đại mạnh mẽ.
+   ================================================================= */
+
+.theme-cyberpunk {
+  --admin-bg: #0d0221;         /* Space Purple */
+  --admin-panel: #150833;      /* Deep Purple */
+  --admin-border: #2f1b5a;     /* Glow Purple Border */
+  --admin-border-light: rgba(0, 255, 249, 0.1); 
+  --admin-text: #e0e0ff;       /* Soft Cyan-White */
+  --admin-text-muted: #7c58bf; /* Lavender Gray */
+  --admin-accent: #00fff9;     /* Neon Cyan */
+  --admin-success: #39ff14;    /* Neon Green */
+  --admin-warning: #ffde00;    /* Neon Yellow */
+  --admin-danger: #ff003c;     /* Neon Red/Pink */
+  --admin-hover: rgba(0, 255, 249, 0.08);
+  --admin-overlay: rgba(13, 2, 33, 0.98);
+  --admin-shadow: 0 0 40px rgba(47, 27, 90, 0.4);
+  --admin-card-bg: #150833;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #000000;
+  --admin-btn-secondary-bg: #24114d;
+  --admin-btn-secondary-border: #00fff9;
+  --admin-btn-secondary-text: #00fff9;
+  --admin-btn-secondary-hover: #2f1b5a;
+
+  /* Layering */
+  --admin-layer-1: rgba(0,255,249,.02);
+  --admin-layer-2: rgba(0,255,249,.04);
+  --admin-layer-3: rgba(0,255,249,.08);
+  --admin-layer-4: rgba(0,255,249,.15);
+  --admin-surface-btn: #24114d;
+}

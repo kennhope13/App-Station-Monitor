@@ -1,0 +1,54 @@
+/* =================================================================
+   dark.css - Dark Industrial Theme
+   ================================================================= */
+
+:root, .theme-dark {
+  --admin-bg: #090e1a;         /* Deep dark background */
+  --admin-panel: #0f172a;      /* Slate card background */
+  --admin-border: #1e293b;     /* Slate border */
+  --admin-border-light: rgba(255, 255, 255, 0.08); 
+  --admin-text: #f1f5f9;       /* Bright white text — high contrast on dark */
+  --admin-text-muted: #94a3b8; /* Muted text */
+  --admin-accent: #3b82f6;     /* Vivid blue accent */
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-danger: #ef4444;
+  --admin-hover: rgba(255, 255, 255, 0.06);
+  --admin-overlay: rgba(15, 23, 42, 0.95);
+  --admin-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  --admin-card-bg: #0f172a;
+
+  /* Theme Button & Info States */
+  --admin-text-on-accent: #ffffff;
+  --admin-btn-secondary-bg: #1e3a5f;
+  --admin-btn-secondary-border: #2563eb;
+  --admin-btn-secondary-text: #60a5fa;
+  --admin-btn-secondary-hover: #264a7a;
+
+  --admin-info-bg: rgba(56, 189, 248, 0.08);
+  --admin-info-border: rgba(56, 189, 248, 0.2);
+  --admin-info-text: #7dd3fc;
+
+  --admin-tag-success-bg: rgba(16, 185, 129, 0.15);
+  --admin-tag-success-text: #34d399;
+  --admin-tag-warning-bg: rgba(245, 158, 11, 0.15);
+  --admin-tag-warning-text: #fbbf24;
+  --admin-tag-danger-bg: rgba(239, 68, 68, 0.15);
+  --admin-tag-danger-text: #f87171;
+
+  /* Typography */
+  --admin-font: 'Inter', 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+  --admin-font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+
+  /* Overlay layers — dùng thay rgba(255,255,255,X) hardcode để hỗ trợ đổi theme */
+  --admin-layer-1: rgba(255,255,255,.02);   /* thead bg, hover rất nhẹ */
+  --admin-layer-2: rgba(255,255,255,.04);   /* row border, divider */
+  --admin-layer-3: rgba(255,255,255,.06);   /* code bg, progress track */
+  --admin-layer-4: rgba(255,255,255,.10);   /* button hover */
+  --admin-surface-btn: rgba(255,255,255,.05); /* button default bg */
+  --admin-scrollbar: rgba(255,255,255,.12);
+  --admin-scrollbar-hover: rgba(255,255,255,.22);
+  --admin-login-card-bg: rgba(17,24,39,.92);
+  --admin-login-divider: rgba(255,255,255,.07);
+  --admin-checkbox-bg: rgba(255,255,255,.08);
+}

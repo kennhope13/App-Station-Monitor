@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
 import pkg from './package.json';
 
@@ -8,6 +9,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
   plugins: [
+    react(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
@@ -44,13 +46,26 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/media': {
-        target: 'http://localhost:5056',
+        target: 'http://127.0.0.1:5000',
         changeOrigin: true,
         secure: false,
       },
       '/ws': {
-        target: 'http://localhost:5056',
+        target: 'http://127.0.0.1:5000',
         ws: true,
+      },
+      '/api': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+      },
+      '/ai-api': {
+        target: 'http://127.0.0.1:8100',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ai-api/, ''),
+      },
+      '/pd-monitor': {
+        target: 'http://127.0.0.1:8100',
+        changeOrigin: true,
       }
     }
   }

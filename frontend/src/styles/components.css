@@ -5,9 +5,9 @@
 
 /* ── Admin Card (base container used everywhere) ────────── */
 .admin-card {
-    background: var(--admin-card-bg, #111827);
-    border: 1px solid var(--admin-border, #1e293b);
-    border-radius: 12px;
+    background: var(--admin-card-bg, var(--admin-panel));
+    border: 1px solid var(--admin-border, var(--admin-border));
+    border-radius: 0px;
     overflow: visible;
 }
 
@@ -32,28 +32,27 @@
     font-weight: 700;
     letter-spacing: .5px;
     text-transform: uppercase;
-    color: var(--admin-text, #e2e8f0);
-    opacity: .5;
-    border-bottom: 1px solid var(--admin-border, #1e293b);
-    background: rgba(255, 255, 255, .02);
+    color: var(--admin-text-muted);
+    border-bottom: 1px solid var(--admin-border);
+    background: var(--admin-layer-1);
 }
 
 .data-table tbody td {
     padding: 12px 16px;
-    color: var(--admin-text, #e2e8f0);
-    border-bottom: 1px solid rgba(255, 255, 255, .04);
+    color: var(--admin-text);
+    border-bottom: 1px solid var(--admin-layer-2);
     vertical-align: middle;
 }
 
 .data-table tbody tr:hover {
-    background: rgba(255, 255, 255, .03);
+    background: var(--admin-layer-1);
 }
 
 .data-table code {
     font-size: .8rem;
-    background: rgba(255, 255, 255, .06);
+    background: var(--admin-layer-3);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: 0px;
 }
 
 /* ── Page Toolbar ───────────────────────────────────────── */
@@ -69,7 +68,7 @@
     font-size: 1.1rem;
     font-weight: 800;
     letter-spacing: .5px;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text, var(--admin-text));
 }
 
 /* ── Tags / Badges ──────────────────────────────────────── */
@@ -79,39 +78,33 @@
     gap: 6px;
     white-space: nowrap;
     padding: 3px 10px;
-    border-radius: 20px;
+    border-radius: 0px;
     font-size: .72rem;
     font-weight: 700;
 }
 
 .tag-success {
-    background: rgba(16, 185, 129, .15);
-    color: #10b981;
+    background: var(--admin-tag-success-bg); color: var(--admin-tag-success-text);
 }
 
 .tag-danger {
-    background: rgba(239, 68, 68, .15);
-    color: #ef4444;
+    background: var(--admin-tag-danger-bg); color: var(--admin-tag-danger-text);
 }
 
 .tag-warning {
-    background: rgba(245, 158, 11, .15);
-    color: #f59e0b;
+    background: var(--admin-tag-warning-bg); color: var(--admin-tag-warning-text);
 }
 
 .tag-role-admin {
-    background: rgba(239, 68, 68, .15);
-    color: #ef4444;
+    background: var(--admin-tag-danger-bg); color: var(--admin-tag-danger-text);
 }
 
 .tag-role-manager {
-    background: rgba(245, 158, 11, .15);
-    color: #f59e0b;
+    background: var(--admin-tag-warning-bg); color: var(--admin-tag-warning-text);
 }
 
 .tag-role-operator {
-    background: rgba(16, 185, 129, .15);
-    color: #10b981;
+    background: var(--admin-tag-success-bg); color: var(--admin-tag-success-text);
 }
 
 /* ── Toggle Switch ──────────────────────────────────────── */
@@ -132,8 +125,8 @@
     position: absolute;
     cursor: pointer;
     inset: 0;
-    background: #374151;
-    border-radius: 24px;
+    background: var(--admin-border);
+    border-radius: 0px;
     transition: .3s;
 }
 
@@ -144,55 +137,116 @@
     width: 18px;
     left: 3px;
     bottom: 3px;
-    background: #fff;
-    border-radius: 50%;
+    background: var(--admin-text);
+    border-radius: 0px;
     transition: .3s;
 }
 
 .toggle-switch input:checked+.toggle-slider {
-    background: #10b981;
+    background: var(--admin-success);
 }
 
 .toggle-switch input:checked+.toggle-slider::before {
     transform: translateX(20px);
+    background: #fff; /* Keep the knob white when active for contrast */
 }
 
 /* ── Buttons ────────────────────────────────────────────── */
 .btn-industrial {
-    padding: 8px 16px;
-    border-radius: 8px;
-    border: 1px solid var(--admin-border, #1e293b);
-    background: rgba(255, 255, 255, .05);
-    color: var(--admin-text, #e2e8f0);
-    font-size: .82rem;
-    font-weight: 600;
+    padding: 0 20px;
+    height: 34px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--admin-text-muted);
+    font-size: .75rem;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
     cursor: pointer;
-    transition: all .2s;
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.btn-industrial::before, .btn-industrial::after {
+    content: "";
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid var(--admin-accent);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.btn-industrial::before {
+    top: -3px; left: -3px;
+    border-right: none; border-bottom: none;
+}
+
+.btn-industrial::after {
+    bottom: -3px; right: -3px;
+    border-left: none; border-top: none;
 }
 
 .btn-industrial:hover {
-    background: rgba(255, 255, 255, .1);
+    background: var(--admin-accent);
+    border-color: var(--admin-accent);
+    color: #000 !important;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+    transform: translateY(-2px);
+}
+
+.theme-industrial .btn-industrial:hover {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+}
+
+.btn-industrial:hover::before, .btn-industrial:hover::after {
+    opacity: 1;
+    transform: translate(2px, 2px);
+}
+
+.btn-industrial:hover::after {
+    transform: translate(-2px, -2px);
+}
+
+.btn-industrial:active {
+    transform: translateY(0);
 }
 
 .btn-industrial.btn-primary {
-    background: var(--admin-accent, #2563eb);
-    border-color: var(--admin-accent, #2563eb);
-    color: #fff;
-}
-
-.btn-industrial.btn-primary:hover {
-    opacity: .9;
+    border-color: rgba(59, 130, 246, 0.4);
+    color: var(--admin-accent);
 }
 
 .btn-industrial.btn-danger {
-    background: rgba(239, 68, 68, .15);
-    border-color: rgba(239, 68, 68, .3);
-    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.4);
+    color: var(--admin-danger);
+}
+
+.btn-industrial.btn-danger::before, .btn-industrial.btn-danger::after {
+    border-color: var(--admin-danger);
+}
+
+.btn-industrial.btn-danger:hover {
+    background: var(--admin-danger);
+    border-color: var(--admin-danger);
+    color: #fff !important;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
 }
 
 .btn-industrial.btn-sm {
-    padding: 4px 10px;
-    font-size: .75rem;
+    height: 28px;
+    padding: 0 12px;
+    font-size: .68rem;
+}
+
+.btn-industrial.btn-sm::before, .btn-industrial.btn-sm::after {
+    width: 6px; height: 6px;
 }
 
 /* ── Form Elements ──────────────────────────────────────── */
@@ -208,29 +262,28 @@
     font-weight: 700;
     letter-spacing: .5px;
     text-transform: uppercase;
-    opacity: .5;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text-muted);
 }
 
 .form-input,
 .form-select {
     padding: 10px 14px;
-    border-radius: 8px;
-    border: 1px solid var(--admin-border, #1e293b);
-    background: #0f172a; /* Solid dark background for better dropdown visibility */
-    color: var(--admin-text, #e2e8f0);
+    border-radius: 0px;
+    border: 1px solid var(--admin-border, var(--admin-border));
+    background: var(--admin-panel); /* Solid dark background for better dropdown visibility */
+    color: var(--admin-text, var(--admin-text));
     font-size: .85rem;
 }
 
 .form-select option {
-    background: #1e293b;
-    color: #e2e8f0;
+    background: var(--admin-border);
+    color: var(--admin-text);
 }
 
 .form-input:focus,
 .form-select:focus {
     outline: none;
-    border-color: var(--admin-accent, #2563eb);
+    border-color: var(--admin-accent, var(--admin-accent));
 }
 
 .form-grid-2 {
@@ -244,7 +297,7 @@
     align-items: center;
     gap: 8px;
     font-size: .85rem;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text, var(--admin-text));
     cursor: pointer;
 }
 
@@ -265,9 +318,9 @@
 }
 
 .modal-content {
-    background: var(--admin-card-bg, #111827);
-    border: 1px solid var(--admin-border, #1e293b);
-    border-radius: 16px;
+    background: var(--admin-card-bg, var(--admin-panel));
+    border: 1px solid var(--admin-border, var(--admin-border));
+    border-radius: 0px;
     width: 560px;
     max-width: 95vw;
     max-height: 85vh;
@@ -280,19 +333,19 @@
     align-items: center;
     justify-content: space-between;
     padding: 20px 24px;
-    border-bottom: 1px solid var(--admin-border, #1e293b);
+    border-bottom: 1px solid var(--admin-border, var(--admin-border));
 }
 
 .modal-header h3 {
     margin: 0;
     font-size: 1rem;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text, var(--admin-text));
 }
 
 .modal-close-btn {
     background: none;
     border: none;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text, var(--admin-text));
     font-size: 1.2rem;
     cursor: pointer;
     opacity: .5;
@@ -311,21 +364,21 @@
     justify-content: flex-end;
     gap: 10px;
     padding: 16px 24px;
-    border-top: 1px solid var(--admin-border, #1e293b);
+    border-top: 1px solid var(--admin-border, var(--admin-border));
 }
 
 /* ── Progress Bar ───────────────────────────────────────── */
 .progress-bar-wrap {
     width: 100%;
     height: 8px;
-    background: rgba(255, 255, 255, .06);
-    border-radius: 4px;
+    background: var(--admin-layer-3);
+    border-radius: 0px;
     overflow: hidden;
 }
 
 .progress-bar {
     height: 100%;
-    border-radius: 4px;
+    border-radius: 0px;
     transition: width .5s;
 }
 
@@ -334,14 +387,14 @@
     display: flex;
     gap: 0;
     margin-bottom: 20px;
-    border-bottom: 1px solid var(--admin-border, #1e293b);
+    border-bottom: 1px solid var(--admin-border, var(--admin-border));
 }
 
 .stab {
     padding: 10px 20px;
     font-size: .82rem;
     font-weight: 600;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text, var(--admin-text));
     opacity: .5;
     cursor: pointer;
     border-bottom: 2px solid transparent;
@@ -354,7 +407,7 @@
 
 .stab.active {
     opacity: 1;
-    border-bottom-color: var(--admin-accent, #2563eb);
+    border-bottom-color: var(--admin-accent, var(--admin-accent));
 }
 
 /* ── DB Status ──────────────────────────────────────────── */
@@ -369,9 +422,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 10px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, .04);
+    border-bottom: 1px solid var(--admin-layer-2);
     font-size: .85rem;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text);
 }
 
 /* ── Theme Options (Settings UI tab) ────────────────────── */
@@ -382,24 +435,24 @@
     gap: 8px;
     cursor: pointer;
     padding: 8px;
-    border-radius: 10px;
+    border-radius: 0px;
     border: 2px solid transparent;
     transition: all .2s;
     font-size: .8rem;
-    color: var(--admin-text, #e2e8f0);
+    color: var(--admin-text, var(--admin-text));
 }
 
 .theme-option:hover {
-    border-color: rgba(255, 255, 255, .15);
+    border-color: var(--admin-layer-4);
 }
 
 .theme-option.active {
-    border-color: var(--admin-accent, #2563eb);
+    border-color: var(--admin-accent, var(--admin-accent));
 }
 
 .theme-preview {
     width: 80px;
     height: 50px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 0px;
+    border: 1px solid var(--admin-border);
 }

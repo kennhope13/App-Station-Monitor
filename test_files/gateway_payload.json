@@ -1,0 +1,26 @@
+{
+  "gatewayIp": "192.168.10.200",
+  "cabinets": [
+    {
+      "cabinetCode": "tu_471",
+      "temp1": 42.5,
+      "temp2": 43.1,
+      "temp3": 41.8,
+      "pd": 15.2
+    },
+    {
+      "cabinetCode": "tu_472",
+      "temp1": 38.4,
+      "temp2": 39.5,
+      "temp3": 40.2,
+      "pd": 5.8
+    },
+    {
+      "cabinetCode": "tu_473",
+      "temp1": 55.6,
+      "temp2": 57.1,
+      "temp3": 54.9,
+      "pd": 28.4
+    }
+  ]
+}

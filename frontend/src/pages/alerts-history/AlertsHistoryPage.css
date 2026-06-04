@@ -1,0 +1,302 @@
+.alerts-history-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px;
+  box-sizing: border-box;
+  gap: 10px;
+  background: var(--admin-bg);
+}
+
+.ah-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative; 
+  border: 1px solid var(--admin-border);
+}
+
+.ah-list-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── Grid Layout for Rows ── */
+.ah-grid-header, .ah-grid-row {
+  display: grid;
+  grid-template-columns: 70px 110px 110px 1fr 120px 110px;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ah-grid-header {
+  border-bottom: 2px solid var(--admin-border);
+  background: var(--admin-layer-3);
+  height: 36px;
+  position: sticky; top: 0; z-index: 2;
+}
+
+.ah-grid-header > div {
+  padding: 0 12px;
+  font-size: .6rem;
+  font-weight: 900;
+  color: var(--admin-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+}
+
+.ah-grid-row {
+  border-bottom: 1px solid var(--admin-border-light);
+  cursor: pointer;
+  min-height: 56px;
+  transition: background 0.1s;
+}
+
+.ah-grid-row:hover { background: rgba(255,255,255,0.02); }
+
+.ah-grid-row > div {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+}
+
+/* ── Content Styles ── */
+.ah-time-cell {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 2px;
+}
+
+.ah-time-val {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--admin-text);
+  font-family: var(--admin-font-mono);
+}
+
+.ah-date-val {
+  font-size: 0.65rem;
+  color: var(--admin-text-muted);
+  opacity: 0.7;
+}
+
+.ah-msg-cell {
+  flex-direction: column;
+  align-items: flex-start !important;
+  justify-content: center;
+  gap: 2px;
+}
+
+.ah-msg-label {
+  font-size: 0.6rem;
+  font-weight: 900;
+  color: var(--admin-accent);
+  text-transform: uppercase;
+}
+
+.ah-msg-body {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--admin-text);
+}
+
+/* ── Badges ── */
+.ah-badge {
+  font-size: .65rem;
+  font-weight: 900;
+  padding: 4px 10px;
+  text-transform: uppercase;
+  border-radius: 2px;
+  text-align: center;
+  min-width: 85px;
+  justify-content: center;
+}
+
+.ah-badge-alarm { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+.ah-badge-warning { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+.ah-badge-status-open { color: #ef4444; font-weight: 900; }
+
+/* ── Buttons ── */
+.ah-btn-ack {
+  background: var(--admin-accent);
+  color: #000;
+  border: none;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 90px;
+}
+
+.ah-btn-ack:hover { filter: brightness(1.1); }
+
+/* ── Reverting Detail Panel to basic ── */
+.ah-detail-panel {
+  position: absolute;
+  top: 0;
+  right: -460px;
+  bottom: 0;
+  width: 450px;
+  background: var(--admin-panel);
+  border-left: 1px solid var(--admin-border);
+  z-index: 100;
+  transition: right 0.28s;
+  display: flex;
+  flex-direction: column;
+}
+.ah-detail-panel.open { right: 0; }
+
+.ah-grid-header > div:nth-child(1), .ah-grid-row > div:nth-child(1),
+.ah-grid-header > div:nth-child(3), .ah-grid-row > div:nth-child(3),
+.ah-grid-header > div:nth-child(5), .ah-grid-row > div:nth-child(5),
+.ah-grid-header > div:nth-child(6), .ah-grid-row > div:nth-child(6) {
+  justify-content: center;
+}
+
+/* ── Refined Detail Panel Styles ────────────────────── */
+.ah-detail-inner {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--admin-bg);
+}
+
+.ah-detail-header {
+  padding: 12px 16px;
+  background: var(--admin-panel);
+  border-bottom: 1px solid var(--admin-border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.ah-detail-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.ah-detail-section {
+  padding: 20px 16px;
+  border-bottom: 1px solid var(--admin-border-light);
+}
+
+.ah-section-title {
+  font-size: 0.65rem;
+  font-weight: 900;
+  color: var(--admin-accent);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ah-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--admin-border-light);
+}
+
+.ah-evidence-box {
+  background: #000;
+  border: 1px solid var(--admin-border);
+  position: relative;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+.ah-evidence-label {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.7);
+  padding: 2px 8px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.ah-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ah-info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--admin-layer-1);
+  border: 1px solid transparent;
+}
+
+.ah-info-item.highlight {
+  background: var(--admin-layer-2);
+  border-color: var(--admin-border-light);
+}
+
+.ah-info-key {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--admin-text-muted);
+  text-transform: uppercase;
+}
+
+.ah-info-val {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--admin-text);
+}
+
+.ah-actions-footer {
+  padding: 16px;
+  background: var(--admin-panel);
+  border-top: 1px solid var(--admin-border);
+  display: flex;
+  gap: 12px;
+}
+
+.ah-btn-footer {
+  flex: 1;
+  height: 40px;
+  border-radius: 0;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.ah-btn-footer-primary {
+  background: var(--admin-accent);
+  color: #000;
+}
+
+.ah-btn-footer-danger {
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.ah-btn-footer:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}

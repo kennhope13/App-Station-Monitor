@@ -1,111 +1,72 @@
-# ============================================================
-# .gitignore — StationMonitor Project
-# ============================================================
-
-# ── Large Binaries (Blockers for GitHub) ──
-*.rar
-*.zip
-*.7z
-*.tar.gz
-*.exe
-*.dll
-*.so
-*.dylib
-*.bin
-
-# ── .NET / C# ──
-bin/
-obj/
-[Ee]xpress/
-*.user
-*.userosscache
-*.sln.docuser
-.vs/
-.vscode/
-*.suo
-*.user
-*.userosscache
-*.sln.docuser
-*.swp
-*.bak
-*.log
-
-# ── Node.js / Frontend ──
+# Node / Frontend
 node_modules/
+**/node_modules/
 dist/
 build/
+.svelte-kit/
+.next/
+.tauri/
+frontend/src-tauri/target/
+
+# .NET / C#
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Python / AI Engine
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+.ipynb_checkpoints
+
+# Environment Variables & Secrets
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.parcel-cache
-.cache
-.next
-out/
+*.env
+frontend/.env
+ai_engine/.env
 
-# ── Tauri ──
-src-tauri/target/
-src-tauri/binaries/
-src-tauri/gen/
+# Temporary / Large Media Files
+test_files/cam153_snapshots/
 
-# ── Python / AI ──
-__pycache__/
-*.py[cod]
-*$py.class
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-enhanced_relay.log
-ffmpeg_relay.log
-ai_diagnostics.log
-
-# ── Databases ──
-data/pgdata/
-data/mosquitto/data/
-data/mosquitto/log/
-*.db
-*.sqlite
-
-# ── Media (generated at runtime) ──
-wwwroot/detections/
-wwwroot/videos/
-wwwroot/media/
-wwwroot/data/media/
-wwwroot/reports/
-alerts/
-sdk-relay/notifications/alerts/*.json
-sdk-relay/notifications/alerts/*.jpg
-sdk-relay/notifications/notifications.log
-*.jpg
-*.jpeg
-*.png
-!frontend/public/*.png
-*.mp4
-*.avi
-
-# ── SDK binaries (download separately - too large for git) ──
-sdk-relay/test_sdk/lib/windows/*.dll
-sdk-relay/test_sdk/lib/windows/*.exe
-sdk-relay/test_sdk/lib/windows/*.lib
-sdk-relay/test_sdk/lib/windows/ClientDemoDll/
-sdk-relay/test_sdk/lib/linux/*.so
-sdk-relay/test_sdk/lib/linux/*.so.*
-sdk-relay/test_sdk/lib/linux/HCNetSDKCom/
-sdk-relay/test_sdk/lib/*.exe
-sdk-relay/test_sdk/lib/*.zip
-
-# ── Claude memory (local only) ──
-.claude/
-
-# ── System / OS ──
+# System Files
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Logs and PIDs
+*.log
+.pids
+backend/api_log.txt
+backend/backend_utf8.log
+
+# Backups
+backup/
+
+# Scratch and test scripts
+scratch_*.py
+test_maintenance_data.py
+thermal_realtime_stream.py
+
+# Generated media / reports
+backend/StationOS.Api/wwwroot/media/detections/
+backend/StationOS.Api/wwwroot/reports/
+
+# Temporary Database Files
+data/hangfire.db*
+data/station_monitor.db*

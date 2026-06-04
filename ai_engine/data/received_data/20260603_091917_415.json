@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-06-03 09:19:17",
+  "points": [
+    {
+      "id": "Điểm 3",
+      "temperature": 30.3
+    },
+    {
+      "id": "Điểm 4",
+      "temperature": 32.5
+    },
+    {
+      "id": "Điểm 5",
+      "temperature": 34.7
+    },
+    {
+      "id": "Điểm 6",
+      "temperature": 31.9
+    },
+    {
+      "id": "Điểm 7",
+      "temperature": 33.0
+    },
+    {
+      "id": "Điểm 8",
+      "temperature": 30.2
+    },
+    {
+      "id": "Điểm 2",
+      "temperature": 33.1
+    },
+    {
+      "id": "Điểm 1",
+      "temperature": 32.0
+    },
+    {
+      "id": "Vùng 1",
+      "temperature": 32.3
+    },
+    {
+      "id": "Vùng 2",
+      "temperature": 32.6
+    }
+  ]
+}
