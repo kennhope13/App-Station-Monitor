@@ -3,6 +3,7 @@
 # To stop: docker compose -f docker-compose.db.yml down
 
 version: '3.8'
+name: stationos-main
 
 services:
   postgres:
