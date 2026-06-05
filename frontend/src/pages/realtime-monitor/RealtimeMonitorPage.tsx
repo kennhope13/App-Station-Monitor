@@ -7,7 +7,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
-import { GO2RTC_URL, AI_ENGINE_URL } from '@/utils/env';
+import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
+import { authService } from '@/services/AuthService';
 import { createRealtimeHub } from '@/services/realtime.service';
 import { useAlertStore } from '@/store/alertStore';
 import { useDeviceStore } from '@/store/deviceStore';
@@ -35,6 +36,7 @@ export default function RealtimeMonitorPage() {
   
   // Realtime
   const [deviceStatus, setDeviceStatus] = useState<Record<string, string>>({});
+  const [aiStatsMap, setAiStatsMap] = useState<Record<string, any>>({});
 
   // Lightbox
   const [lightbox, setLightbox] = useState<{ url: string, isVideo: boolean } | null>(null);
@@ -59,9 +61,8 @@ export default function RealtimeMonitorPage() {
   const alertsByFilter = useAlertStore(s => s.alertsByFilter);
   const alerts = alertsByFilter[ALERT_STATUS.OPEN] ?? [];
 
-  // Load cameras
+  // 1. Initial Load: Fetch cameras once on mount
   useEffect(() => {
-    let roiSyncTimer: any = null;
     getFirstStationId().then((id: string | null) => {
       if (id) {
         fetchDevices(id);
@@ -104,67 +105,88 @@ export default function RealtimeMonitorPage() {
       });
       setCameras(expandedCams);
 
-      // Fetch ROI boundaries, PD boundaries, points và VVR mapping cho tất cả camera
-      const uniqueBaseIds = Array.from(new Set(cams.map(c => c.id)));
+      // Fetch VVR mapping once
       const thermalIds = cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id);
-
-      // Fetch VVR mapping 1 lần (không cần poll vì ít thay đổi)
       thermalIds.forEach(id => {
         stationApi.getThermalMapping(id).then(m => {
           if (m) setVvrCache(prev => ({ ...prev, [id.toLowerCase()]: m }));
         }).catch(() => {});
       });
-
-      const fetchRoiConfig = () => {
-        Promise.all(
-          uniqueBaseIds.map(id =>
-            Promise.all([
-              stationApi.getBoundaries(id, 'roi').catch(() => []),
-              stationApi.getRoiPoints(id).catch(() => []),
-              stationApi.getBoundaries(id, 'pd').catch(() => []),
-            ]).then(([boundaries, points, pdBounds]) => ({ id, boundaries, points, pdBounds }))
-          )
-        ).then(results => {
-          const boundMap: Record<string, Boundary[]> = {};
-          const pointMap: Record<string, RoiPoint[]> = {};
-          const pdMap: Record<string, Boundary[]> = {};
-          results.forEach(res => {
-            const lowId = res.id.toLowerCase();
-            boundMap[lowId] = res.boundaries;
-            pointMap[lowId] = res.points;
-            pdMap[lowId] = res.pdBounds;
-          });
-          setRoiBoundaries(boundMap);
-          setRoiPoints(pointMap);
-          setPdBoundaries(pdMap);
-        }).catch(console.error);
-      };
-
-      fetchRoiConfig();
-      roiSyncTimer = setInterval(fetchRoiConfig, 4000);
-
-      // Fetch initial latest points for starting temperatures
-      stationApi.getLatestPoints().then(readings => {
-        setRoiReadings(prev => {
-          const next = { ...prev };
-          readings.forEach(r => {
-            const devId = r.deviceId?.toLowerCase();
-            const ptId = r.pointId?.toLowerCase();
-            if (!devId || !ptId) return;
-            next[devId] = {
-              ...(next[devId] || {}),
-              [ptId]: r.value
-            };
-          });
-          return next;
-        });
-      }).catch(console.error);
     }).catch(console.error);
 
-    return () => {
-      clearInterval(roiSyncTimer);
+    // Initial latest points
+    stationApi.getLatestPoints().then(readings => {
+      setRoiReadings(prev => {
+        const next = { ...prev };
+        readings.forEach(r => {
+          const devId = r.deviceId?.toLowerCase();
+          const ptId = r.pointId?.toLowerCase();
+          if (!devId || !ptId) return;
+          next[devId] = { ...(next[devId] || {}), [ptId]: r.value };
+        });
+        return next;
+      });
+    }).catch(console.error);
+  }, []); // Only run once on mount
+
+  // 2. Periodic ROI/PD Boundary Refresh
+  useEffect(() => {
+    if (cameras.length === 0) return;
+    
+    const fetchRoiConfig = () => {
+      const baseCamIds = Array.from(new Set(cameras.map(c => c.id.replace(/_(optical|thermal)$/, ''))));
+      Promise.all(
+        baseCamIds.map(id =>
+          Promise.all([
+            stationApi.getBoundaries(id, 'roi').catch(() => []),
+            stationApi.getRoiPoints(id).catch(() => []),
+            stationApi.getBoundaries(id, 'pd').catch(() => []),
+          ]).then(([boundaries, points, pdBounds]) => ({ id, boundaries, points, pdBounds }))
+        )
+      ).then(results => {
+        const boundMap: Record<string, Boundary[]> = {};
+        const pointMap: Record<string, RoiPoint[]> = {};
+        const pdMap: Record<string, Boundary[]> = {};
+        results.forEach(res => {
+          const lowId = res.id.toLowerCase();
+          boundMap[lowId] = res.boundaries;
+          pointMap[lowId] = res.points;
+          pdMap[lowId] = res.pdBounds;
+        });
+        setRoiBoundaries(boundMap);
+        setRoiPoints(pointMap);
+        setPdBoundaries(pdMap);
+      }).catch(console.error);
     };
-  }, [fetchDevices, fetchAlerts]);
+
+    fetchRoiConfig();
+    const timer = setInterval(fetchRoiConfig, 5000);
+    return () => clearInterval(timer);
+  }, [cameras.length]); // Re-run if camera count changes
+
+  // 3. AI State Polling (Fast sync for visual feedback)
+  useEffect(() => {
+    const pdCams = cameras.filter(c => c.type === 'camera_pd');
+    if (pdCams.length === 0) return;
+
+    const aiPollInterval = setInterval(async () => {
+      const token = authService.getToken() || '';
+      const backend = API_BASE_URL.replace('/api/v1', '');
+
+      pdCams.forEach(async (cam) => {
+        const baseId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+        try {
+          const res = await fetch(`${AI_ENGINE_URL}/pd-monitor/${baseId}/state?token=${token}&backend=${backend}`);
+          if (res.ok) {
+            const data = await res.json();
+            setAiStatsMap(prev => ({ ...prev, [baseId]: data }));
+          }
+        } catch {}
+      });
+    }, 800);
+
+    return () => clearInterval(aiPollInterval);
+  }, [cameras.length]); // Independent of ROI config sync
 
   // SignalR (Simplified: only local UI state, global alerts handled in AppShell)
   useEffect(() => {
@@ -270,6 +292,7 @@ export default function RealtimeMonitorPage() {
     const points = roiPoints[baseDeviceId] || [];
     const boundaries = roiBoundaries[baseDeviceId] || [];
     const readings = roiReadings[baseDeviceId] || {};
+    const aiState = aiStatsMap[baseDeviceId] || {};
     const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
     const cfg = cam.config || {};
     const vvrRaw = (cfg as any).visible_valid_rect;
@@ -474,7 +497,8 @@ export default function RealtimeMonitorPage() {
 
       const isAlarm = hasDischarge && pdValue !== undefined && pdValue >= alarmDb;
       const isWarning = hasDischarge && pdValue !== undefined && pdValue >= warningDb;
-      const color = isAlarm ? '#ef4444' : isWarning ? '#fbbf24' : '#10b981';
+      const isActive = aiState.active_boundary === b.name;
+      const color = isAlarm ? '#ef4444' : (isActive || isWarning ? '#fbbf24' : '#10b981');
 
       const labelTransform =
         labelPos === 'bottom' ? 'translate(-50%, 0)'    :
@@ -496,26 +520,17 @@ export default function RealtimeMonitorPage() {
         >
           <div
             style={{
-              background: 'rgba(13, 17, 23, 0.95)',
-              backdropFilter: 'blur(4px)',
-              border: `1px solid ${color}`,
-              borderRadius: 3,
-              padding: '1px 5px',
               fontSize: `${fontSize - 2}px`,
-              color: '#fff',
+              fontWeight: 800,
+              color: color,
+              textShadow: '0 1px 3px rgba(0,0,0,1)',
               whiteSpace: 'nowrap',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              boxShadow: `0 2px 6px rgba(0,0,0,0.5), 0 0 6px ${color}33`,
               fontFamily: 'var(--font-mono)',
-              animation: pdValue !== undefined ? 'pulse-subtle 2s infinite' : 'none'
+              animation: isActive ? 'pulse-subtle 1s infinite' : 'none',
+              padding: '1px 3px'
             }}
           >
-            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>⚡ {b.name}</span>
-            <span style={{ fontWeight: 800, color: color, fontSize: '9px', borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: 4 }}>
-              {pdValue !== undefined ? `${pdValue.toFixed(1)} dB` : '-- dB'}
-            </span>
+            {b.name}
           </div>
         </div>
       );
@@ -528,6 +543,7 @@ export default function RealtimeMonitorPage() {
   const renderOverlayPdBoundaries = (cam: CameraDevice) => {
     const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const boundaries = pdBoundaries[baseDeviceId] || [];
+    const aiState = aiStatsMap[baseDeviceId] || {};
 
     return boundaries.map(b => {
       let poly: [number, number][] = [];
@@ -535,18 +551,32 @@ export default function RealtimeMonitorPage() {
       if (poly.length < 3) return null;
 
       const pointsStr = poly.map(([x, y]) => `${x * 100},${y * 100}`).join(' ');
-      const color = b.severityLevel === 'alarm' ? '#ef4444' : '#10b981';
+      
+      const isActive = aiState.active_boundary === b.name;
+      const currentDb = isActive ? aiState.db : 0;
+      
+      let alarmDb = 45;
+      try {
+        const t = JSON.parse(b.thresholds || '{}');
+        alarmDb = t.alarm || 45;
+      } catch {}
+
+      const isAlarm = isActive && currentDb >= alarmDb;
+      
+      // Màu sắc rực rỡ và nhạy (Đỏ = Alarm, Vàng = Active/Warning, Xanh = Normal)
+      const color = isAlarm ? '#ef4444' : (isActive ? '#fbbf24' : '#10b981');
 
       return (
         <g key={b.id}>
           <polygon
             points={pointsStr}
-            fill={`${color}12`}
+            fill={`${color}${isActive ? '25' : '10'}`}
             stroke={color}
-            strokeWidth={2}
-            strokeDasharray="4 2"
+            strokeWidth={isActive ? 3 : 1.5}
+            strokeDasharray={isActive ? 'none' : '4 2'}
             vectorEffect="non-scaling-stroke"
             opacity={0.9}
+            style={{ transition: 'all 0.3s ease' }}
           />
         </g>
       );
@@ -701,6 +731,19 @@ export default function RealtimeMonitorPage() {
               >
                 {renderOverlayBoundaries(cam)}
                 {renderOverlayPdBoundaries(cam)}
+                {/* Marker đốm PD */}
+                {(() => {
+                  const baseId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+                  const det = aiStatsMap[baseId]?.detection;
+                  if (!det) return null;
+                  return (
+                    <g transform={`translate(${det.x * 100}, ${det.y * 100})`}>
+                      <circle r="2" fill="none" stroke="#fff" strokeWidth="0.5" />
+                      <line x1="-2.5" y1="0" x2="2.5" y2="0" stroke="#ef4444" strokeWidth="0.6" />
+                      <line x1="0" y1="-2.5" x2="0" y2="2.5" stroke="#ef4444" strokeWidth="0.6" />
+                    </g>
+                  );
+                })()}
               </svg>
               {renderOverlayLabels(cam)}
             </div>

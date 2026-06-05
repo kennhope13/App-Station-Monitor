@@ -8,7 +8,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { CameraDevice, Boundary, stationApi } from '@/services/StationApiService';
 import { Trash2, Save, X, Edit2 } from 'lucide-react';
 import { authService } from '@/services/AuthService';
-import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
+import { GO2RTC_URL, API_BASE_URL, AI_ENGINE_URL } from '@/utils/env';
 import { confirmDialog } from '@/utils/confirm';
 
 type Props = { 
@@ -30,11 +30,11 @@ const notifyAiEngine = async (deviceId: string, streamId: string) => {
   try {
     const token = authService.getToken() || '';
     const backend = API_BASE_URL.replace('/api/v1', '');
-    const fetchUrl = `/ai-api/api/v1/config/pd-regions?token=${token}&backend=${backend}`;
+    const fetchUrl = `${AI_ENGINE_URL}/config/pd-regions?token=${token}&backend=${backend}`;
     await fetch(fetchUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId, stream_id: streamId })
+      body: JSON.stringify({ device_id: deviceId, stream_id: streamId })
     });
   } catch { /* ignore */ }
 };
@@ -53,7 +53,12 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
   const [dragPoly, setDragPoly] = useState<boolean>(false);
 
   // Realtime State
-  const [aiStats, setAiStats] = useState<{ db?: number | null, hz?: number | null, active_boundary?: string | null }>({});
+  const [aiStats, setAiStats] = useState<{ 
+    db?: number | null, 
+    hz?: number | null, 
+    active_boundary?: string | null,
+    discharge_counts?: Record<string, number> | null
+  }>({});
 
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +90,7 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
             db: data.db,
             hz: data.hz,
             active_boundary: data.active_boundary,
+            discharge_counts: data.discharge_counts,
           });
         }
       } catch {}
@@ -331,10 +337,12 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
               const isWarning = currentDb != null && currentDb >= warnDb;
               const statusColor = isAlarm ? '#ef4444' : isWarning ? '#fbbf24' : '#10b981';
 
+              const count = aiStats.discharge_counts?.[b.name] || 0;
+
               return (
                 <div key={b.id} style={{ 
                   position:'absolute', left:`${cx}%`, top:`${cy}%`, transform:'translate(-50%,-50%)', 
-                  background:'rgba(13,17,23,0.9)', padding:'1px 4px', borderRadius: 2,
+                  background:'rgba(13,17,23,0.9)', padding:'2px 4px', borderRadius: 2,
                   color:'#fff', fontSize:8, fontWeight:700, pointerEvents:'none',
                   border: isActive ? `1px solid ${statusColor}` : '1px solid rgba(255,255,255,0.15)',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
@@ -343,7 +351,7 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
                   transition: 'all 0.3s ease'
                 }}>
                   <div style={{ opacity: 0.85, fontSize: 8 }}>
-                    {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{b.name}
+                    {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{displayName} ({count})
                   </div>
                   {isActive && (
                     <div style={{ 
@@ -351,11 +359,15 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
                       fontSize: '9px', 
                       fontFamily: 'monospace', 
                       borderTop: '1px solid rgba(255,255,255,0.1)', 
-                      paddingTop: 0, 
-                      marginTop: 0, 
-                      fontWeight: 800 
+                      paddingTop: 2, 
+                      marginTop: 2, 
+                      fontWeight: 800,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center'
                     }}>
-                      {currentDb != null ? `${currentDb.toFixed(1)} dB` : '-- dB'}
+                      <div>{currentDb != null ? `${currentDb.toFixed(1)} dB` : '-- dB'}</div>
+                      {aiStats.hz != null && <div style={{ fontSize: '8px', opacity: 0.85 }}>{aiStats.hz.toFixed(0)} Hz</div>}
                     </div>
                   )}
                 </div>

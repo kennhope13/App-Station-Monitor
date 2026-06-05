@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { stationApi } from '@/services/StationApiService';
-import { SldPoint, SensorPoint } from '@/types/api.types';
+import { SldPoint, SensorPoint, Rule } from '@/types/api.types';
 import { API_BASE_URL } from '@/utils/env';
 
 interface SldCanvasProps {
@@ -9,6 +9,7 @@ interface SldCanvasProps {
   showLabels?: boolean;
   colorMatrix?: string;
   sensors?: SensorPoint[];
+  rules?: Rule[];
   selectedNodeId?: string;
   onNodeSelect?: (point: SldPoint | null) => void;
   onPointsChanged?: () => void;
@@ -50,7 +51,7 @@ const LIGHT_MATRIX = '1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0';
 function getTheme() { return document.documentElement.dataset.theme || 'dark'; }
 
 const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
-  ({ stationId, editMode = false, showLabels = false, colorMatrix, sensors = [], selectedNodeId, onNodeSelect, onPointsChanged, onNodeDropped }, ref) => {
+  ({ stationId, editMode = false, showLabels = false, colorMatrix, sensors = [], rules = [], selectedNodeId, onNodeSelect, onPointsChanged, onNodeDropped }, ref) => {
     const viewportRef = useRef<HTMLDivElement>(null);
 
     const [transform, setTransform] = useState({ vs: 1, vx: 0, vy: 0, vr: 0 });
@@ -270,10 +271,59 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
      * Trả về màu điểm node theo loại thiết bị và trạng thái kết nối.
      * Camera → xanh accent, offline → đỏ, online → xanh success.
      */
-    const getDotColor = (type?: string, status?: string) => {
-      if (!type) return 'var(--admin-text-muted)';
-      if (type.startsWith('camera')) return 'var(--admin-accent)';
-      if (status === 'offline') return 'var(--admin-danger)';
+    // Tính level trực tiếp từ sensor value + rule config — không qua DB alert.
+    // Mỗi lần sensor hoặc rules thay đổi → recompute ngay lập tức.
+    const dotLevelByPoint = useMemo(() => {
+      const map = new Map<string, 'alarm' | 'warning'>();
+
+      for (const rule of rules) {
+        if (!rule.enabled || !rule.deviceId) continue;
+        let cond: any;
+        try { cond = JSON.parse(rule.condition); } catch { continue; }
+
+        const pointId: string = cond.point;
+        const op: string     = cond.op ?? '>';
+        const alarm: number | null  = cond.alarm  != null ? Number(cond.alarm)     : null;
+        const preAlarm: number | null = cond.pre_alarm != null ? Number(cond.pre_alarm) : null;
+        if (!pointId) continue;
+
+        const key = `${rule.deviceId.toLowerCase()}|${pointId.toLowerCase()}`;
+        const sKey = `${rule.deviceId.toLowerCase()}|${pointId.toLowerCase()}`;
+        const sensor = sensorMap.get(sKey);
+        if (!sensor || sensor.value == null) continue;
+        const val = sensor.value;
+
+        const evaluate = (v: number, o: string, t: number) => {
+          if (o === '>')  return v > t;
+          if (o === '>=') return v >= t;
+          if (o === '<')  return v < t;
+          if (o === '<=') return v <= t;
+          if (o === '==') return Math.abs(v - t) < 0.001;
+          return false;
+        };
+
+        const alarmHit   = alarm   != null && evaluate(val, op, alarm);
+        const warningHit = preAlarm != null && evaluate(val, op, preAlarm) && !alarmHit;
+
+        if (alarmHit) {
+          map.set(key, 'alarm');
+        } else if (warningHit && map.get(key) !== 'alarm') {
+          map.set(key, 'warning');
+        }
+      }
+      return map;
+    }, [rules, sensorMap]);
+
+    const getDotLevel = (deviceId?: string, pointId?: string) => {
+      if (!deviceId || !pointId) return undefined;
+      return dotLevelByPoint.get(`${deviceId.toLowerCase()}|${pointId.toLowerCase()}`);
+    };
+
+    const getDotColor = (type?: string, _status?: string, deviceId?: string, pointId?: string) => {
+      if (type?.startsWith('camera')) return 'var(--admin-accent)';
+      const level = getDotLevel(deviceId, pointId);
+      if (level === 'alarm')   return 'var(--admin-danger)';
+      if (level === 'warning') return 'var(--admin-warning)';
       return 'var(--admin-success)';
     };
 
@@ -353,6 +403,11 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
                 const bw = Math.max(bh * 2, label.length * cfg.size * 0.62 + 10);
                 const { bx, by } = getBadgeOffset(cfg.pos, transform.vs, p.r, bw, bh);
                 const isSelected = selectedNodeId === p.id;
+                const dotColor = getDotColor(p.deviceType, p.deviceStatus, p.deviceId, p.pointId);
+                const isAlerted = dotColor !== 'var(--admin-success)' && dotColor !== 'var(--admin-accent)';
+                const badgeTextColor = isAlerted
+                  ? dotColor
+                  : sensor ? cfg.color : (['light','soft-light','silver'].includes(themeId) ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)');
                 return (
                   <g key={p.id} className="sld-point-g" data-point-id={p.id}
                     transform={`rotate(${-transform.vr}, ${p.x}, ${p.y})`}
@@ -361,23 +416,24 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
                     onMouseLeave={() => setHoveredNodeId(null)}
                   >
                     <circle cx={p.x} cy={p.y} r={p.r}
-                      fill={getDotColor(p.deviceType, p.deviceStatus)} fillOpacity="0.85"
+                      fill={dotColor} fillOpacity="0.85"
                       stroke={isSelected ? 'rgba(255,255,255,0.9)' : 'none'}
                       strokeWidth={isSelected ? 2 : 0}
+                      style={getDotLevel(p.deviceId, p.pointId) ? { animation: 'sldDotPulse 1.2s ease-in-out infinite' } : undefined}
                     />
                     <g transform={`translate(${p.x + bx / transform.vs}, ${p.y + by / transform.vs}) scale(${1 / transform.vs})`}>
                       <rect x={-bw / 2} y={-bh / 2} width={bw} height={bh} rx="4"
                         fill={['light','soft-light','silver'].includes(themeId) ? 'rgba(255,255,255,0.82)' : 'rgba(0,0,0,0.38)'}
-                        stroke={['light','soft-light','silver'].includes(themeId) ? 'rgba(0,0,0,0.15)' : 'none'}
-                        strokeWidth={['light','soft-light','silver'].includes(themeId) ? 0.5 : 0}
+                        stroke={isAlerted ? dotColor : (['light','soft-light','silver'].includes(themeId) ? 'rgba(0,0,0,0.15)' : 'none')}
+                        strokeWidth={isAlerted ? 1 : (['light','soft-light','silver'].includes(themeId) ? 0.5 : 0)}
                       />
                       <text x="0" y={bh / 2 - 2} textAnchor="middle"
-                        fill={sensor ? cfg.color : (['light','soft-light','silver'].includes(themeId) ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)')}
+                        fill={badgeTextColor}
                         fontSize={`${cfg.size}px`} fontWeight="800" style={{ pointerEvents: 'none' }}>{label}</text>
                     </g>
                     {showLabels && p.label && (
                       <text x={p.x + p.r + 3} y={p.y + 4} fontSize="7" fontFamily="sans-serif"
-                        fontWeight="700" fill={getDotColor(p.deviceType, p.deviceStatus)} style={{ pointerEvents: 'none' }}>
+                        fontWeight="700" fill={dotColor} style={{ pointerEvents: 'none' }}>
                         {p.label}
                       </text>
                     )}
@@ -394,6 +450,10 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
           @keyframes tooltipFadeIn {
             from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes sldDotPulse {
+            0%, 100% { opacity: 0.9; }
+            50% { opacity: 0.35; }
           }
         `}</style>
       </div>

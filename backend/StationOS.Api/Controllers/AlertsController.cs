@@ -86,7 +86,7 @@ public class AlertsController : ControllerBase
             .Select(x => new {
                 x.Alert.Id, x.Alert.Source, x.Alert.Level, x.Alert.Status,
                 x.Alert.Message, x.Alert.Value,
-                x.Alert.DeviceId, x.Alert.RuleId,
+                x.Alert.DeviceId, x.Alert.RuleId, x.Alert.PointId,
                 x.Alert.TriggeredAt, x.Alert.AckedAt, x.Alert.ClosedAt,
                 x.Alert.AckNote,
                 x.Alert.ImageUrl, x.Alert.VideoUrl, x.Alert.ThumbnailUrl,
@@ -122,12 +122,12 @@ public class AlertsController : ControllerBase
                 .Where(h => h.AlertId == id)
                 .OrderBy(h => h.ChangedAt)
                 .Select(h => new { h.Status, h.ChangedAt, h.Note, h.ChangedBy })
-                .ToListAsync() ?? new List<object>();
+                .ToListAsync();
 
             return Ok(new {
                 alertData.Alert.Id, alertData.Alert.Source, alertData.Alert.Level, alertData.Alert.Status,
                 alertData.Alert.Message, alertData.Alert.Value,
-                alertData.Alert.DeviceId, alertData.Alert.RuleId,
+                alertData.Alert.DeviceId, alertData.Alert.RuleId, alertData.Alert.PointId,
                 alertData.Alert.TriggeredAt, alertData.Alert.AckedAt, alertData.Alert.ClosedAt, alertData.Alert.AckNote,
                 alertData.Alert.ImageUrl, alertData.Alert.VideoUrl, alertData.Alert.ThumbnailUrl,
                 metadata = alertData.Detection?.Metadata,

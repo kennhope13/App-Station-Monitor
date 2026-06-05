@@ -10,6 +10,14 @@ Mở trình duyệt http://localhost:5153 để:
 
 Cài: pip install flask requests opencv-python numpy
 Chạy: python test_cam153_boundaries.py
+
+Kiến trúc:
+  - rtsp_loop()    : Thread kết nối RTSP, chạy OpenCV detect blob acoustic liên tục.
+  - alert_loop()   : Thread kết nối ISAPI alertStream, đọc giá trị dB & Hz từ camera.
+  - Flask app      : Serve giao diện web + REST API quản lý boundaries.
+  - VideoCaptureThreading : Wrapper OpenCV dùng thread riêng để đọc frame, tránh blocking.
+  - state{}        : Dict dùng chung giữa các thread (bảo vệ bằng threading.Lock).
+  - boundaries[]   : Danh sách polygon được persist xuống cam153_boundaries.json.
 """
 
 import sys, requests, time, threading, re, json, os
@@ -47,6 +55,7 @@ lock = threading.Lock()
 
 # ── Boundary persistence ────────────────────────────────────────────────
 def load_boundaries():
+    """Đọc danh sách boundaries từ file JSON. Trả về [] nếu file không tồn tại hoặc bị lỗi."""
     if os.path.exists(BOUNDARIES_FILE):
         try:
             with open(BOUNDARIES_FILE, "r", encoding="utf-8") as f:
@@ -56,6 +65,7 @@ def load_boundaries():
     return []
 
 def save_boundaries():
+    """Ghi danh sách boundaries hiện tại xuống file JSON để persist qua các lần chạy."""
     with open(BOUNDARIES_FILE, "w", encoding="utf-8") as f:
         json.dump(boundaries, f, indent=2, ensure_ascii=False)
 
@@ -63,6 +73,15 @@ boundaries = load_boundaries()
 
 # ── Geometry ────────────────────────────────────────────────────────────
 def point_in_polygon(point, polygon):
+    """Kiểm tra điểm có nằm trong đa giác không (ray-casting algorithm).
+
+    Args:
+        point: [x, y] tọa độ chuẩn hóa [0, 1].
+        polygon: list [[x, y], ...] các đỉnh của đa giác.
+
+    Returns:
+        True nếu điểm nằm trong đa giác.
+    """
     x, y = point
     n = len(polygon); inside = False; j = n - 1
     for i in range(n):
@@ -74,26 +93,37 @@ def point_in_polygon(point, polygon):
 
 # ── OpenCV detection of acoustic palette blob ───────────────────────────
 def detect_from_frame(img):
-    """Nhận numpy BGR, resize nhỏ lại để xử lý cực nhanh."""
+    """Detect vị trí nguồn âm (blob đỏ/cam từ acoustic overlay) trong frame.
+
+    Resize nhỏ về width=640 để xử lý nhanh, lọc màu đỏ-cam bằng HSV,
+    tìm contour lớn nhất có tỉ lệ aspect ratio hợp lý.
+
+    Args:
+        img: numpy array BGR từ OpenCV.
+
+    Returns:
+        (cx, cy, area) tọa độ chuẩn hóa [0,1] và diện tích pixel thực,
+        hoặc None nếu không tìm thấy blob nào.
+    """
     h, w = img.shape[:2]
     scale = 640.0 / float(w)
     small_w, small_h = int(w * scale), int(h * scale)
     small = cv2.resize(img, (small_w, small_h))
-    
+
     hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
     m_red1 = cv2.inRange(hsv, (0, 120, 150), (15, 255, 255))
     m_red2 = cv2.inRange(hsv, (165, 120, 150), (180, 255, 255))
     m_oy   = cv2.inRange(hsv, (15, 120, 150), (35, 255, 255))
     mask = m_red1 | m_red2 | m_oy
-    
+
     mask[:, int(small_w * 0.92):] = 0
     mask[:int(small_h * 0.05), :] = 0
     mask[int(small_h * 0.92):, :] = 0
-    
+
     kernel = np.ones((3, 3), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    
+
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours: return None
     candidates = []
@@ -113,6 +143,13 @@ def detect_from_frame(img):
     return (cx / small_w, cy / small_h, area / (scale * scale))
 
 class VideoCaptureThreading:
+    """Wrapper OpenCV VideoCapture chạy đọc frame trên thread riêng.
+
+    Tránh blocking do buffer RTSP đầy: thread nền liên tục đọc và giữ
+    frame mới nhất, main thread chỉ cần gọi read() để lấy ngay.
+    Tự reconnect nếu stream bị đứt.
+    """
+
     def __init__(self, src):
         self.src = src
         self.cap = cv2.VideoCapture(self.src, cv2.CAP_FFMPEG)
@@ -121,8 +158,9 @@ class VideoCaptureThreading:
         self.running = True
         self.t = threading.Thread(target=self._reader, daemon=True)
         self.t.start()
-        
+
     def _reader(self):
+        """Thread nền: liên tục đọc frame mới nhất từ RTSP, reconnect khi mất kết nối."""
         while self.running:
             if not self.cap.isOpened():
                 time.sleep(1)
@@ -137,23 +175,31 @@ class VideoCaptureThreading:
                 self.frame = frame
 
     def read(self):
+        """Trả về (ret, frame) của frame mới nhất đã đọc được."""
         return self.ret, self.frame
 
 # ── RTSP stream + detection thread (realtime ~15fps) ────────────────────
 def rtsp_loop():
+    """Thread chính xử lý video: đọc RTSP, detect blob acoustic, cập nhật state.
+
+    Chạy vòng lặp liên tục với TARGET_FPS. Mỗi frame:
+      1. Gọi detect_from_frame() để lấy tọa độ nguồn âm.
+      2. Kiểm tra điểm đó thuộc boundary nào bằng point_in_polygon().
+      3. Ghi nhận event mới nếu boundary thay đổi.
+    """
     last_boundary = None
     stream = VideoCaptureThreading(RTSP_URL)
     print(f"[RTSP] Connected to {CAM_IP} (Fast Threaded)")
-    
+
     while True:
         ret, img = stream.read()
         if not ret or img is None:
             time.sleep(0.1)
             continue
-            
+
         # Loại bỏ hoàn toàn việc nén JPEG và stream hình qua mạng (giống file Thermal)
         # Chỉ để lại OpenCV chạy ngầm lấy tọa độ nguồn âm!
-                
+
         # Detect blob
         det = detect_from_frame(img)
         with lock:
@@ -179,11 +225,17 @@ def rtsp_loop():
                 state["detection"] = None
                 state["active_boundary"] = None
                 last_boundary = None
-                
+
         time.sleep(max(0, 1.0 / TARGET_FPS - 0.005))
 
 # ── alertStream thread ──────────────────────────────────────────────────
 def alert_loop():
+    """Thread đọc ISAPI alertStream của camera để lấy giá trị dB và Hz realtime.
+
+    Kết nối HTTP long-polling tới /ISAPI/Event/notification/alertStream,
+    parse XML multipart để trích xuất audioDecibel và frequency.
+    Tự reconnect sau 3 giây nếu bị mất kết nối.
+    """
     url = f"http://{CAM_IP}/ISAPI/Event/notification/alertStream"
     while True:
         try:
@@ -222,6 +274,16 @@ app = Flask(__name__)
 
 @app.route("/api/state")
 def api_state():
+    """GET /api/state — Trả về toàn bộ trạng thái hiện tại dạng JSON.
+
+    Response fields:
+        db, hz, ts       : giá trị acoustic mới nhất từ alertStream.
+        detection        : {x, y, area} tọa độ blob detect được, hoặc null.
+        active_boundary  : tên boundary đang chứa nguồn âm, hoặc null.
+        connected        : bool kết nối ISAPI.
+        events           : 20 event gần nhất.
+        boundaries       : danh sách tất cả boundaries đã lưu.
+    """
     with lock:
         return jsonify({
             "db": state["db"], "hz": state["hz"], "ts": state["ts"],
@@ -234,6 +296,10 @@ def api_state():
 
 @app.route("/api/boundaries", methods=["POST"])
 def add_boundary():
+    """POST /api/boundaries — Thêm boundary mới.
+
+    Body JSON: { name: str, polygon: [[x,y],...] (>=3 điểm), labelPos: str }
+    """
     data = request.get_json()
     name = (data.get("name") or "").strip()
     polygon = data.get("polygon")
@@ -246,6 +312,7 @@ def add_boundary():
 
 @app.route("/api/boundaries/<int:idx>", methods=["DELETE"])
 def del_boundary(idx):
+    """DELETE /api/boundaries/<idx> — Xóa boundary theo index."""
     if 0 <= idx < len(boundaries):
         boundaries.pop(idx); save_boundaries()
         return jsonify({"ok": True})
@@ -253,6 +320,7 @@ def del_boundary(idx):
 
 @app.route("/api/boundaries/<int:idx>", methods=["PUT"])
 def edit_boundary(idx):
+    """PUT /api/boundaries/<idx> — Cập nhật name, polygon, hoặc labelPos của boundary."""
     if 0 <= idx < len(boundaries):
         data = request.get_json()
         if "name" in data: boundaries[idx]["name"] = data["name"].strip()
@@ -461,17 +529,17 @@ function render() {
         const fill = isActive ? 'rgba(244,67,54,0.25)' : 'rgba(16, 185, 129, 0.05)';
         const sw = isActive ? 4 : 2;
         html += `<polygon points="${pts}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" vector-effect="non-scaling-stroke"/>`;
-        
+
         const xs = b.polygon.map(p => p[0]*1000);
         const ys = b.polygon.map(p => p[1]*1000);
         const minX = Math.min(...xs), maxX = Math.max(...xs);
         const minY = Math.min(...ys), maxY = Math.max(...ys);
-        
+
         let tx = (minX + maxX) / 2;
         let ty = (minY + maxY) / 2;
         let anchor = 'middle';
         let baseline = 'middle';
-        
+
         const pos = b.labelPos || 'bottom';
         if (pos === 'top') {
             ty = minY - 10; baseline = 'bottom';
@@ -482,7 +550,7 @@ function render() {
         } else if (pos === 'right') {
             tx = maxX + 10; anchor = 'start';
         }
-        
+
         html += `<text x="${tx}" y="${ty}" fill="${isActive?'#fff':col}" font-size="22" font-weight="700" text-anchor="${anchor}" dominant-baseline="${baseline}" style="paint-order:stroke;stroke:#000;stroke-width:4">${b.name}</text>`;
     });
     // Drawing polygon in progress
@@ -645,14 +713,14 @@ async function saveBoundary() {
     const name = document.getElementById('nameInput').value.trim();
     if (!name) { document.getElementById('nameInput').focus(); return; }
     const pos = document.getElementById('posInput').value;
-    
+
     let url = '/api/boundaries';
     let method = 'POST';
     if (editingIdx !== null) {
         url = '/api/boundaries/' + editingIdx;
         method = 'PUT';
     }
-    
+
     const res = await fetch(url, {
         method: method,
         headers: {'Content-Type':'application/json'},

@@ -80,7 +80,7 @@ public class AiEventsController : ControllerBase
                 if (boundary != null)
                 {
                     try {
-                        var t = JsonSerializer.Deserialize<JsonElement>(boundary.Thresholds ?? "{}");
+                        var t = JsonSerializer.Deserialize<JsonElement>(boundary.ThresholdsJson ?? "{}");
                         zoneDisplayName = t.TryGetProperty("fullName", out var fn) ? fn.GetString() ?? boundary.Name : boundary.Name;
                     } catch { zoneDisplayName = boundary.Name; }
                 }
@@ -133,7 +133,6 @@ public class AiEventsController : ControllerBase
                 imageUrl = alert.ImageUrl,
                 thumbnailUrl = alert.ThumbnailUrl
             });
-        }
 
             // Tự động kích hoạt ghi hình clip cho sự kiện AI này (Module 5)
             // Đợi 10s để có đủ diễn biến sau khi phát hiện
@@ -258,8 +257,9 @@ public class AiEventsController : ControllerBase
             };
             _db.SensorReadings.Add(reading);
 
-            // Cập nhật cache để các RuleEngine có thể đánh giá ngay lập tức
-            cachedDict[reading.PointId] = reading;
+            // Cập nhật cache để các RuleEngine có thể đánh giá chính xác theo từng thiết bị
+            var cacheKey = $"{reading.DeviceId}_{reading.PointId}".ToLower();
+            cachedDict[cacheKey] = reading;
             
             // Push SignalR để dashboard cập nhật gauge/chart ngay lập tức
             await _notifier.SendSensorUpdateAsync(new {

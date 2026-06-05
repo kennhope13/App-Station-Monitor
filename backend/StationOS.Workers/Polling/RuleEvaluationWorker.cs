@@ -91,6 +91,7 @@ public class RuleEvaluationWorker : BackgroundService
         
         // ── BỔ SUNG: Đọc cả các Vùng PD (Boundaries) để đánh giá như Rules ──
         var pdBoundaries = await db.Boundaries
+            .Include(b => b.Device)
             .Where(b => b.Type == "pd" && b.Enabled)
             .ToListAsync(ct);
 
@@ -133,16 +134,17 @@ public class RuleEvaluationWorker : BackgroundService
             
             if (!hasHotspot) return;
 
-            // 2. Kiểm tra chỉ số dB
-            if (!latestReadings.TryGetValue(b.Name, out var reading) && 
-                !latestReadings.TryGetValue(b.Id.ToString(), out reading) &&
-                !latestReadings.TryGetValue("pd", out reading)) return;
+            // 2. Kiểm tra chỉ số dB theo DeviceId_PointId
+            var baseKey = b.DeviceId.ToString().ToLower();
+            if (!latestReadings.TryGetValue($"{baseKey}_{b.Name.ToLower()}", out var reading) && 
+                !latestReadings.TryGetValue($"{baseKey}_{b.Id.ToString().ToLower()}", out reading) &&
+                !latestReadings.TryGetValue($"{baseKey}_pd", out reading)) return;
             
             if (reading.Value == null) return;
             var currentValue = reading.Value.Value;
 
             // 3. Parse ngưỡng
-            var t = JsonSerializer.Deserialize<JsonElement>(b.Thresholds ?? "{}");
+            var t = JsonSerializer.Deserialize<JsonElement>(b.ThresholdsJson ?? "{}");
             double warnLimit = t.TryGetProperty("warn", out var w) ? w.GetDouble() : 20;
             double alarmLimit = t.TryGetProperty("alarm", out var al) ? al.GetDouble() : 35;
             string fullName = t.TryGetProperty("fullName", out var fn) ? fn.GetString() ?? b.Name : b.Name;
@@ -160,7 +162,7 @@ public class RuleEvaluationWorker : BackgroundService
             {
                 Id = b.Id,
                 Name = $"PD: {fullName}",
-                StationId = b.StationId,
+                StationId = b.Device?.StationId ?? Guid.Empty,
                 DeviceId = b.DeviceId,
                 Actions = $"[{{\"type\":\"alert\",\"level\":\"{level}\"}}]"
             };
@@ -198,7 +200,12 @@ public class RuleEvaluationWorker : BackgroundService
         // dùng giá trị global từ setting camera_filter_time_s
         var confirmReadings = confirmReadingsFromRule > 1 ? confirmReadingsFromRule : _globalConfirmReadings;
 
-        if (!latestReadings.TryGetValue(pointId, out var reading)) return;
+        // Tra cứu theo DeviceId_PointId để phân lập dữ liệu, hoặc fallback về PointId nếu là Global Rule
+        var cacheKey = rule.DeviceId.HasValue 
+            ? $"{rule.DeviceId}_{pointId}".ToLower() 
+            : pointId;
+        
+        if (!latestReadings.TryGetValue(cacheKey, out var reading)) return;
         if (reading.Value == null) return;
 
         var currentValue = reading.Value.Value;
@@ -256,7 +263,16 @@ public class RuleEvaluationWorker : BackgroundService
         }
 
         if (!triggered) { _confirmCounts[rule.Id] = 0; return; }
-        if (openAlert != null) return;
+        if (openAlert != null)
+        {
+            // Backfill pointId cho alert cũ tạo trước khi có field này
+            if (openAlert.PointId == null && pointId != null)
+            {
+                openAlert.PointId = pointId;
+                await db.SaveChangesAsync(ct);
+            }
+            return;
+        }
 
         if (_cooldownUntil.TryGetValue(rule.Id, out var until) && DateTime.UtcNow < until)
         {
@@ -284,6 +300,7 @@ public class RuleEvaluationWorker : BackgroundService
             Source      = "rule_engine",
             Level       = level,
             Status      = "open",
+            PointId     = pointId,
             Message     = $"[{rule.Name}] {pointId} = {currentValue:F1} {op} {threshold}",
             Value       = currentValue,
             TriggeredAt = DateTime.UtcNow,
@@ -382,6 +399,7 @@ public class RuleEvaluationWorker : BackgroundService
 
         await _notifier.SendAlertAsync(new {
             id = alert.Id, level = alert.Level, status = alert.Status,
+            source = alert.Source, pointId = alert.PointId,
             message = alert.Message, value = alert.Value,
             triggeredAt = alert.TriggeredAt, ruleId = alert.RuleId, deviceId = alert.DeviceId,
             imageUrl = alert.ImageUrl, thumbnailUrl = alert.ThumbnailUrl, videoUrl = alert.VideoUrl,

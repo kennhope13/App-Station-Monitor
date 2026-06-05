@@ -173,6 +173,15 @@ public class BoundariesController : ControllerBase
 
         var deviceId = b.DeviceId;
         var wasRoi = b.Type == "roi";
+
+        // Gỡ FK trước khi xóa: set BoundaryId = null cho các bản ghi liên quan
+        await _db.DetectionEvents
+            .Where(e => e.BoundaryId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.BoundaryId, (Guid?)null));
+        await _db.Alerts
+            .Where(a => a.BoundaryId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.BoundaryId, (Guid?)null));
+
         _db.Boundaries.Remove(b);
         await _db.SaveChangesAsync();
 

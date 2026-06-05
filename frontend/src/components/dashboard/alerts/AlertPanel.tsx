@@ -7,9 +7,6 @@ interface AlertPanelProps {
   onAlertClick?: (alert: AlertItem) => void;
 }
 
-/** Trả về nhãn tiếng Việt cho mức độ cảnh báo. */
-const levelLabel = (l: string) => l === 'alarm' ? 'BÁO ĐỘNG' : 'CẢNH BÁO';
-
 /** Phân loại cảnh báo dựa trên nội dung thông điệp để hiển thị tiêu đề thu gọn. */
 const getCategory = (msg: string) => {
   const m = (msg || '').toLowerCase();
@@ -117,8 +114,6 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
                 <tbody>
                   {sorted.slice(0, 20).map((a, idx) => {
                     const isAlarm = a.level === 'alarm';
-                    const pillBg = isAlarm ? 'var(--admin-tag-danger-bg)' : 'var(--admin-tag-warning-bg)';
-                    const pillColor = isAlarm ? 'var(--admin-tag-danger-text)' : 'var(--admin-tag-warning-text)';
                     const cat = getCategory(a.message);
                     
                     // Dynamic colors for NHIỆT

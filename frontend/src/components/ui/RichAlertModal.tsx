@@ -6,9 +6,10 @@ import { API_BASE_URL } from '@/utils/env';
 interface RichAlertModalProps {
   alert: AlertItem;
   onClose: () => void;
+  queueCount?: number;
 }
 
-export default function RichAlertModal({ alert, onClose }: RichAlertModalProps) {
+export default function RichAlertModal({ alert, onClose, queueCount = 0 }: RichAlertModalProps) {
   const navigate = useNavigate();
   
   const isAlarm = alert.level === 'alarm';
@@ -64,9 +65,17 @@ export default function RichAlertModal({ alert, onClose }: RichAlertModalProps) 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <AlertTriangle size={18} fill={color} color="#fff" />
           <span style={{ fontWeight: 900, fontSize: '0.9rem', letterSpacing: 1.5, color }}>{headerText}</span>
+          {queueCount > 1 && (
+            <span style={{
+              background: color, color: '#000', fontSize: '0.65rem', fontWeight: 800,
+              padding: '1px 6px', borderRadius: 10, letterSpacing: 0
+            }}>
+              +{queueCount - 1} cảnh báo nữa
+            </span>
+          )}
         </div>
-        <button 
-          onClick={(e) => { e.stopPropagation(); onClose(); }} 
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
           style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', opacity: 0.4 }}
         >
           <X size={20} />

@@ -5,7 +5,7 @@
 // Chức năng: xác nhận (ack), đóng cảnh báo, tạo phiếu bảo trì
 // ============================================================
 
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, ReactNode, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { stationApi, type AlertItem, type AlertHistoryEntry } from '@/services/StationApiService';
 import { useDeviceStore } from '@/store';
@@ -131,6 +131,40 @@ export default function AlertDetailPage() {
 
   // Parse metadata để lấy thêm thông tin (ví dụ link ảnh quang học/nhiệt song song)
   const metadata = typeof alert.metadata === 'string' ? (() => { try { return JSON.parse(alert.metadata); } catch { return {}; } })() : (alert.metadata || {});
+
+  // Phân tích tọa độ vùng từ metadata hoặc context boundary để vẽ đè lên ảnh/video bằng chứng
+  const overlayGeometry = useMemo(() => {
+    // Trường hợp 1: ROI đa giác (array of [x, y])
+    if (metadata.polygon) {
+      try {
+        const pts = typeof metadata.polygon === 'string' ? JSON.parse(metadata.polygon) : metadata.polygon;
+        if (Array.isArray(pts)) return { type: 'polygon', points: pts };
+      } catch {}
+    }
+
+    // Trường hợp 2: Điểm chấm nhiệt (tx, ty)
+    if (metadata.tx != null && metadata.ty != null) {
+      return { type: 'point', x: metadata.tx, y: metadata.ty };
+    }
+
+    // Trường hợp 3: Vùng ROI chữ nhật (x1, y1, x2, y2)
+    if (metadata.x1 != null && metadata.y1 != null) {
+      return { type: 'rect', x1: metadata.x1, y1: metadata.y1, x2: metadata.x2, y2: metadata.y2 };
+    }
+
+    // Fallback: Tìm polygon của boundary liên kết nếu có
+    if (context?.boundary) {
+      try {
+        const polygonVal = context.boundary.polygonJson || context.boundary.polygon || context.boundary.PolygonJson || context.boundary.Polygon;
+        if (polygonVal) {
+          const pts = typeof polygonVal === 'string' ? JSON.parse(polygonVal) : polygonVal;
+          if (Array.isArray(pts)) return { type: 'polygon', points: pts };
+        }
+      } catch {}
+    }
+
+    return null;
+  }, [metadata, context]);
 
   /**
    * Render một dòng thông tin dạng label — value theo chiều ngang.
@@ -288,11 +322,43 @@ export default function AlertDetailPage() {
                     📷 Ảnh Quang học (Chụp khẩn cấp)
                   </div>
                 )}
-                <img 
-                  src={alert.imageUrl?.startsWith('http') ? alert.imageUrl : `${API_BASE_URL}${alert.imageUrl}`} 
-                  alt="Evidence" 
-                  style={{ width: '100%', height: 'auto', border: '1px solid var(--admin-border)', borderRadius: 4 }}
-                />
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <img 
+                    src={alert.imageUrl?.startsWith('http') ? alert.imageUrl : `${API_BASE_URL}${alert.imageUrl}`} 
+                    alt="Evidence" 
+                    style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid var(--admin-border)', borderRadius: 4 }}
+                  />
+                  {overlayGeometry && (
+                    <svg 
+                      viewBox="0 0 1 1" 
+                      preserveAspectRatio="none"
+                      style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+                    >
+                      {overlayGeometry.type === 'polygon' && overlayGeometry.points && (
+                        <polygon 
+                          points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')}
+                          fill="rgba(239, 68, 68, 0.15)"
+                          stroke={color}
+                          strokeWidth="0.01"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
+                      {overlayGeometry.type === 'rect' && (
+                        <rect 
+                          x={overlayGeometry.x1} y={overlayGeometry.y1} 
+                          width={overlayGeometry.x2 - overlayGeometry.x1} 
+                          height={overlayGeometry.y2 - overlayGeometry.y1}
+                          fill="rgba(239, 68, 68, 0.15)"
+                          stroke={color}
+                          strokeWidth="0.01"
+                        />
+                      )}
+                      {overlayGeometry.type === 'point' && (
+                        <circle cx={overlayGeometry.x} cy={overlayGeometry.y} r="0.02" fill={color} stroke="#fff" strokeWidth="0.005" />
+                      )}
+                    </svg>
+                  )}
+                </div>
               </div>
 
               {/* Ảnh Nhiệt (Nếu có ảnh quang học riêng thì hiển thị ảnh nhiệt song song) */}
@@ -301,11 +367,43 @@ export default function AlertDetailPage() {
                   <div style={{ fontSize: '.7rem', color: 'var(--admin-danger)', fontWeight: 800, marginBottom: 4, textTransform: 'uppercase' }}>
                     🌡️ Ảnh Nhiệt (Gốc)
                   </div>
-                  <img 
-                    src={metadata.snapshotUrl.startsWith('http') ? metadata.snapshotUrl : `${API_BASE_URL}${metadata.snapshotUrl}`} 
-                    alt="Thermal Evidence" 
-                    style={{ width: '100%', height: 'auto', border: '1px solid var(--admin-border)', borderRadius: 4 }}
-                  />
+                  <div style={{ position: 'relative', width: '100%' }}>
+                    <img 
+                      src={metadata.snapshotUrl.startsWith('http') ? metadata.snapshotUrl : `${API_BASE_URL}${metadata.snapshotUrl}`} 
+                      alt="Thermal Evidence" 
+                      style={{ display: 'block', width: '100%', height: 'auto', border: '1px solid var(--admin-border)', borderRadius: 4 }}
+                    />
+                    {overlayGeometry && (
+                      <svg 
+                        viewBox="0 0 1 1" 
+                        preserveAspectRatio="none"
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+                      >
+                        {overlayGeometry.type === 'polygon' && overlayGeometry.points && (
+                          <polygon 
+                            points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')}
+                            fill="rgba(239, 68, 68, 0.15)"
+                            stroke={color}
+                            strokeWidth="0.01"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        )}
+                        {overlayGeometry.type === 'rect' && (
+                          <rect 
+                            x={overlayGeometry.x1} y={overlayGeometry.y1} 
+                            width={overlayGeometry.x2 - overlayGeometry.x1} 
+                            height={overlayGeometry.y2 - overlayGeometry.y1}
+                            fill="rgba(239, 68, 68, 0.15)"
+                            stroke={color}
+                            strokeWidth="0.01"
+                          />
+                        )}
+                        {overlayGeometry.type === 'point' && (
+                          <circle cx={overlayGeometry.x} cy={overlayGeometry.y} r="0.02" fill={color} stroke="#fff" strokeWidth="0.005" />
+                        )}
+                      </svg>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -314,11 +412,56 @@ export default function AlertDetailPage() {
         {alert.videoUrl && (
           <div className="admin-card" style={{ padding: 16 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>VIDEO GHI HÌNH SỰ KIỆN</div>
-            <video 
-              src={alert.videoUrl.startsWith('http') ? alert.videoUrl : `${API_BASE_URL}/api/v1/events/${(alert as any).detectionId || alert.id}/video`} 
-              controls 
-              style={{ width: '100%', height: 'auto', background: '#000', borderRadius: 4 }}
-            />
+            
+            <div style={{ position: 'relative', width: '100%', display: 'inline-block', background: '#000', borderRadius: 4, overflow: 'hidden' }}>
+              <video 
+                src={alert.videoUrl.startsWith('http') ? alert.videoUrl : `${API_BASE_URL}/api/v1/events/${(alert as any).detectionId || alert.id}/video`} 
+                controls 
+                style={{ display: 'block', width: '100%', height: 'auto' }}
+              />
+              
+              {/* OVERLAY LAYER */}
+              {overlayGeometry && (
+                <svg 
+                  viewBox="0 0 1 1" 
+                  preserveAspectRatio="none"
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+                >
+                  {overlayGeometry.type === 'polygon' && overlayGeometry.points && (
+                    <polygon 
+                      points={overlayGeometry.points.map((p: any) => `${p[0]},${p[1]}`).join(' ')}
+                      fill="rgba(239, 68, 68, 0.15)"
+                      stroke={color}
+                      strokeWidth="0.01"
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      <animate attributeName="stroke-opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite" />
+                    </polygon>
+                  )}
+                  {overlayGeometry.type === 'rect' && (
+                    <rect 
+                      x={overlayGeometry.x1} y={overlayGeometry.y1} 
+                      width={overlayGeometry.x2 - overlayGeometry.x1} 
+                      height={overlayGeometry.y2 - overlayGeometry.y1}
+                      fill="rgba(239, 68, 68, 0.15)"
+                      stroke={color}
+                      strokeWidth="0.01"
+                    >
+                      <animate attributeName="stroke-opacity" values="1;0.3;1" dur="1.5s" repeatCount="indefinite" />
+                    </rect>
+                  )}
+                  {overlayGeometry.type === 'point' && (
+                    <g transform={`translate(${overlayGeometry.x}, ${overlayGeometry.y})`}>
+                      <circle r="0.02" fill="none" stroke={color} strokeWidth="0.005">
+                         <animate attributeName="r" values="0.01;0.04;0.01" dur="1.5s" repeatCount="indefinite" />
+                         <animate attributeName="stroke-opacity" values="1;0;1" dur="1.5s" repeatCount="indefinite" />
+                      </circle>
+                      <path d="M-0.03 0 L0.03 0 M0 -0.03 L0 0.03" stroke={color} strokeWidth="0.005" />
+                    </g>
+                  )}
+                </svg>
+              )}
+            </div>
             <div style={{ marginTop: 10, textAlign: 'right' }}>
               <a 
                 href={`${API_BASE_URL}/api/v1/events/${(alert as any).detectionId || alert.id}/bundle`}

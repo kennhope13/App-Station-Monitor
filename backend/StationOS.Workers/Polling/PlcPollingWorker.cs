@@ -332,7 +332,8 @@ public class PlcPollingWorker : BackgroundService
             var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
             foreach (var r in readings)
             {
-                cachedDict[r.PointId] = r;
+                var cacheKey = $"{r.DeviceId}_{r.PointId}".ToLower();
+                cachedDict[cacheKey] = r;
             }
 
             // Chỉ lưu vào DB nếu đến chu kỳ (giảm I/O)

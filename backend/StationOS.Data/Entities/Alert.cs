@@ -10,6 +10,7 @@ public class Alert
     public Guid? RuleId { get; set; }
     public Guid? DetectionId { get; set; }
     public Guid? BoundaryId { get; set; }
+    public string? PointId { get; set; }                           // điểm đo kích hoạt (vd: nhiet_do_pha_1)
     [Required] public string Source { get; set; } = string.Empty;  // rule_engine | ai_detection | manual
     [Required] public string Level { get; set; } = string.Empty;   // warning | alarm
     public string Status { get; set; } = "open";                   // open | acked | closed

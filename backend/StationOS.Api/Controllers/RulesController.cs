@@ -124,12 +124,29 @@ public class RulesController : ControllerBase
         var rule = await _db.Rules.FindAsync(id);
         if (rule == null) return NotFound();
 
+        var wasEnabled = rule.Enabled;
         if (req.Name      != null) rule.Name      = req.Name;
         if (req.RuleSet   != null) rule.RuleSet   = req.RuleSet == "" ? null : req.RuleSet;
-        if (req.Condition != null) rule.Condition  = req.Condition;
         if (req.Actions   != null) rule.Actions    = req.Actions;
         if (req.Enabled   != null) rule.Enabled    = req.Enabled.Value;
         if (req.DeviceId  != null) rule.DeviceId   = req.DeviceId;
+
+        // Khi thay đổi condition hoặc disable rule → close hết open alerts để worker tạo alert mới chính xác
+        bool conditionChanged = req.Condition != null && req.Condition != rule.Condition;
+        if (req.Condition != null) rule.Condition = req.Condition;
+
+        bool shouldCloseAlerts = conditionChanged || (wasEnabled && req.Enabled == false);
+        if (shouldCloseAlerts)
+        {
+            var openAlerts = await _db.Alerts
+                .Where(a => a.RuleId == id && a.Status == "open")
+                .ToListAsync();
+            foreach (var a in openAlerts)
+            {
+                a.Status = "closed";
+                a.ClosedAt = DateTime.UtcNow;
+            }
+        }
 
         await _db.SaveChangesAsync();
         return Ok(rule);
@@ -159,7 +176,22 @@ public class RulesController : ControllerBase
     {
         var rule = await _db.Rules.FindAsync(id);
         if (rule == null) return NotFound();
+        var wasEnabled = rule.Enabled;
         rule.Enabled = !rule.Enabled;
+
+        // Khi tắt rule → close hết open alerts để khi bật lại worker tạo alert mới
+        if (wasEnabled && !rule.Enabled)
+        {
+            var openAlerts = await _db.Alerts
+                .Where(a => a.RuleId == id && a.Status == "open")
+                .ToListAsync();
+            foreach (var a in openAlerts)
+            {
+                a.Status = "closed";
+                a.ClosedAt = DateTime.UtcNow;
+            }
+        }
+
         await _db.SaveChangesAsync();
         return Ok(new { rule.Id, rule.Enabled });
     }

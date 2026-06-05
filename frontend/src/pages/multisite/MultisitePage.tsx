@@ -122,27 +122,72 @@ export default function MultisitePage() {
       const marker = L.marker([lat, lng], { icon }).addTo(leafletMap.current);
       bounds.push([lat, lng]);
 
+      const isWarn = v.kpi.alerts > 0;
       const popupContent = document.createElement('div');
-      popupContent.className = 'gis-popup';
-      popupContent.style.width = '240px';
+      popupContent.className = 'gis-popup-custom';
+      popupContent.style.width = '260px';
       popupContent.style.color = 'var(--admin-text)';
+      
+      const badgeHtml = `
+        <span style="
+          font-size: 0.62rem; font-weight: 900; padding: 2px 6px; border-radius: 0;
+          background: ${isWarn ? 'rgba(239,68,68,0.18)' : 'rgba(16,185,129,0.15)'};
+          color: ${isWarn ? 'var(--admin-danger)' : 'var(--admin-success)'};
+          border: 1px solid ${isWarn ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};
+          float: right;
+        ">
+          ${isWarn ? 'CẢNH BÁO' : 'ONLINE'}
+        </span>
+      `;
+
       popupContent.innerHTML = `
-        <h4 style="margin: 0 0 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px;">${v.station.name}</h4>
-        <div style="font-size: 0.7rem; color: var(--admin-text-muted); margin-bottom: 8px;">
-          ${v.location.address ?? ''}
+        <div style="margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--admin-border-light); overflow: hidden;">
+          ${badgeHtml}
+          <div style="font-weight: 800; font-size: 0.85rem;">${v.station.name}</div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px;">
+          <div style="background: var(--admin-hover); padding: 6px 8px; border: 1px solid var(--admin-hover)">
+            <div style="font-size: 0.6rem; color: var(--admin-text-muted); margin-bottom: 2px;">Cảnh báo</div>
+            <div style="font-size: 1.05rem; font-weight: 800; color: ${isWarn ? 'var(--admin-danger)' : 'var(--admin-text)'}">
+              ${v.kpi.alerts}
+            </div>
+          </div>
+          <div style="background: var(--admin-hover); padding: 6px 8px; border: 1px solid var(--admin-hover)">
+            <div style="font-size: 0.6rem; color: var(--admin-text-muted); margin-bottom: 2px;">Thiết bị</div>
+            <div style="font-size: 1.05rem; font-weight: 800;">
+              ${v.kpi.devicesOnline}/${v.kpi.devicesTotal}
+            </div>
+          </div>
+          <div style="background: var(--admin-hover); padding: 6px 8px; border: 1px solid var(--admin-hover); grid-column: span 2;">
+            <div style="font-size: 0.6rem; color: var(--admin-text-muted); margin-bottom: 2px;">Mã trạm</div>
+            <div style="font-size: 0.85rem; font-weight: 700; font-family: monospace;">
+              ${v.station.code || v.station.id.slice(0, 8)}
+            </div>
+          </div>
         </div>
       `;
 
       const btn = document.createElement('button');
-      btn.className = 'btn-industrial btn-primary';
       btn.style.width = '100%';
-      btn.style.borderRadius = '0px';
-      btn.innerText = 'CHI TIẾT TRẠM';
+      btn.style.padding = '8px';
+      btn.style.cursor = 'pointer';
+      btn.style.background = 'var(--admin-btn-secondary-bg)';
+      btn.style.color = 'var(--admin-btn-secondary-text)';
+      btn.style.fontWeight = '800';
+      btn.style.fontSize = '0.75rem';
+      btn.style.border = '1px solid var(--admin-btn-secondary-border)';
+      btn.style.transition = 'background 0.2s';
+      btn.innerHTML = 'VÀO TRẠM &rarr;';
+      
+      btn.onmouseover = () => { btn.style.background = 'var(--admin-btn-secondary-hover)'; };
+      btn.onmouseout = () => { btn.style.background = 'var(--admin-btn-secondary-bg)'; };
       btn.onclick = () => {
         navigate(`/dashboard?stationId=${v.station.id}&stationName=${encodeURIComponent(v.station.name)}`);
       };
+
       popupContent.appendChild(btn);
-      marker.bindPopup(popupContent);
+      marker.bindPopup(popupContent, { maxWidth: 300, minWidth: 260 });
       markers.push(marker);
     });
 
@@ -188,81 +233,6 @@ export default function MultisitePage() {
           background: 'var(--admin-overlay)', padding: '20px 30px', border: '1px solid var(--admin-border-light)'
         }}>
           Chưa có trạm nào. Tạo trạm trong phần quản lý.
-        </div>
-      )}
-
-      {views.length > 0 && (
-        <div style={{
-          position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-          width: '95%', maxWidth: 1300, zIndex: 1000,
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14
-        }}>
-          {views.map(v => {
-            const isWarn = v.kpi.alerts > 0;
-            const borderColor = isWarn ? 'rgba(239,68,68,0.5)' : 'var(--admin-border-light)';
-            return (
-              <div
-                key={v.station.id}
-                style={{
-                  background: 'var(--admin-overlay)',
-                  border: `1px solid ${borderColor}`, borderRadius: 0, padding: 12,
-                  boxShadow: '0 12px 36px rgba(0,0,0,0.6)', transition: 'transform 0.2s'
-                }}
-                onMouseOver={e => (e.currentTarget.style.transform = 'translateY(-2px)')}
-                onMouseOut={e => (e.currentTarget.style.transform = 'translateY(0)')}
-              >
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid var(--admin-border-light)'
-                }}>
-                  <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--admin-text)' }}>{v.station.name}</span>
-                  <span style={{
-                    fontSize: '0.62rem', fontWeight: 900, padding: '2px 6px', borderRadius: 0,
-                    background: isWarn ? 'rgba(239,68,68,0.18)' : 'rgba(16,185,129,0.15)',
-                    color: isWarn ? 'var(--admin-danger)' : 'var(--admin-success)',
-                    border: isWarn ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(16,185,129,0.3)'
-                  }}>
-                    {isWarn ? 'CẢNH BÁO' : 'ONLINE'}
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 10 }}>
-                  <div style={{ background: 'var(--admin-hover)', borderRadius: 0, padding: '6px 8px', border: '1px solid var(--admin-hover)' }}>
-                    <div style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', marginBottom: 2 }}>Cảnh báo chưa xử lý</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: v.kpi.alerts > 0 ? 'var(--admin-danger)' : 'var(--admin-text)' }}>
-                      {v.kpi.alerts}
-                    </div>
-                  </div>
-                  <div style={{ background: 'var(--admin-hover)', borderRadius: 0, padding: '6px 8px', border: '1px solid var(--admin-hover)' }}>
-                    <div style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', marginBottom: 2 }}>Thiết bị online</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--admin-text)' }}>
-                      {v.kpi.devicesOnline}/{v.kpi.devicesTotal}
-                    </div>
-                  </div>
-                  <div style={{ background: 'var(--admin-hover)', borderRadius: 0, padding: '6px 8px', border: '1px solid var(--admin-hover)', gridColumn: 'span 2' }}>
-                    <div style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', marginBottom: 2 }}>Mã trạm</div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--admin-text)', fontFamily: 'monospace' }}>
-                      {v.station.code || v.station.id.slice(0, 8)}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => navigate(`/dashboard?stationId=${v.station.id}&stationName=${encodeURIComponent(v.station.name)}`)}
-                  style={{
-                    width: '100%', padding: 8, borderRadius: 0, cursor: 'pointer',
-                    background: 'var(--admin-btn-secondary-bg)', color: 'var(--admin-btn-secondary-text)', fontWeight: 800,
-                    fontSize: '0.75rem', border: '1px solid var(--admin-btn-secondary-border)',
-                    transition: 'background 0.2s'
-                  }}
-                  onMouseOver={e => (e.currentTarget.style.background = 'var(--admin-btn-secondary-hover)')}
-                  onMouseOut={e => (e.currentTarget.style.background = 'var(--admin-btn-secondary-bg)')}
-                >
-                  VÀO TRẠM →
-                </button>
-              </div>
-            );
-          })}
         </div>
       )}
     </div>

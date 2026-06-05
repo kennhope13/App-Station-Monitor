@@ -155,6 +155,7 @@ export interface AlertItem {
   message: string;
   value?: number;         // giá trị đo lúc kích hoạt
   deviceId?: string;
+  pointId?: string;       // điểm đo kích hoạt (vd: nhiet_do_pha_1, phong_dien)
   ruleId?: string;
   triggeredAt: string;
   ackedAt?: string;

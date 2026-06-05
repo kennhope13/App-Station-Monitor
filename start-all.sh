@@ -107,6 +107,22 @@ else
 fi
 AI_PID=$!
 echo "✅ AI Engine đang khởi chạy ngầm (PID: $AI_PID, Port: 8100)"
+
+# Chờ AI Engine sẵn sàng trước khi Vite start (tránh proxy ECONNREFUSED)
+echo -n "   Đang chờ AI Engine ready..."
+for i in {1..20}; do
+    if curl -s http://localhost:8100/health > /dev/null 2>&1; then
+        echo " ✅ AI Engine sẵn sàng!"
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+# Nếu quá 20s vẫn chưa up thì cảnh báo nhưng vẫn tiếp tục
+if ! curl -s http://localhost:8100/health > /dev/null 2>&1; then
+    echo " ⚠️  AI Engine chưa phản hồi sau 20s, tiếp tục khởi động..."
+fi
+
 cd "$ROOT"
 # Chạy Frontend ở foreground
 cd "$ROOT/frontend"

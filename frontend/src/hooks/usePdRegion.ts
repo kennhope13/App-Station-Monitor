@@ -22,7 +22,8 @@ export const usePdRegion = (cameraId: string | null) => {
     db?: number | null, 
     hz?: number | null, 
     detection?: { x: number; y: number } | null,
-    active_boundary?: string | null
+    active_boundary?: string | null,
+    discharge_counts?: Record<string, number> | null
   }>({});
 
   /** Thông báo AI Engine reload vùng PD — fire-and-forget */
@@ -88,7 +89,8 @@ export const usePdRegion = (cameraId: string | null) => {
             db: data.db, 
             hz: data.hz, 
             detection: data.detection, 
-            active_boundary: data.active_boundary 
+            active_boundary: data.active_boundary,
+            discharge_counts: data.discharge_counts
           });
         }
       } catch { /* ignore */ }

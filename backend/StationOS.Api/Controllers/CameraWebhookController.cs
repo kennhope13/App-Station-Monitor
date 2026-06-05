@@ -14,6 +14,7 @@ using System.Xml.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using StationOS.Data;
 using StationOS.Data.Entities;
 using StationOS.Services;
@@ -33,6 +34,7 @@ public class CameraWebhookController : ControllerBase
     private readonly IServiceScopeFactory  _scopeFactory;
     private readonly HikvisionIsapiService _isapi;
     private readonly CredentialEncryptionService _crypto;
+    private readonly IMemoryCache          _cache;
     private readonly string                _rootPath;
 
     public CameraWebhookController(
@@ -40,10 +42,11 @@ public class CameraWebhookController : ControllerBase
         IWebHostEnvironment env, ILogger<CameraWebhookController> logger,
         IServiceScopeFactory scopeFactory,
         HikvisionIsapiService isapi,
-        CredentialEncryptionService crypto)
+        CredentialEncryptionService crypto,
+        IMemoryCache cache)
     {
         _db = db; _notifier = notifier; _env = env; _logger = logger; _scopeFactory = scopeFactory;
-        _isapi = isapi; _crypto = crypto;
+        _isapi = isapi; _crypto = crypto; _cache = cache;
         // Sử dụng WebRootPath động để tương thích cả Windows và Docker
         _rootPath = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
         var mediaPath = Path.Combine(_rootPath, "media");
@@ -225,6 +228,12 @@ public class CameraWebhookController : ControllerBase
                     {
                         boundaryId = boundary.Id;
                         polygonJson = boundary.PolygonJson;
+
+                        if (detType == "partial_discharge")
+                        {
+                            _cache.Set($"hotspot_{device.Id}_{boundary.Name}", true, TimeSpan.FromSeconds(10));
+                            _cache.Set($"hotspot_{device.Id}_pd", true, TimeSpan.FromSeconds(10));
+                        }
                     }
                 }
             }

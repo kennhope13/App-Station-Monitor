@@ -224,8 +224,19 @@ async def reload_pd_regions(body: ReloadRegionsBody):
     """
     analyzer = _acoustic_analyzers.get(body.stream_id)
     if analyzer is None:
-        raise HTTPException(404, f"Không tìm thấy acoustic analyzer cho stream: {body.stream_id}")
+        for a in _acoustic_analyzers.values():
+            if a.device_id == body.device_id or a.device_id == body.stream_id:
+                analyzer = a
+                break
+    if analyzer is None:
+        raise HTTPException(404, f"Không tìm thấy acoustic analyzer cho stream/device: {body.stream_id}")
     analyzer.reload_regions()
+    
+    # Invalidate cache to force immediate sync on next state call
+    s = _get_or_create_state(body.device_id)
+    s["last_fetch_time"] = 0.0
+    s.pop("cached_device_info", None)
+
     logger.info("[Routes] PD regions reloaded for %s", body.stream_id)
     return {"ok": True, "stream_id": body.stream_id}
 

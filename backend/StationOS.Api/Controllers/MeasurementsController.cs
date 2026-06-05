@@ -310,7 +310,8 @@ public class MeasurementsController : ControllerBase
                     Quality   = 0
                 };
                 // Cập nhật cache cho Rule Engine
-                cachedDict[reading.PointId] = reading;
+                var cacheKey = $"{reading.DeviceId}_{reading.PointId}".ToLower();
+                cachedDict[cacheKey] = reading;
                 return reading;
             }).ToList();
 
@@ -425,7 +426,8 @@ public class MeasurementsController : ControllerBase
         var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
         foreach (var r in readingsToSave)
         {
-            cachedDict[r.PointId] = r;
+            var cacheKey = $"{r.DeviceId}_{r.PointId}".ToLower();
+            cachedDict[cacheKey] = r;
         }
 
         // Broadcast realtime qua SignalR Hub

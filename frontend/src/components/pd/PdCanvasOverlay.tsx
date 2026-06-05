@@ -76,7 +76,9 @@ export const PdCanvasOverlay: React.FC<Props> = ({
         if (firstPt) {
             ctx.shadowColor = 'rgba(0,0,0,0.8)';
             ctx.shadowBlur = 4;
-            ctx.fillText(r.name, (firstPt.x / 100) * canvas.width, (firstPt.y / 100) * canvas.height - 5);
+            const count = (aiStats as any)?.discharge_counts?.[r.name] || 0;
+            const labelText = `${r.name} (${count})`;
+            ctx.fillText(labelText, (firstPt.x / 100) * canvas.width, (firstPt.y / 100) * canvas.height - 5);
             ctx.shadowBlur = 0;
         }
       });

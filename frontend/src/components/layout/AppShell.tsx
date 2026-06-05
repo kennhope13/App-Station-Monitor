@@ -4,7 +4,7 @@
 // Điều hướng lọc theo vai trò người dùng (admin / manager / operator)
 // ============================================================
 
-import { useEffect, useState, Suspense, useRef } from 'react';
+import { useEffect, useState, Suspense, useRef, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '@/services/AuthService';
 import { useAlertStore, useSensorStore } from '@/store';
@@ -72,12 +72,56 @@ export default function AppShell() {
   if (!user) return null;
 
   // ── Alerts Management ────────────────────────────────────────
-  const [activeAlert, setActiveAlert] = useState<AlertItem | null>(null);
+  const [alertQueue, setAlertQueue] = useState<AlertItem[]>([]);
+  const activeAlert = alertQueue[0] ?? null;
+
+  const dismissActiveAlert = useCallback(() => {
+    setAlertQueue(q => q.slice(1));
+  }, []);
+
+  const enqueueAlert = useCallback((alert: AlertItem) => {
+    setAlertQueue(q => {
+      // Không enqueue trùng alert id
+      if (q.some(a => a.id === alert.id)) return q;
+      return [...q, alert];
+    });
+  }, []);
+
   const fetchAlerts = useAlertStore(s => s.fetch);
   const invalidateAlerts = useAlertStore(s => s.invalidate);
-  
+
+  // Track alert IDs đã show popup trong session này (reset khi đóng tab)
+  const shownAlertIdsRef = useRef<Set<string>>((() => {
+    try {
+      return new Set<string>(JSON.parse(sessionStorage.getItem('shown_alert_ids') || '[]'));
+    } catch { return new Set<string>(); }
+  })());
+
+  const markAlertShown = useCallback((id: string) => {
+    shownAlertIdsRef.current.add(id);
+    try {
+      sessionStorage.setItem('shown_alert_ids', JSON.stringify([...shownAlertIdsRef.current]));
+    } catch { /* sessionStorage không khả dụng */ }
+  }, []);
+
+  const enqueueAlertWithTrack = useCallback((alert: AlertItem) => {
+    if (shownAlertIdsRef.current.has(alert.id)) return;
+    markAlertShown(alert.id);
+    enqueueAlert(alert);
+  }, [enqueueAlert, markAlertShown]);
+
   useEffect(() => {
-    fetchAlerts(ALERT_STATUS.OPEN);
+    // Fetch open alerts và enqueue những alert rule_engine chưa được show popup
+    fetchAlerts(ALERT_STATUS.OPEN).then((openAlerts) => {
+      if (!Array.isArray(openAlerts)) return;
+      const unseen = openAlerts.filter(
+        a => a.source === 'rule_engine' &&
+             (a.level === 'alarm' || a.level === 'warning') &&
+             !shownAlertIdsRef.current.has(a.id)
+      );
+      // Enqueue từng alert chưa xem, delay nhỏ để tránh spam ngay lúc load
+      unseen.forEach((a, i) => setTimeout(() => enqueueAlertWithTrack(a), i * 300));
+    }).catch(() => {});
 
     // Khởi tạo SignalR Hub toàn cục để lắng nghe mọi sự kiện trên mọi Tab
     const hub = createRealtimeHub();
@@ -87,11 +131,11 @@ export default function AppShell() {
       invalidateAlerts(ALERT_STATUS.OPEN);
       useAlertStore.getState().prepend(alert);
       fetchAlerts(ALERT_STATUS.OPEN, true);
-      
+
       const isCritical = alert.level === 'alarm' || alert.level === 'warning';
       if (isCritical) {
         playAlertSound(alert.level === 'alarm' ? 'alarm' : 'warning');
-        setActiveAlert(alert);
+        enqueueAlertWithTrack(alert);
       } else {
         showToast(alert.message || 'Cảnh báo mới', 'info');
       }
@@ -103,12 +147,7 @@ export default function AppShell() {
       fetchAlerts(ALERT_STATUS.OPEN, true);
 
       // Nếu cảnh báo đang hiện Popup được cập nhật (vd: có ảnh/video mới), cập nhật ngay
-      setActiveAlert(prev => {
-        if (prev && prev.id === data.id) {
-          return { ...prev, ...data };
-        }
-        return prev;
-      });
+      setAlertQueue(q => q.map(a => a.id === data.id ? { ...a, ...data } : a));
     });
 
     // 3. Lắng nghe sự kiện Camera AI
@@ -131,14 +170,16 @@ export default function AppShell() {
       useSensorStore.setState(s => {
         const nextPoints = { ...s.pointsByStation };
         data.forEach(d => {
-          // Lưu ý: data từ SignalR có thể không chứa stationId, chúng ta cập nhật vào mọi trạm có deviceId tương ứng
           Object.keys(nextPoints).forEach(sid => {
             const list = [...(nextPoints[sid] || [])];
             const idx = list.findIndex(p => p.pointId === d.pointId && p.deviceId === d.deviceId);
             if (idx >= 0) {
               list[idx] = d;
-              nextPoints[sid] = list;
+            } else {
+              // Thêm sensor point mới nếu chưa có trong danh sách
+              list.push(d);
             }
+            nextPoints[sid] = list;
           });
         });
         return { pointsByStation: nextPoints };
@@ -493,11 +534,12 @@ export default function AppShell() {
 
       </div>{/* end .app-body */}
 
-      {/* ── Rich Alert Modal ── */}
+      {/* ── Rich Alert Modal (queue — hiển thị từng cái) ── */}
       {activeAlert && (
-        <RichAlertModal 
-          alert={activeAlert} 
-          onClose={() => setActiveAlert(null)} 
+        <RichAlertModal
+          alert={activeAlert}
+          queueCount={alertQueue.length}
+          onClose={dismissActiveAlert}
         />
       )}
 

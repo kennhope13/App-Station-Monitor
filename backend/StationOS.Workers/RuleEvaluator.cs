@@ -79,7 +79,10 @@ public static class RuleEvaluator
             }
             else if (root.TryGetProperty("pre_alarm", out var preOnlyEl) && preOnlyEl.ValueKind == JsonValueKind.Number)
             {
-                value = preOnlyEl.GetDouble();
+                // Chỉ có pre_alarm (warning), không có alarm → đặt alarm threshold = ±∞ để không bao giờ fire alarm,
+                // warning threshold = pre_alarm để warningTriggered hoạt động đúng.
+                warningValue = preOnlyEl.GetDouble();
+                value = op is "<" or "<=" ? double.NegativeInfinity : double.PositiveInfinity;
             }
             else return null;
 
