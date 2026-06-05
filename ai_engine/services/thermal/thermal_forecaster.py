@@ -180,6 +180,21 @@ def find_matched_prediction(dt: datetime, pred_list: list[dict], max_delta_s: in
 
 def load_history_for_chart(targets: list[str], window_points: int = 60, horizon: int = 5, date_str: Optional[str] = None) -> list[dict]:
     """Trả về dữ liệu từ mốc thời gian sớm nhất có dữ liệu (tối đa 24h) của ngày được chọn."""
+    import math
+    def safe_float(val):
+        if not val or not val.strip():
+            return None
+        try:
+            f = float(val)
+            if math.isnan(f) or math.isinf(f):
+                return None
+            # Loại bỏ các giá trị dị thường (ví dụ: < -50 hoặc > 300 độ C) từ camera lỗi
+            if f < -50.0 or f > 300.0:
+                return None
+            return f
+        except Exception:
+            return None
+
     now_dt = datetime.now()
     
     # 1. Xác định ngày mục tiêu
@@ -257,9 +272,9 @@ def load_history_for_chart(targets: list[str], window_points: int = 60, horizon:
         item = {"timestamp": display_key, "full_ts": full_key}
         for t in targets:
             v = r.get(t)
-            item[f"{t}_actual"] = float(v) if (v and v.strip()) else None
+            item[f"{t}_actual"] = safe_float(v)
             pv = p_data.get(f"{t}_pred")
-            item[f"{t}_pred"] = float(pv) if (pv and pv.strip()) else None
+            item[f"{t}_pred"] = safe_float(pv)
         res.append(item)
         curr += timedelta(minutes=1)
 
@@ -275,7 +290,7 @@ def load_history_for_chart(targets: list[str], window_points: int = 60, horizon:
             for t in targets:
                 item[f"{t}_actual"] = None
                 pv = p_data.get(f"{t}_pred")
-                item[f"{t}_pred"] = float(pv) if (pv and pv.strip()) else None
+                item[f"{t}_pred"] = safe_float(pv)
             res.append(item)
 
     return res

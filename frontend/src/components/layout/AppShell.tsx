@@ -53,6 +53,11 @@ const THEME_NAMES: Record<string, string> = {
   cyberpunk: 'Neon'
 };
 
+const isFireAlert = (alert: AlertItem) => {
+  const m = (alert.message || '').toLowerCase();
+  return m.includes('cháy') || m.includes('lửa') || m.includes('khói') || m.includes('fire') || m.includes('smoke');
+};
+
 /**
  * Khung bố cục chính của ứng dụng — gồm header, sidebar thu gọn/mở rộng và vùng nội dung trang.
  * Quản lý SignalR toàn cục, xử lý cảnh báo mới, đồng bộ cảm biến và điều hướng theo vai trò.
@@ -83,7 +88,16 @@ export default function AppShell() {
     setAlertQueue(q => {
       // Không enqueue trùng alert id
       if (q.some(a => a.id === alert.id)) return q;
-      return [...q, alert];
+      
+      const newQueue = [...q, alert];
+      // Sắp xếp: Cảnh báo cháy/lửa/khói lên đầu, các cảnh báo khác xếp sau
+      return [...newQueue].sort((a, b) => {
+        const aFire = isFireAlert(a);
+        const bFire = isFireAlert(b);
+        if (aFire && !bFire) return -1;
+        if (!aFire && bFire) return 1;
+        return 0; // Giữ nguyên thứ tự thời gian tương đối
+      });
     });
   }, []);
 
@@ -132,9 +146,12 @@ export default function AppShell() {
       useAlertStore.getState().prepend(alert);
       fetchAlerts(ALERT_STATUS.OPEN, true);
 
-      const isCritical = alert.level === 'alarm' || alert.level === 'warning';
+      const isFire = alert.message?.toLowerCase().includes('cháy') || alert.message?.toLowerCase().includes('fire') || alert.message?.toLowerCase().includes('lửa');
+      const isCritical = alert.level === 'alarm' || alert.level === 'warning' || isFire;
+      
       if (isCritical) {
-        playAlertSound(alert.level === 'alarm' ? 'alarm' : 'warning');
+        // Nếu là cháy, chơi âm thanh báo động khẩn cấp
+        playAlertSound(isFire ? 'alarm' : (alert.level === 'alarm' ? 'alarm' : 'warning'));
         enqueueAlertWithTrack(alert);
       } else {
         showToast(alert.message || 'Cảnh báo mới', 'info');

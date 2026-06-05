@@ -10,6 +10,9 @@ interface AlertPanelProps {
 /** Phân loại cảnh báo dựa trên nội dung thông điệp để hiển thị tiêu đề thu gọn. */
 const getCategory = (msg: string) => {
   const m = (msg || '').toLowerCase();
+  if (m.includes('cháy') || m.includes('lửa') || m.includes('khói') || m.includes('fire') || m.includes('smoke')) {
+    return { text: 'CHÁY', color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.35)' };
+  }
   if (m.includes('người') || m.includes('xâm nhập') || m.includes('bảo hộ') || m.includes('ppe') || m.includes('nhân viên')) {
     return { text: 'NGƯỜI', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)', border: 'rgba(6,182,212,0.2)' };
   }
@@ -44,9 +47,18 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const navigate = useNavigate();
 
-  const sorted = [...alerts].sort(
-    (a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime()
-  );
+  const isFireAlert = (a: AlertItem) => {
+    const m = (a.message || '').toLowerCase();
+    return m.includes('cháy') || m.includes('lửa') || m.includes('khói') || m.includes('fire') || m.includes('smoke');
+  };
+
+  const sorted = [...alerts].sort((a, b) => {
+    const aFire = isFireAlert(a);
+    const bFire = isFireAlert(b);
+    if (aFire && !bFire) return -1;
+    if (!aFire && bFire) return 1;
+    return new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime();
+  });
 
   const openCount = alerts.filter(a => a.status === 'open').length;
 
@@ -116,11 +128,12 @@ export default function AlertPanel({ alerts, onAlertClick }: AlertPanelProps) {
                     const isAlarm = a.level === 'alarm';
                     const cat = getCategory(a.message);
                     
-                    // Dynamic colors for NHIỆT
+                    // Dynamic colors for NHIỆT & CHÁY
                     const isThermal = cat.text === 'NHIỆT';
-                    const finalCatColor = isThermal ? (isAlarm ? '#ef4444' : '#f59e0b') : cat.color;
-                    const finalCatBg = isThermal ? (isAlarm ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)') : cat.bg;
-                    const finalCatBorder = isThermal ? (isAlarm ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : cat.border;
+                    const isFire = cat.text === 'CHÁY';
+                    const finalCatColor = isFire ? '#ef4444' : (isThermal ? (isAlarm ? '#ef4444' : '#f59e0b') : cat.color);
+                    const finalCatBg = isFire ? 'rgba(239,68,68,0.15)' : (isThermal ? (isAlarm ? 'rgba(239,68,68,0.12)' : 'rgba(245,158,11,0.12)') : cat.bg);
+                    const finalCatBorder = isFire ? 'rgba(239,68,68,0.35)' : (isThermal ? (isAlarm ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)') : cat.border);
 
                     return (
                       <tr

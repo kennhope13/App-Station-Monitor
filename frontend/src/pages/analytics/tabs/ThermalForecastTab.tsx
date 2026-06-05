@@ -74,22 +74,15 @@ export default function ThermalForecastTab() {
 
   const forecastTime = useMemo(() => {
     if (historyData.length === 0 || targets.length === 0) return null;
-    let currentIdx = 0;
-    if (historyData.length > 0 && targets.length > 0) {
-      const firstTarget = targets[0];
-      for (let i = historyData.length - 1; i >= 0; i--) {
-        const item = historyData[i];
-        if (item) {
-          const val = item[`${firstTarget}_actual`];
-          if (!item.is_future && val !== null && val !== undefined && val !== '') {
-            currentIdx = i; break;
-          }
-        }
+    // Tìm mốc thời gian của dự báo mới nhất có dữ liệu (quét từ cuối lên)
+    for (let i = historyData.length - 1; i >= 0; i--) {
+      const item = historyData[i];
+      const hasAnyPred = targets.some(t => item[`${t}_pred`] !== null && item[`${t}_pred`] !== undefined && item[`${t}_pred`] !== '');
+      if (hasAnyPred) {
+        return item.timestamp;
       }
     }
-    // Lấy mốc dự báo sau 5 phút (tương ứng với horizon=5 trong AI Engine)
-    const forecastItem = historyData[currentIdx + 5] || historyData[historyData.length - 1];
-    return forecastItem ? forecastItem.timestamp : null;
+    return null;
   }, [historyData, targets]);
 
   const updateStatusAndHistory = useCallback(async (showChartSpinner = true) => {
@@ -292,11 +285,14 @@ export default function ThermalForecastTab() {
     targets.forEach(t => { targetMap[normalize(t)] = t; });
 
     let currentIdx = 0;
-    const firstTarget = targets[0];
     for (let i = historyData.length - 1; i >= 0; i--) {
       const item = historyData[i];
-      if (item && item[`${firstTarget}_actual`] !== null) {
-        currentIdx = i; break;
+      if (item && !item.is_future) {
+        const hasAnyActual = targets.some(t => item[`${t}_actual`] !== null && item[`${t}_actual`] !== undefined && item[`${t}_actual`] !== '');
+        if (hasAnyActual) {
+          currentIdx = i;
+          break;
+        }
       }
     }
 // Map each target to its latest reading
@@ -307,10 +303,13 @@ targets.forEach(t => {
     if (item && item[`${t}_actual`] != null && item[`${t}_actual`] !== '') { actualVal = Number(item[`${t}_actual`]); break; }
   }
   let predVal: number | null = null;
-  // Lấy giá trị dự báo tại mốc +5 phút
-  const forecastItem = historyData[currentIdx + 5] || historyData[historyData.length - 1];
-  if (forecastItem && forecastItem[`${t}_pred`] != null && forecastItem[`${t}_pred`] !== '') {
-    predVal = Number(forecastItem[`${t}_pred`]);
+  // Tìm giá trị dự báo mới nhất có trong lịch sử (quét từ cuối lên)
+  for (let i = historyData.length - 1; i >= 0; i--) {
+    const item = historyData[i];
+    if (item && item[`${t}_pred`] != null && item[`${t}_pred`] !== '') {
+      predVal = Number(item[`${t}_pred`]);
+      break;
+    }
   }
   readings[t] = { actual: actualVal ?? 0.0, hasActual: actualVal != null, pred: predVal ?? 0.0, hasPred: predVal != null };
 });

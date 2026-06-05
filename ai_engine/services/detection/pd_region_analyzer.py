@@ -174,29 +174,31 @@ class PdRegionAnalyzer:
             cy = int(M["m01"] / M["m00"]) if M["m00"] != 0 else pts_arr[0][1]
 
             # Kiểm tra đốm có nằm trong vùng không
-            is_detected = det is not None and self._point_in_polygon((det[0], det[1]), verts)
+            is_hotspot_in_region = det is not None and self._point_in_polygon((det[0], det[1]), verts)
 
-            if is_detected:
-                # LỚP 1 (Vision): Có đốm -> ĐỔI MÀU ĐỎ (Active) giống file test để user thấy ngay
-                level = "active"
-                color = (0, 0, 255)  # Màu đỏ rực
+            # ĐIỀU KIỆN KÉP: Phải có đốm trong vùng VÀ vượt ngưỡng dB thực tế đã cài đặt
+            is_alarm = is_hotspot_in_region and (current_db >= region.alarm_threshold)
+            is_warning = is_hotspot_in_region and (current_db >= region.warning_threshold)
+
+            if is_alarm:
+                level = "alarm"
+                color = (0, 0, 255)  # Đỏ
                 fill_alpha = 0.25 if self._flash_state else 0.05
                 border_thickness = region.border_thickness + 1
-                
-                self._update_ui_state(region.name, current_db, current_hz, "alarm", marker_hotspot)
                 active_region_id = region.id
-                
-                # LỚP 2 (Acoustic): Chỉ gửi alert về Backend nếu dB thực tế vượt ngưỡng
-                if current_db >= region.alarm_threshold or audio_exception:
-                    self._maybe_send_alert(region, current_db, current_hz, "alarm", annotated)
-                elif current_db >= region.warning_threshold:
-                    self._maybe_send_alert(region, current_db, current_hz, "warning", annotated)
-                else:
-                    self._maybe_send_alert(region, current_db, current_hz, "normal")
+                self._update_ui_state(region.name, current_db, current_hz, "alarm", marker_hotspot)
+                self._maybe_send_alert(region, current_db, current_hz, "alarm", annotated)
+            elif is_warning:
+                level = "warning"
+                color = (0, 165, 255)  # Cam
+                fill_alpha = 0.15
+                border_thickness = region.border_thickness
+                active_region_id = region.id
+                self._update_ui_state(region.name, current_db, current_hz, "warning", marker_hotspot)
+                self._maybe_send_alert(region, current_db, current_hz, "warning", annotated)
             else:
-                # Bình thường -> Màu xanh lá
                 level = "normal"
-                color = (0, 255, 0)
+                color = (0, 255, 0)  # Xanh lá
                 fill_alpha = 0.0
                 border_thickness = region.border_thickness
                 self._clear_ui_state(region.name)

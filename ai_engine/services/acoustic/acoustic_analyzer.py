@@ -218,18 +218,16 @@ class AcousticAnalyzer:
                                     "pddetection", "dischargedetection"
                                 )
                                 if is_audio_exception:
-                                    trigger_db = self.live_db if self.live_db > 0 else 55.0
                                     with self._state_lock:
-                                        self.live_db = trigger_db
                                         self._audio_exception_active = True
                                         self._last_exception_time = now
                                     updated = True
-                                    logger.info("[Acoustic] audioexception received → set live_db to %.1f, exception_active=True", trigger_db)
+                                    logger.info("[Acoustic] audioexception received → exception_active=True, using live_db=%.1f", self.live_db)
 
                                     # Trigger alert trực tiếp — không chờ process_frame (RTSP có thể chưa có frame)
                                     if self._pd_analyzer and self._pd_analyzer.regions:
                                         try:
-                                            self._pd_analyzer.trigger_audio_alert(trigger_db, self.live_freq)
+                                            self._pd_analyzer.trigger_audio_alert(self.live_db, self.live_freq)
                                         except Exception as _ae:
                                             logger.debug("[Acoustic] trigger_audio_alert failed: %s", _ae)
                                 

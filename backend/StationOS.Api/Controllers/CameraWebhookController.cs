@@ -10,6 +10,7 @@
 
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -63,6 +64,7 @@ public class CameraWebhookController : ControllerBase
     /// </summary>
     // ── Nhận push từ camera ───────────────────────────────────
     [HttpPost]
+    [HttpPost("/api/alarm")]
     [AllowAnonymous]
     public async Task<IActionResult> Receive()
     {
@@ -71,63 +73,85 @@ public class CameraWebhookController : ControllerBase
 
         var ct = Request.ContentType ?? "";
 
-        if (ct.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))
+        // 1. Xử lý MULTIPART (form-data hoặc mixed)
+        if (ct.Contains("multipart", StringComparison.OrdinalIgnoreCase))
         {
-            // Hikvision gửi XML trong field "event", "event_log", hoặc bất kỳ text field nào
-            foreach (var key in new[] { "event", "event_log", "xml", "notification" })
-                if (Request.Form.TryGetValue(key, out var v)) { xml = v.ToString(); break; }
+            // Trường hợp A: Form data chuẩn (ASP.NET tự parse)
+            if (ct.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var key in new[] { "event", "event_log", "xml", "notification" })
+                    if (Request.Form.TryGetValue(key, out var v)) { xml = v.ToString(); break; }
 
-            if (xml == null)
-                foreach (var key in Request.Form.Keys)
+                if (xml == null)
+                    foreach (var key in Request.Form.Keys)
+                    {
+                        var v = Request.Form[key].ToString();
+                        if (v.TrimStart().StartsWith('<')) { xml = v; break; }
+                    }
+
+                var hdFile = Request.Form.Files.FirstOrDefault(f => 
+                    f.Name is "image_hd" or "snap" or "snapshot" or "pic" or "picture" or "img" || 
+                    f.FileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase));
+                
+                if (hdFile == null) hdFile = Request.Form.Files.FirstOrDefault(f => f.ContentType.StartsWith("image/"));
+
+                if (hdFile != null && hdFile.Length > 0)
                 {
-                    var v = Request.Form[key].ToString();
-                    if (v.TrimStart().StartsWith('<')) { xml = v; break; }
+                    using var ms = new MemoryStream();
+                    await hdFile.CopyToAsync(ms);
+                    img = ms.ToArray();
                 }
-
-            // Đón ảnh từ Camera (Hỗ trợ nhiều field name khác nhau của Hikvision/OpenCV)
-            var hdFile = Request.Form.Files.FirstOrDefault(f => 
-                f.Name is "image_hd" or "snap" or "snapshot" or "pic" or "picture" or "img" || 
-                f.FileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) || 
-                f.FileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase));
-            
-            // Nếu vẫn không tìm thấy theo tên, lấy file đầu tiên là ảnh
-            if (hdFile == null)
-            {
-                hdFile = Request.Form.Files.FirstOrDefault(f => f.ContentType.StartsWith("image/"));
             }
-
-            var thumbFile = Request.Form.Files.FirstOrDefault(f => f.Name is "image_thumb" or "thumb" or "thumbnail");
-            
-            if (hdFile != null && hdFile.Length > 0)
+            // Trường hợp B: Multipart/Mixed (Dạng thô hay gặp trên Camera Dual Spectrum 152)
+            else
             {
-                using var ms = new MemoryStream();
-                await hdFile.CopyToAsync(ms);
-                img = ms.ToArray();
-            }
-            if (thumbFile != null && thumbFile.Length > 0)
-            {
-                string webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-                var dir = Path.Combine(webRoot, "detections");
-                Directory.CreateDirectory(dir);
-                var tname = $"{Guid.NewGuid()}_thumb.jpg";
-                var fullPath = Path.Combine(dir, tname);
-                using var stream = new FileStream(fullPath, FileMode.Create);
-                await thumbFile.CopyToAsync(stream);
-                HttpContext.Items["ThumbnailUrl"] = $"/detections/{tname}";
-                _logger.LogInformation("[CamWebhook] Saved thumbnail: {path}", fullPath);
+                try
+                {
+                    var boundaryMatch = System.Text.RegularExpressions.Regex.Match(ct, "boundary=(.*)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    if (boundaryMatch.Success)
+                    {
+                        var boundary = boundaryMatch.Groups[1].Value.Trim().Trim('"');
+                        var boundaryBytes = Encoding.ASCII.GetBytes("--" + boundary);
+                        
+                        using var msBody = new MemoryStream();
+                        await Request.Body.CopyToAsync(msBody);
+                        var bodyBytes = msBody.ToArray();
+                        
+                        // Chia nhỏ các phần bằng boundary
+                        var parts = SplitBytes(bodyBytes, boundaryBytes);
+                        foreach (var part in parts)
+                        {
+                            if (part.Length < 10) continue;
+                            
+                            // Tìm vị trí kết thúc header (\r\n\r\n)
+                            var headerEnd = FindSequence(part, new byte[] { 13, 10, 13, 10 });
+                            if (headerEnd == -1) continue;
+                            
+                            var headerStr = Encoding.ASCII.GetString(part, 0, headerEnd);
+                            var contentBytes = new byte[part.Length - headerEnd - 4];
+                            Buffer.BlockCopy(part, headerEnd + 4, contentBytes, 0, contentBytes.Length);
+                            
+                            if (headerStr.Contains("application/xml") || headerStr.Contains("text/xml"))
+                                xml = Encoding.UTF8.GetString(contentBytes).Trim();
+                            else if (headerStr.Contains("image/jpeg"))
+                                img = contentBytes;
+                        }
+                    }
+                }
+                catch (Exception ex) { _logger.LogWarning(ex, "[CamWebhook] Lỗi bóc tách ảnh nhiệt từ gói hỗn hợp (mixed)"); }
             }
         }
+        // 2. Xử lý BODY THUẦN (XML)
         else
         {
-            // application/xml | text/xml | text/plain
             using var reader = new StreamReader(Request.Body, Encoding.UTF8);
             xml = await reader.ReadToEndAsync();
         }
 
         if (string.IsNullOrWhiteSpace(xml)) return Ok();
 
-        try   { await ProcessAsync(xml.Trim(), img); }
-        catch (Exception ex) { _logger.LogError(ex, "[CamWebhook] Lỗi xử lý"); }
+        try { await ProcessAsync(xml.Trim(), img); }
+        catch (Exception ex) { _logger.LogError(ex, "[CamWebhook] Lỗi xử lý sự kiện"); }
 
         return Ok();
     }
@@ -470,7 +494,8 @@ public class CameraWebhookController : ControllerBase
         if (!string.IsNullOrEmpty(eventType))
         {
             var isThermalEvent = eventType is "thermalexception" or "temperaturedetection" or "temperaturealarm"
-                                           or "firedetection" or "firealarm" or "smokedetection" or "smokealarm";
+                                           or "firedetection" or "firealarm" or "smokedetection" or "smokealarm"
+                                           or "dynamicfire";
             var isPdEvent = eventType is "acousticexception" or "audioexception" or "pddetection" or "dischargedetection";
 
             if (isThermalEvent)
@@ -517,6 +542,7 @@ public class CameraWebhookController : ControllerBase
         "temperaturewarning"    => ("thermal_hotspot",   "warning", true),
         "firedetection"         => ("fire",              "alarm",   true),
         "firealarm"             => ("fire",              "alarm",   true),
+        "dynamicfire"           => ("fire",              "alarm",   true),
         "smokedetection"        => ("smoke",             "alarm",   true),
         "smokealarm"            => ("smoke",             "alarm",   true),
         "linedetection"         => ("intrusion",         "warning", true),
@@ -532,4 +558,41 @@ public class CameraWebhookController : ControllerBase
         "dischargedetection"    => ("partial_discharge", "alarm",   true),
         _                       => (t,                   "warning", true),
     };
+
+    // ── Helper xử lý Byte Array (Cho camera mixed stream) ──────────
+    private static List<byte[]> SplitBytes(byte[] source, byte[] separator)
+    {
+        var result = new List<byte[]>();
+        var start = 0;
+        while (start < source.Length)
+        {
+            var end = FindSequence(source, separator, start);
+            if (end == -1)
+            {
+                var finalPart = new byte[source.Length - start];
+                Buffer.BlockCopy(source, start, finalPart, 0, finalPart.Length);
+                result.Add(finalPart);
+                break;
+            }
+            var part = new byte[end - start];
+            Buffer.BlockCopy(source, start, part, 0, part.Length);
+            result.Add(part);
+            start = end + separator.Length;
+        }
+        return result;
+    }
+
+    private static int FindSequence(byte[] haystack, byte[] needle, int start = 0)
+    {
+        for (var i = start; i <= haystack.Length - needle.Length; i++)
+        {
+            var found = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                if (haystack[i + j] != needle[j]) { found = false; break; }
+            }
+            if (found) return i;
+        }
+        return -1;
+    }
 }

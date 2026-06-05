@@ -191,17 +191,17 @@ class ThermalAnalyzer:
                 logger.error("[ThermalAnalyzer] Critical push error: %s", ex)
 
 
-            # 4.5 Pipeline dự báo AI cục bộ (mỗi 30 giây để biểu đồ mượt hơn)
-            if now - self._last_history_save >= 30.0:
-                try:
-                    from services.thermal.thermal_forecaster import process_thermal_payload
-                    from datetime import datetime
-                    p_payload = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
-                    p_payload += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
-                    if p_payload:
-                        process_thermal_payload({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": p_payload})
-                        self._last_history_save = now
-                except Exception: pass
+        # 4.5 Pipeline dự báo AI cục bộ (mỗi 30 giây để biểu đồ mượt hơn)
+        if now - self._last_history_save >= 30.0:
+            try:
+                from services.thermal.thermal_forecaster import process_thermal_payload
+                from datetime import datetime
+                p_payload = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
+                p_payload += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
+                if p_payload:
+                    process_thermal_payload({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": p_payload})
+                    self._last_history_save = now
+            except Exception: pass
 
 
         # 5. Serve MJPEG
