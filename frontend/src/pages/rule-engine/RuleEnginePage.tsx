@@ -74,13 +74,18 @@ export default function RuleEnginePage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const stations = await stationApi.getStations();
-      const firstStationId = stations[0]?.id;
+      const savedStationId = localStorage.getItem('selected_station_id');
+      let activeStationId = savedStationId;
+      if (!activeStationId) {
+        const stations = await stationApi.getStations();
+        const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
+        activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
+      }
       
       const [rulesData, pts, devs] = await Promise.all([
         stationApi.getRules(),
-        (firstStationId ? stationApi.getLatestPoints(firstStationId) : Promise.resolve([])).catch(() => []),
-        (firstStationId ? stationApi.getDevices(firstStationId) : Promise.resolve([])).catch(() => [])
+        (activeStationId ? stationApi.getLatestPoints(activeStationId) : Promise.resolve([])).catch(() => []),
+        (activeStationId ? stationApi.getDevices(activeStationId) : Promise.resolve([])).catch(() => [])
       ]);
 
       setDevices(devs);

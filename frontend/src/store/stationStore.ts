@@ -51,7 +51,18 @@ export const useStationStore = create<StationStore>((set, get) => ({
   invalidate: () => set({ lastFetchedAt: null }),
 
   getFirstStationId: async () => {
+    const saved = localStorage.getItem('selected_station_id');
     const stations = await get().fetch();
-    return stations[0]?.id ?? null;
+    if (saved && stations.some(s => s.id === saved)) {
+      return saved;
+    }
+    if (stations.length === 0) return null;
+    // Tìm Trạm Biến Áp Chính (TBA-001) trước vì đây là trạm chính có đầy đủ camera
+    const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
+    const defaultId = mainStation?.id ?? stations[0]?.id ?? null;
+    if (defaultId) {
+      localStorage.setItem('selected_station_id', defaultId);
+    }
+    return defaultId;
   },
 }));

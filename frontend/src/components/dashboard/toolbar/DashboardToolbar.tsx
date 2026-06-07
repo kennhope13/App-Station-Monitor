@@ -2,6 +2,7 @@
 
 import { Settings } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 interface DashboardToolbarProps {
   stationName: string;
@@ -20,6 +21,7 @@ interface DashboardToolbarProps {
 export default function DashboardToolbar(props: DashboardToolbarProps) {
   const { stationName, isEditMode, onToggleEditMode, onFit, onRotate, showLabels, onToggleLabels, onColorChange, filters, onFilterChange, unpinnedCount = 0 } = props;
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div
@@ -37,6 +39,20 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
     >
       {/* Title & Toggle Row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button
+          onClick={() => navigate('/multisite')}
+          className="btn-industrial btn-sm"
+          style={{
+            fontSize: '0.65rem',
+            padding: '2px 8px',
+            height: 24,
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}
+        >
+          ← TRẠM TỔNG
+        </button>
+
         <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--admin-text)', whiteSpace: 'nowrap' }}>
           {stationName.toUpperCase() || 'SƠ ĐỒ TRẠM'}
         </span>

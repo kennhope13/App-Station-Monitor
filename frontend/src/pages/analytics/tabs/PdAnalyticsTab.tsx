@@ -12,12 +12,7 @@ export default function PdAnalyticsTab() {
   const [selectedCamera, setSelectedCamera] = useState<Device | null>(null);
   const [loading, setLoading] = useState(true);
   
-  const [aiStats, setAiStats] = useState<{ 
-    db?: number | null, 
-    hz?: number | null, 
-    active_boundary?: string | null,
-    discharge_counts?: Record<string, number> | null
-  }>({});
+  const [aiStats, setAiStats] = useState<{ db?: number | null, hz?: number | null, active_boundary?: string | null }>({});
   const [eventHistory, setEventHistory] = useState<any[]>([]);
   const [boundaries, setBoundaries] = useState<any[]>([]);
 
@@ -35,15 +30,20 @@ export default function PdAnalyticsTab() {
     const initData = async () => {
       try {
         setLoading(true);
-        const stations = await stationApi.getStations();
-        let allPdCams: Device[] = [];
-        for (const st of stations) {
-          const devs = await stationApi.getDevices(st.id);
-          const pdDevs = devs.filter(d => d.type === 'camera_pd' || d.type === 'cabinet');
-          allPdCams = [...allPdCams, ...pdDevs];
+        const savedStationId = localStorage.getItem('selected_station_id');
+        let activeStationId = savedStationId;
+        if (!activeStationId) {
+          const stations = await stationApi.getStations();
+          const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
+          activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
         }
-        setCameras(allPdCams);
-        if (allPdCams.length > 0) setSelectedCamera(allPdCams[0] ?? null);
+
+        if (activeStationId) {
+          const devs = await stationApi.getDevices(activeStationId);
+          const pdDevs = devs.filter(d => d.type === 'camera_pd' || d.type === 'cabinet');
+          setCameras(pdDevs);
+          if (pdDevs.length > 0) setSelectedCamera(pdDevs[0] ?? null);
+        }
       } catch (err) {
         console.error('[PD Analytics] Error loading cameras:', err);
       } finally {
@@ -113,7 +113,6 @@ export default function PdAnalyticsTab() {
             db: data.db,
             hz: data.hz,
             active_boundary: data.active_boundary,
-            discharge_counts: data.discharge_counts,
           });
         }
       } catch (err) {}
@@ -292,13 +291,11 @@ export default function PdAnalyticsTab() {
                         const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length * 100;
                         const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length * 100;
 
-                        const count = aiStats.discharge_counts?.[b.name] || 0;
-
                         return (
                           <div key={b.id} style={{ 
                             position: 'absolute', left: `${cx}%`, top: `${cy}%`,
                             transform: 'translate(-50%, -50%)',
-                            background: 'rgba(13,17,23,0.9)', padding: '2px 4px', borderRadius: 2,
+                            background: 'rgba(13,17,23,0.9)', padding: '1px 4px', borderRadius: 2,
                             color: '#fff', fontSize: 8, fontWeight: 700, pointerEvents: 'none',
                             border: isActive ? `1px solid ${color}` : '1px solid rgba(255,255,255,0.15)',
                             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
@@ -307,25 +304,19 @@ export default function PdAnalyticsTab() {
                             transition: 'all 0.3s ease'
                           }}>
                             <div style={{ opacity: 0.85, fontSize: 8 }}>
-                              {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{b.name} ({count})
+                              {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{b.name}
                             </div>
-                            {isActive && (
-                              <div style={{ 
-                                color: color, 
-                                fontSize: '9px', 
-                                fontFamily: 'monospace', 
-                                borderTop: '1px solid rgba(255,255,255,0.1)', 
-                                paddingTop: 2, 
-                                marginTop: 2, 
-                                fontWeight: 800,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center'
-                              }}>
-                                <div>{aiStats.db != null ? `${aiStats.db.toFixed(1)} dB` : '-- dB'}</div>
-                                {aiStats.hz != null && <div style={{ fontSize: '8px', opacity: 0.85 }}>{aiStats.hz.toFixed(0)} Hz</div>}
-                              </div>
-                            )}
+                            <div style={{ 
+                              color: isActive ? color : 'rgba(255,255,255,0.7)', 
+                              fontSize: '9px', 
+                              fontFamily: 'monospace', 
+                              borderTop: '1px solid rgba(255,255,255,0.1)', 
+                              paddingTop: 0, 
+                              marginTop: 0, 
+                              fontWeight: 800 
+                            }}>
+                              {aiStats.db != null ? `${aiStats.db.toFixed(1)} dB` : '-- dB'}
+                            </div>
                           </div>
                         );
                     })}

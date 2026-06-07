@@ -63,56 +63,66 @@ export default function RealtimeMonitorPage() {
 
   // 1. Initial Load: Fetch cameras once on mount
   useEffect(() => {
-    getFirstStationId().then((id: string | null) => {
-      if (id) {
-        fetchDevices(id);
-        fetchAlerts(ALERT_STATUS.OPEN);
-      }
-    }).catch(() => {});
+    const savedStationId = localStorage.getItem('selected_station_id');
+    const loadCams = (stationId: string) => {
+      stationApi.getCameras(stationId).then(cams => {
+        const initialStatus: Record<string, string> = {};
+        cams.forEach(c => initialStatus[c.id.toLowerCase()] = c.status || 'unknown');
+        setDeviceStatus(initialStatus);
 
-    stationApi.getCamerasFromFirstStation().then(cams => {
-      const initialStatus: Record<string, string> = {};
-      cams.forEach(c => initialStatus[c.id.toLowerCase()] = c.status || 'unknown');
-      setDeviceStatus(initialStatus);
+        const expandedCams: CameraDevice[] = [];
+        cams.forEach(c => {
+          const cfg = (c as any).config || {};
+          if (c.type === 'camera_dual') {
+            expandedCams.push({
+              ...c,
+              id: `${c.id}_optical`,
+              name: `${c.name} (Quang học)`,
+              config: { ...cfg, go2rtc_id: cfg.go2rtc_optical }
+            } as any);
+            expandedCams.push({
+              ...c,
+              id: `${c.id}_thermal`,
+              name: `${c.name} (Nhiệt)`,
+              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
+            } as any);
+          } else if (c.type === 'camera_thermal') {
+            expandedCams.push({
+              ...c,
+              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
+            });
+          } else {
+            expandedCams.push({
+              ...c,
+              config: cfg
+            });
+          }
+        });
+        setCameras(expandedCams);
 
-      const expandedCams: CameraDevice[] = [];
-      cams.forEach(c => {
-        const cfg = (c as any).config || {};
-        if (c.type === 'camera_dual') {
-          expandedCams.push({
-            ...c,
-            id: `${c.id}_optical`,
-            name: `${c.name} (Quang học)`,
-            config: { ...cfg, go2rtc_id: cfg.go2rtc_optical }
-          } as any);
-          expandedCams.push({
-            ...c,
-            id: `${c.id}_thermal`,
-            name: `${c.name} (Nhiệt)`,
-            config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
-          } as any);
-        } else if (c.type === 'camera_thermal') {
-          expandedCams.push({
-            ...c,
-            config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
-          });
-        } else {
-          expandedCams.push({
-            ...c,
-            config: cfg
-          });
+        // Fetch VVR mapping once
+        const thermalIds = cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id);
+        thermalIds.forEach(cid => {
+          stationApi.getThermalMapping(cid).then(m => {
+            if (m) setVvrCache(prev => ({ ...prev, [cid.toLowerCase()]: m }));
+          }).catch(() => {});
+        });
+      }).catch(console.error);
+    };
+
+    if (savedStationId) {
+      fetchDevices(savedStationId);
+      fetchAlerts(ALERT_STATUS.OPEN);
+      loadCams(savedStationId);
+    } else {
+      getFirstStationId().then((id: string | null) => {
+        if (id) {
+          fetchDevices(id);
+          fetchAlerts(ALERT_STATUS.OPEN);
+          loadCams(id);
         }
-      });
-      setCameras(expandedCams);
-
-      // Fetch VVR mapping once
-      const thermalIds = cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id);
-      thermalIds.forEach(id => {
-        stationApi.getThermalMapping(id).then(m => {
-          if (m) setVvrCache(prev => ({ ...prev, [id.toLowerCase()]: m }));
-        }).catch(() => {});
-      });
-    }).catch(console.error);
+      }).catch(() => {});
+    }
 
     // Initial latest points
     stationApi.getLatestPoints().then(readings => {

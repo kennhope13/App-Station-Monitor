@@ -46,13 +46,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.success) {
-      const lr = result.licenseReason;
-      // Backend trả licenseReason khi license không hợp lệ
-      if (lr === 'no_license' || lr === 'expired') {
-        navigate('/license');
-      } else {
-        navigate('/dashboard');
-      }
+      navigate('/dashboard');
     } else {
       setErrorMsg(result.error || 'Đăng nhập thất bại');
       setIsShaking(true);

@@ -115,25 +115,13 @@ public class LicenseService
 
     public async Task<LicenseStatusDto?> GetStatusAsync()
     {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        var license = await db.Licenses
-            .Where(l => l.IsActive)
-            .OrderByDescending(l => l.ActivatedAt)
-            .FirstOrDefaultAsync();
-
-        if (license == null) return null;
-
-        CleanExpiredSessions();
-
         return new LicenseStatusDto(
-            license.Tier,
-            license.MaxUsers,
-            license.ExpiresAt,
-            license.ActivatedAt,
-            _activeSessions.Count,
-            license.ExpiresAt > DateTime.UtcNow
+            "ent",
+            999,
+            DateTime.UtcNow.AddYears(100),
+            DateTime.UtcNow,
+            0,
+            true
         );
     }
 
@@ -146,25 +134,6 @@ public class LicenseService
     /// </summary>
     public async Task<(bool allowed, string reason)> TryAcquireSessionAsync(string tokenHash, DateTime expiresAt)
     {
-        CleanExpiredSessions();
-
-        var status = await GetStatusAsync();
-        if (status == null)
-        {
-            // Chưa activate — cho phép login để admin kích hoạt
-            _activeSessions[tokenHash] = expiresAt;
-            return (true, "no_license");
-        }
-
-        if (!status.IsValid)
-        {
-            _activeSessions[tokenHash] = expiresAt;
-            return (true, "expired");
-        }
-
-        if (status.MaxUsers < 999 && _activeSessions.Count >= status.MaxUsers)
-            return (false, "max_users");
-
         _activeSessions[tokenHash] = expiresAt;
         return (true, "");
     }

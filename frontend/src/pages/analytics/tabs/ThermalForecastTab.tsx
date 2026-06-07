@@ -77,9 +77,11 @@ export default function ThermalForecastTab() {
     // Tìm mốc thời gian của dự báo mới nhất có dữ liệu (quét từ cuối lên)
     for (let i = historyData.length - 1; i >= 0; i--) {
       const item = historyData[i];
-      const hasAnyPred = targets.some(t => item[`${t}_pred`] !== null && item[`${t}_pred`] !== undefined && item[`${t}_pred`] !== '');
-      if (hasAnyPred) {
-        return item.timestamp;
+      if (item) {
+        const hasAnyPred = targets.some(t => item[`${t}_pred`] !== null && item[`${t}_pred`] !== undefined && item[`${t}_pred`] !== '');
+        if (hasAnyPred) {
+          return item.timestamp;
+        }
       }
     }
     return null;
@@ -147,21 +149,26 @@ export default function ThermalForecastTab() {
     const initData = async () => {
       try {
         setLoading(true);
-        const stations = await stationApi.getStations();
-        let allCams: any[] = [];
-        for (const st of stations) {
-          const devs = await stationApi.getDevices(st.id);
+        const savedStationId = localStorage.getItem('selected_station_id');
+        let activeStationId = savedStationId;
+        if (!activeStationId) {
+          const stations = await stationApi.getStations();
+          const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
+          activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
+        }
+
+        if (activeStationId) {
+          const devs = await stationApi.getDevices(activeStationId);
           const filtered = devs.filter(d => {
             const type = (d.type || '').toLowerCase().trim();
             const hasThermal = !!(d.config?.go2rtc_thermal || d.config?.rtsp_thermal);
             return type === 'camera_thermal' || type === 'camera_dual' || hasThermal;
           });
-          allCams = [...allCams, ...filtered];
-        }
-        setCameras(allCams);
-        if (allCams.length > 0) {
-          const thermalCam = allCams.find(c => c.name?.toLowerCase().includes('thermal') || c.config?.go2rtc_thermal);
-          setSelectedCamera(thermalCam || allCams[0]);
+          setCameras(filtered);
+          if (filtered.length > 0) {
+            const thermalCam = filtered.find(c => c.name?.toLowerCase().includes('thermal') || c.config?.go2rtc_thermal);
+            setSelectedCamera(thermalCam || filtered[0]);
+          }
         }
       } catch (err) {
         console.error('[AI Forecast] Error loading configuration:', err);
@@ -284,17 +291,7 @@ export default function ThermalForecastTab() {
     const targetMap: Record<string, string> = {};
     targets.forEach(t => { targetMap[normalize(t)] = t; });
 
-    let currentIdx = 0;
-    for (let i = historyData.length - 1; i >= 0; i--) {
-      const item = historyData[i];
-      if (item && !item.is_future) {
-        const hasAnyActual = targets.some(t => item[`${t}_actual`] !== null && item[`${t}_actual`] !== undefined && item[`${t}_actual`] !== '');
-        if (hasAnyActual) {
-          currentIdx = i;
-          break;
-        }
-      }
-    }
+
 // Map each target to its latest reading
 targets.forEach(t => {
   let actualVal: number | null = null;

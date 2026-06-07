@@ -255,11 +255,9 @@ public class AiEventsController : ControllerBase
                 Value = req.Value,
                 Unit = req.Unit
             };
-            _db.SensorReadings.Add(reading);
 
-            // Cập nhật cache để các RuleEngine có thể đánh giá chính xác theo từng thiết bị
-            var cacheKey = $"{reading.DeviceId}_{reading.PointId}".ToLower();
-            cachedDict[cacheKey] = reading;
+            // Cập nhật cache để các RuleEngine có thể đánh giá ngay lập tức
+            cachedDict[reading.PointId] = reading;
             
             // Push SignalR để dashboard cập nhật gauge/chart ngay lập tức
             await _notifier.SendSensorUpdateAsync(new {
@@ -271,7 +269,6 @@ public class AiEventsController : ControllerBase
             });
         }
 
-        await _db.SaveChangesAsync();
         return Ok();
     }
 

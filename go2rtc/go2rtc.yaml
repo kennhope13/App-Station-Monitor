@@ -33,3 +33,13 @@ streams:
     - rtsp://admin:Demo%402024@192.168.10.120:554/Streaming/Channels/201
   cam_192_168_10_120_optical_sub:
     - rtsp://admin:Demo%402024@192.168.10.120:554/Streaming/Channels/102
+  cam_hanoi_optical:
+    - rtsp://admin:Demo%402024@192.168.20.152:554/Streaming/Channels/101
+  cam_hanoi_thermal:
+    - rtsp://admin:Demo%402024@192.168.20.152:554/Streaming/Channels/201
+  cam_hanoi_optical_sub:
+    - rtsp://admin:Demo%402024@192.168.20.152:554/Streaming/Channels/102
+  cam_danang_pd:
+    - rtsp://admin:Demo%402024@192.168.30.153:554/Streaming/Channels/101
+  cam_danang_pd_sub:
+    - rtsp://admin:Demo%402024@192.168.30.153:554/Streaming/Channels/102

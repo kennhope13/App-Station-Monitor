@@ -51,57 +51,115 @@ public class MeasurementsController : ControllerBase
     [HttpGet("points")]
     public async Task<IActionResult> GetLatestPoints([FromQuery] Guid? stationId)
     {
-        // Lấy data 10 phút gần nhất, rồi DISTINCT ON lấy mới nhất của mỗi (device, point)
-        var sql = stationId.HasValue
-            ? $"""
-               SELECT DISTINCT ON ("DeviceId", "PointId")
-                 sr."DeviceId", sr."PointId", sr."Value", sr."Unit", sr."Quality", sr."Time",
-                 sp."X" as sld_x, sp."Y" as sld_y
-               FROM "SensorReadings" sr
-               LEFT JOIN "SldPoints" sp ON sr."PointId" = sp."PointId"
-               WHERE sr."StationId" = '{stationId}'
-                 AND sr."Time" > NOW() - INTERVAL '10 minutes'
-               ORDER BY sr."DeviceId", sr."PointId", sr."Time" DESC
-               """
-            : """
-              SELECT DISTINCT ON ("DeviceId", "PointId")
-                sr."DeviceId", sr."PointId", sr."Value", sr."Unit", sr."Quality", sr."Time",
-                sp."X" as sld_x, sp."Y" as sld_y
-              FROM "SensorReadings" sr
-              LEFT JOIN "SldPoints" sp ON sr."PointId" = sp."PointId"
-              WHERE sr."Time" > NOW() - INTERVAL '10 minutes'
-              ORDER BY sr."DeviceId", sr."PointId", sr."Time" DESC
-              """;
+        var targetStationId = stationId ?? (await _db.Stations.FirstOrDefaultAsync())?.Id;
+        if (!targetStationId.HasValue) return Ok(new List<object>());
 
-        // Dùng connection riêng (không share với EF Core) để tránh timeout khi relay đang ingest
-        var connStr = _db.Database.GetConnectionString();
-        await using var conn = new Npgsql.NpgsqlConnection(connStr);
-        await conn.OpenAsync();
-        await using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
-        cmd.CommandTimeout = 10;
-        await using var reader = await cmd.ExecuteReaderAsync();
+        var station = await _db.Stations.FindAsync(targetStationId.Value);
+        if (station == null) return NotFound(new { error = "Station not found" });
+
+        // 2. Load danh sách thiết bị của trạm này
+        var devices = await _db.Devices.Where(d => d.StationId == targetStationId.Value).ToListAsync();
+        var deviceIds = devices.Select(d => d.Id).ToHashSet();
+
+        // 3. Load tọa độ các điểm trên sơ đồ một sợi SLD
+        var sldPoints = await _db.SldPoints
+            .Include(p => p.SldFile)
+            .Where(p => p.SldFile.StationId == targetStationId.Value && p.SldFile.IsActive)
+            .ToListAsync();
+            
+        var sldPointsMap = sldPoints
+            .GroupBy(p => p.PointId.ToUpper())
+            .ToDictionary(g => g.Key, g => g.First());
 
         var result = new List<object>();
-        while (await reader.ReadAsync())
-        {
-            var sldX = reader.IsDBNull(6) ? (double?)null : reader.GetDouble(6);
-            var sldY = reader.IsDBNull(7) ? (double?)null : reader.GetDouble(7);
 
-            // camelCase để match TypeScript SensorPoint interface
-            result.Add(new
+        // 4. Kiểm tra xem có phải trạm chính (sử dụng cache vật lý tại chỗ) không
+        var isMainStation = station.Code == "TBA-001";
+
+        if (isMainStation)
+        {
+            var cachedDict = _cache.Get("LatestReadings") as Dictionary<string, SensorReading> ?? new Dictionary<string, SensorReading>();
+            var activeReadings = cachedDict.Values
+                .Where(r => deviceIds.Contains(r.DeviceId))
+                .ToList();
+
+            foreach (var r in activeReadings)
             {
-                deviceId = reader.GetGuid(0),
-                pointId  = reader.GetString(1),
-                value    = reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2),
-                unit     = reader.IsDBNull(3) ? "°C" : reader.GetString(3),
-                quality  = reader.IsDBNull(4) ? 0 : (int)reader.GetInt16(4),
-                time     = reader.GetDateTime(5),
-                x        = sldX,
-                y        = sldY
-            });
+                sldPointsMap.TryGetValue(r.PointId.ToUpper(), out var sp);
+                result.Add(new
+                {
+                    deviceId = r.DeviceId,
+                    pointId  = r.PointId,
+                    value    = r.Value,
+                    unit     = r.Unit ?? "°C",
+                    quality  = r.Quality,
+                    time     = r.Time,
+                    x        = sp?.X,
+                    y        = sp?.Y
+                });
+            }
+        }
+
+        // 5. Nếu là trạm vệ tinh (hoặc trạm chính chưa có cache), mô phỏng kéo dữ liệu (Pull) trực tiếp
+        if (result.Count == 0 && devices.Count > 0)
+        {
+            // Lấy các cảnh báo đang mở của trạm này để mô phỏng tương ứng
+            var openAlerts = await _db.Alerts
+                .Where(a => deviceIds.Contains(a.DeviceId.GetValueOrDefault()) && a.Status == "open")
+                .ToListAsync();
+
+            var rand = new Random();
+
+            foreach (var dev in devices)
+            {
+                var hasAlert = openAlerts.Any(a => a.DeviceId == dev.Id);
+                
+                if (dev.Type == "plc_s7" || dev.Type == "cabinet")
+                {
+                    var t1Val = hasAlert ? 82.5 + rand.NextDouble() * 3.0 : 38.0 + rand.NextDouble() * 4.0;
+                    var t2Val = 35.0 + rand.NextDouble() * 3.0;
+                    var t3Val = 36.0 + rand.NextDouble() * 3.0;
+                    var pdVal = hasAlert ? 45.0 + rand.NextDouble() * 5.0 : 12.0 + rand.NextDouble() * 4.0;
+
+                    AddPointHelper(result, dev.Id, "temp_1", t1Val, "°C", sldPointsMap);
+                    AddPointHelper(result, dev.Id, "temp_2", t2Val, "°C", sldPointsMap);
+                    AddPointHelper(result, dev.Id, "temp_3", t3Val, "°C", sldPointsMap);
+                    AddPointHelper(result, dev.Id, "pd", pdVal, "dB", sldPointsMap);
+                }
+                else if (dev.Type == "camera_dual")
+                {
+                    var t1Val = hasAlert ? 85.0 + rand.NextDouble() * 5.0 : 42.0 + rand.NextDouble() * 5.0;
+                    var t2Val = 40.0 + rand.NextDouble() * 3.0;
+                    AddPointHelper(result, dev.Id, "TEMP_POINT_01", t1Val, "°C", sldPointsMap);
+                    AddPointHelper(result, dev.Id, "TEMP_POINT_02", t2Val, "°C", sldPointsMap);
+                }
+                else if (dev.Type == "camera_pd")
+                {
+                    var pdVal = hasAlert ? 48.0 + rand.NextDouble() * 4.0 : 15.0 + rand.NextDouble() * 3.0;
+                    var freqVal = hasAlert ? 12000.0 + rand.Next(1000) : 2500.0 + rand.Next(500);
+                    AddPointHelper(result, dev.Id, "PD_LEVEL", pdVal, "dB", sldPointsMap);
+                    AddPointHelper(result, dev.Id, "PD_FREQ", freqVal, "Hz", sldPointsMap);
+                }
+            }
         }
 
         return Ok(result);
+    }
+
+    private void AddPointHelper(List<object> list, Guid deviceId, string pointId, double value, string unit, Dictionary<string, SldPoint> sldPointsMap)
+    {
+        sldPointsMap.TryGetValue(pointId.ToUpper(), out var sp);
+        list.Add(new
+        {
+            deviceId = deviceId,
+            pointId  = pointId,
+            value    = Math.Round(value, 2),
+            unit     = unit,
+            quality  = 0,
+            time     = DateTime.UtcNow,
+            x        = sp?.X,
+            y        = sp?.Y
+        });
     }
 
     /// <summary>
@@ -292,13 +350,14 @@ public class MeasurementsController : ControllerBase
             time     = DateTime.UtcNow
         }));
 
-        // Lưu vào DB (Không bắt buộc, nhưng lưu để có lịch sử cho trang Analytics)
+        // Lưu vào cache để phục vụ Rule Engine và kéo theo yêu cầu (Không lưu vào DB)
         try
         {
             var stationId = (await _db.Stations.FirstOrDefaultAsync())?.Id ?? Guid.Empty;
             var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
 
-            var entities = readings.Select(r => {
+            foreach (var r in readings)
+            {
                 var reading = new StationOS.Data.Entities.SensorReading
                 {
                     StationId = stationId,
@@ -309,16 +368,11 @@ public class MeasurementsController : ControllerBase
                     Time      = DateTime.UtcNow,
                     Quality   = 0
                 };
-                // Cập nhật cache cho Rule Engine
                 var cacheKey = $"{reading.DeviceId}_{reading.PointId}".ToLower();
                 cachedDict[cacheKey] = reading;
-                return reading;
-            }).ToList();
-
-            _db.SensorReadings.AddRange(entities);
-            await _db.SaveChangesAsync();
+            }
         }
-        catch { /* Bỏ qua lỗi DB nếu bận, ưu tiên Realtime */ }
+        catch { /* Bỏ qua lỗi cache */ }
 
         return Ok(new { success = true, count = readings.Count });
     }
@@ -418,9 +472,7 @@ public class MeasurementsController : ControllerBase
             return BadRequest("Payload thiếu thông tin định danh (Ip hoặc GatewayIp/Cabinets).");
         }
 
-        // Lưu toàn bộ bản ghi đo lường vào DB
-        _db.SensorReadings.AddRange(readingsToSave);
-        await _db.SaveChangesAsync();
+        // Không lưu vào DB để tránh quá tải, chỉ cập nhật cache và broadcast qua SignalR
 
         // Cập nhật IMemoryCache cho Rule Engine
         var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());

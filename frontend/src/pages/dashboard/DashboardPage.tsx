@@ -5,10 +5,11 @@
 // ============================================================
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { stationApi } from '@/services/StationApiService';
+import { useSearchParams } from 'react-router-dom';
+import { SensorPoint, stationApi } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore, useSensorStore } from '@/store';
 import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
+import { useRealtime } from '@/hooks/useRealtime';
 import { PT_PD } from '@/constants/points';
 import { DEV_PLC_S7, DEV_CAM_TYPES } from '@/constants/devices';
 import type { AlertItem } from '@/types/api.types';
@@ -27,7 +28,6 @@ import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
  */
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   // Ưu tiên stationId từ URL (?stationId=...), nếu không có thì tự fetch trạm đầu tiên
   const [stationId, setStationId] = useState(searchParams.get('stationId') ?? '');
   const [stationName, setStationName] = useState(searchParams.get('stationName') ?? '');
@@ -59,17 +59,12 @@ export default function DashboardPage() {
 
   const alertsByFilter = useAlertStore(s => s.alertsByFilter);
   const fetchAlerts = useAlertStore(s => s.fetch);
+  const invalidateAlerts = useAlertStore(s => s.invalidate);
   const alerts = useMemo(() => alertsByFilter[ALERT_STATUS.OPEN] ?? [], [alertsByFilter]);
 
   const pointsByStation = useSensorStore(s => s.pointsByStation);
   const fetchSensors = useSensorStore(s => s.fetch);
   const sensors = useMemo(() => stationId ? (pointsByStation[stationId] ?? []) : [], [stationId, pointsByStation]);
-
-  const [rules, setRules] = useState<import('@/types/api.types').Rule[]>([]);
-  useEffect(() => {
-    if (!stationId) return;
-    stationApi.getRules().then(setRules).catch(() => {});
-  }, [stationId]);
 
   // ── Derived data ──────────────────────────────────────────────
   const plcOnline = useMemo(
@@ -100,8 +95,16 @@ export default function DashboardPage() {
 
   // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
-    if (stationId) return;
-    getFirstStationId().then(id => { if (id) setStationId(id); }).catch(() => { });
+    if (stationId) {
+      localStorage.setItem('selected_station_id', stationId);
+      return;
+    }
+    getFirstStationId().then(id => { 
+      if (id) {
+        setStationId(id);
+        localStorage.setItem('selected_station_id', id);
+      } 
+    }).catch(() => { });
   }, [stationId, getFirstStationId]);
 
   /** Lưu camera đang chọn vào state và localStorage để giữ lại sau khi tải lại trang. */
@@ -191,7 +194,27 @@ export default function DashboardPage() {
     }
   }, [alerts, devices]);
 
-  // Realtime được xử lý tập trung tại AppShell (1 hub duy nhất cho toàn app)
+  // ── Realtime cập nhật ─────────────────────────────────────────
+  useRealtime({
+    onSensorUpdate: (data: SensorPoint[]) => {
+      // Cập nhật cache sensor (merge từng point)
+      useSensorStore.setState(s => {
+        if (!stationId) return s;
+        const current = s.pointsByStation[stationId] ?? [];
+        const updated = [...current];
+        data.forEach(d => {
+          const idx = updated.findIndex(p => p.pointId === d.pointId && p.deviceId === d.deviceId);
+          if (idx >= 0) updated[idx] = d; else updated.push(d);
+        });
+        return {
+          ...s,
+          pointsByStation: { ...s.pointsByStation, [stationId]: updated },
+        };
+      });
+    },
+    onAlertNew: () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
+    onAlertUpdated: () => { invalidateAlerts(ALERT_STATUS.OPEN); fetchAlerts(ALERT_STATUS.OPEN, true); },
+  }, [stationId]);
 
   // Fit sơ đồ SLD vừa khung nhìn
   const handleFit = () => sldRef.current?.fitView();
@@ -311,7 +334,6 @@ export default function DashboardPage() {
         showLabels={showLabels}
         colorMatrix={sldColorMatrix}
         sensors={sensors}
-        rules={rules}
         selectedNodeId={selectedNode?.id}
         onNodeSelect={setSelectedNode}
         onNodeDropped={async (x, y, deviceId, _deviceName, pointId) => {
@@ -379,7 +401,7 @@ export default function DashboardPage() {
             justifyContent: 'space-between'
           }}
         >
-          <div style={{ width: 220, display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 1 auto' }}>
+          <div style={{ width: 120, display: 'flex', flexDirection: 'column', minHeight: 0, flex: '0 1 auto' }}>
             <AlertPanel
               alerts={alerts}
               onAlertClick={(alert) => {
@@ -387,7 +409,6 @@ export default function DashboardPage() {
                 if (streamId) {
                   handleCamChange(streamId);
                 }
-                navigate(`/alerts-history?alertId=${alert.id}`);
               }}
             />
           </div>
