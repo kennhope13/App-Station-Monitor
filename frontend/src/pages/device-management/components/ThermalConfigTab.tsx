@@ -26,7 +26,15 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
   const [rois, setRois] = useState<any[]>([]);
   const mksRef = useRef(markers); mksRef.current = markers;
   const roisRef = useRef(rois); roisRef.current = rois;
-  const [vvr, setVvr] = useState<VVR>({x:0.2,y:0.084,width:0.63,height:0.841});
+  const [vvr, setVvr] = useState<VVR>(() => {
+    const cfg = dev.config || {};
+    const focalOpt = cfg.focal_length_optical;
+    const focalTh = cfg.focal_length_thermal;
+    if (focalOpt != null && focalTh != null && Number(focalOpt) === Number(focalTh)) {
+      return { x: 0, y: 0, width: 1, height: 1 };
+    }
+    return { x: 0.2, y: 0.084, width: 0.63, height: 0.841 };
+  });
   
   const [viewMode, setViewMode] = useState<'op'|'th'>('op');
   const [drawMode, setDrawMode] = useState<'none'|'point'|'rect'>('none');
@@ -124,7 +132,16 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
         });
         if(res.ok) {
           const d = await res.json();
-          if(d.mapping) setVvr(d.mapping);
+          if(d.mapping) {
+            const cfg = dev.config || {};
+            const focalOpt = cfg.focal_length_optical;
+            const focalTh = cfg.focal_length_thermal;
+            if (focalOpt != null && focalTh != null && Number(focalOpt) === Number(focalTh)) {
+              setVvr({ x: 0, y: 0, width: 1, height: 1 });
+            } else {
+              setVvr(d.mapping);
+            }
+          }
           if(d.temps)   setMarkers(prev => prev.map(m => { const t=d.temps.find((x:any)=>x.id===m.id); return t?.temp!=null?{...m,temp:t.temp}:m; }));
           if(d.rois)    setRois(prev => prev.map(r => { const t=d.rois.find((x:any)=>x.id===r.id); return t?{...r,maxTemp:t.max}:r; }));
         }
@@ -429,8 +446,9 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
 
             {/* Draw Markers */}
             {markers.map(m => {
-              const nx = viewMode==='th' ? m.tx : m.ox;
-              const ny = viewMode==='th' ? m.ty : m.oy;
+              const { ox: dynOx, oy: dynOy } = t2o(m.tx, m.ty, vvr);
+              const nx = viewMode==='th' ? m.tx : dynOx;
+              const ny = viewMode==='th' ? m.ty : dynOy;
               const c = clr(m.temp, m.preAlarm, m.alarm);
               const armLen = m.markerSize || 28;
               const labelOffset = Math.round(armLen / 2) + 5;

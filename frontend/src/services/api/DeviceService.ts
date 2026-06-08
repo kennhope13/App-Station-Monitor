@@ -11,9 +11,10 @@ import { AI_ENGINE_URL } from '@/utils/env';
 
 export class DeviceService {
   /** Lấy danh sách thiết bị của trạm. config JSON được parse tự động. */
-  async getDevices(stationId: string, type?: string): Promise<Device[]> {
+  async getDevices(stationId?: string, type?: string): Promise<Device[]> {
     const q = type ? `?type=${type}` : '';
-    const raw = await apiFetch<any[]>(`/stations/${stationId}/devices${q}`);
+    const url = stationId ? `/stations/${stationId}/devices${q}` : `/devices${q}`;
+    const raw = await apiFetch<any[]>(url);
     return raw.map(d => ({
       ...d,
       config: typeof d.config === 'string' ? JSON.parse(d.config) : (d.config ?? {})

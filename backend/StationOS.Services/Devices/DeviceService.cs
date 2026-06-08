@@ -194,18 +194,17 @@ public class DeviceService
             }
             else if (device.Type == "camera_thermal")
             {
-                var thermalPath = config.GetValueOrDefault("rtsp_thermal")?.ToString() ?? "/Streaming/Channels/201";
-                var thermalId   = config.GetValueOrDefault("go2rtc_thermal")?.ToString() ?? $"cam_{ip?.Replace(".", "_")}_thermal";
+                // Dùng rtsp_thermal hoặc rtsp_path (tương thích cả 2 cách đặt config)
+                var thermalPath = config.GetValueOrDefault("rtsp_thermal")?.ToString()
+                               ?? config.GetValueOrDefault("rtsp_path")?.ToString()
+                               ?? "/Streaming/Channels/201";
+                // Dùng go2rtc_thermal hoặc go2rtc_id (tương thích cả 2 cách đặt config)
+                var thermalId   = config.GetValueOrDefault("go2rtc_thermal")?.ToString()
+                               ?? config.GetValueOrDefault("go2rtc_id")?.ToString()
+                               ?? $"cam_{ip?.Replace(".", "_")}_thermal";
                 var rtspThermalUrl = $"rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}";
 
                 existingStreams[thermalId] = rtspThermalUrl;
-
-                var subThermalPath = DeriveHikvisionSubPath(thermalPath);
-                if (subThermalPath != null)
-                {
-                    var subThermalId = thermalId + "_sub";
-                    existingStreams[subThermalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subThermalPath}";
-                }
 
                 _logger.LogInformation("[go2rtc] Đăng ký camera_thermal: {ThId} ({ThPath})", thermalId, thermalPath);
             }
@@ -227,14 +226,16 @@ public class DeviceService
                 _logger.LogInformation("[go2rtc] Đăng ký stream {StreamId} -> {RtspPath}", streamId, rtspPath);
             }
 
-            // Bước 3: Đăng ký từng stream qua go2rtc API
-            // Format đúng: PUT /api/streams?name=<id>&src=<rtsp_url>
-            // (KHÔNG phải PUT body JSON — go2rtc không support format đó)
+            // Bước 3: DELETE rồi PUT lại để đảm bảo credentials cũ được ghi đè
             int registered = 0, failed = 0;
             foreach (var kv in existingStreams)
             {
                 try
                 {
+                    // Xóa stream cũ trước (bỏ qua lỗi nếu chưa tồn tại)
+                    await client.DeleteAsync($"{Go2RtcUrl}/api/streams?name={Uri.EscapeDataString(kv.Key)}");
+                    await Task.Delay(50);
+                    // Đăng ký lại với URL mới (đúng mật khẩu)
                     var url = $"{Go2RtcUrl}/api/streams?name={Uri.EscapeDataString(kv.Key)}&src={Uri.EscapeDataString(kv.Value)}";
                     var resp = await client.PutAsync(url, null);
                     if (resp.IsSuccessStatusCode) registered++;
@@ -368,6 +369,8 @@ public class DeviceService
             if (string.IsNullOrEmpty(streamId))
                 return;
 
+            var jetsonIp = configDict.GetValueOrDefault("jetson_ip")?.ToString();
+
             var zonesList = new List<object>();
             foreach (var b in boundaries)
             {
@@ -438,23 +441,27 @@ public class DeviceService
                 _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully synchronized {points.Count} points and {boundaries.Count} zones for device {deviceId}");
             }
 
-            // 2. Tự động đồng bộ trực tiếp sang Jetson Orin Nano (cổng 8080) qua mạng
-            try
+            // 2. Tự động đồng bộ trực tiếp sang Jetson Orin Nano qua mạng (IP lấy từ config camera)
+            if (!string.IsNullOrEmpty(jetsonIp))
             {
-                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2));
-                var jetsonResp = await client.PostAsync("http://192.168.10.104:8080/config/thermal", content, cts.Token);
-                if (jetsonResp.IsSuccessStatusCode)
+                try
                 {
-                    _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully forwarded configuration to Jetson at 192.168.10.104:8080");
+                    var jetsonUrl = $"http://{jetsonIp}:8080/config/thermal";
+                    using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(2));
+                    var jetsonResp = await client.PostAsync(jetsonUrl, content, cts.Token);
+                    if (jetsonResp.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation($"[SyncThermalConfigToAIEngineAsync] Successfully forwarded configuration to Jetson at {jetsonIp}:8080 for device {deviceId}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"[SyncThermalConfigToAIEngineAsync] Jetson at {jetsonIp} returned status {jetsonResp.StatusCode} for device {deviceId}");
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _logger.LogWarning($"[SyncThermalConfigToAIEngineAsync] Jetson returned status {jetsonResp.StatusCode} for config forwarding.");
+                    _logger.LogError($"[SyncThermalConfigToAIEngineAsync] Error forwarding configuration to Jetson at {jetsonIp}: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"[SyncThermalConfigToAIEngineAsync] Error forwarding configuration to Jetson: {ex.Message}");
             }
         }
         catch (Exception ex)

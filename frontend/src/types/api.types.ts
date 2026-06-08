@@ -15,6 +15,8 @@ export interface User {
   role: UserRole;
   active: boolean;
   created_at: string;
+  is_restricted?: boolean;
+  station_ids?: string[];
 }
 
 // ── Trạm và Thiết bị ─────────────────────────────────────────
@@ -110,6 +112,9 @@ export interface CameraDevice {
     go2rtc_id?: string;
     // Camera liên kết với tủ điện nào (tùy chọn)
     cabinetId?: string;
+    // Tiêu cự ống kính (tùy chọn, cho cam dual)
+    focal_length_optical?: number;
+    focal_length_thermal?: number;
   };
 
   // Danh sách điểm chấm nhiệt — chỉ có với camera_thermal và camera_dual
@@ -157,6 +162,8 @@ export interface AlertItem {
   deviceId?: string;
   pointId?: string;       // điểm đo kích hoạt (vd: nhiet_do_pha_1, phong_dien)
   ruleId?: string;
+  stationId?: string;     // trạm nguồn phát sinh cảnh báo
+  stationName?: string;   // tên trạm (để hiển thị ở trạm tổng)
   triggeredAt: string;
   ackedAt?: string;
   closedAt?: string;
@@ -188,6 +195,8 @@ export interface AuditLogEntry {
   fullName?: string;
   oldValue?: string | null; // giá trị trước thay đổi (JSON)
   newValue?: string | null; // giá trị sau thay đổi (JSON)
+  stationId?: string;
+  stationName?: string;
 }
 
 export interface LoginLogEntry {
@@ -196,6 +205,8 @@ export interface LoginLogEntry {
   action: string;         // login | logout | failed
   ipAddress?: string;
   ts: string;
+  stationId?: string;
+  stationName?: string;
 }
 
 export interface NotifyLogEntry {
@@ -205,6 +216,8 @@ export interface NotifyLogEntry {
   status: string;
   sentAt: string;
   errorMessage?: string;
+  stationId?: string;
+  stationName?: string;
 }
 
 export interface RuleTriggerLogEntry {
@@ -215,6 +228,8 @@ export interface RuleTriggerLogEntry {
   deviceId?: string;
   deviceName?: string;
   valueAtTrigger?: number;
+  stationId?: string;
+  stationName?: string;
 }
 
 // ── Người dùng ───────────────────────────────────────────────
@@ -226,6 +241,7 @@ export interface UserItem {
   email?: string;
   role: string;           // operator | manager | admin
   isActive: boolean;
+  stationIds?: string[];
   createdAt: string;
 }
 

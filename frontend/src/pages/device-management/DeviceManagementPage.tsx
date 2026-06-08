@@ -5,11 +5,13 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff, ShieldAlert, Flame } from 'lucide-react';
 import { stationApi, Device, CameraDevice, Rule } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { DEVICE_TYPE_LABELS } from '@/constants/devices';
 import { PT_TEMP_1, PT_TEMP_2, PT_TEMP_3, PT_PD, PT_CAM_IDS, TEMP_LABELS, CAM_POINT_LABELS } from '@/constants/points';
+import { useStationStore } from '@/store';
 import ThermalConfigTab from './components/ThermalConfigTab';
 import PdRegionTab from './components/PdRegionTab';
 import FireAlarmConfigTab from './components/FireAlarmConfigTab';
@@ -28,11 +30,27 @@ const FALLBACK_POINTS = [
 // Nhãn hiển thị theo loại thiết bị — import từ constants để dùng chung
 const TYPE_LABELS = DEVICE_TYPE_LABELS;
 
+interface DeviceManagementPageProps {
+  initialAction?: 'new' | null;
+  onInitialActionHandled?: () => void;
+  embeddedMode?: 'default' | 'central';
+  stationIdOverride?: string | null;
+  onStationIdChange?: (stationId: string) => void;
+}
+
 /**
  * Trang quản lý thiết bị — hỗ trợ thêm/sửa/xóa thiết bị,
  * kiểm tra kết nối, quét LAN/ONVIF và cấu hình nhiệt/PD/vùng giám sát.
  */
-export default function DeviceManagementPage() {
+export default function DeviceManagementPage({
+  initialAction = null,
+  onInitialActionHandled,
+  embeddedMode = 'default',
+  stationIdOverride = null,
+  onStationIdChange,
+}: DeviceManagementPageProps) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const stations = useStationStore(s => s.stations);
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -267,15 +285,37 @@ export default function DeviceManagementPage() {
   };
 
   useEffect(() => {
-    loadDevices();
-  }, []);
+    loadDevices(stationIdOverride);
+  }, [stationIdOverride]);
+
+  useEffect(() => {
+    if (!stationId || loading) return;
+    const shouldOpenFromQuery = searchParams.get('action') === 'new';
+    const shouldOpenFromProp = initialAction === 'new';
+    if (!shouldOpenFromQuery && !shouldOpenFromProp) return;
+
+    openDeviceModal();
+
+    if (shouldOpenFromQuery) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('action');
+      setSearchParams(next, { replace: true });
+    }
+
+    if (shouldOpenFromProp) {
+      onInitialActionHandled?.();
+    }
+  }, [stationId, loading, searchParams, setSearchParams, initialAction, onInitialActionHandled]);
 
   /** Tải danh sách thiết bị từ trạm đầu tiên và cập nhật state. */
-  const loadDevices = async () => {
+  const loadDevices = async (preferredStationId?: string | null) => {
     setLoading(true);
     try {
-      const id = await stationApi.getFirstStationId();
+      const id = preferredStationId || await stationApi.getFirstStationId();
       setStationId(id);
+      if (id && id !== stationIdOverride) {
+        onStationIdChange?.(id);
+      }
       if (id) {
         const data = await stationApi.getDevices(id);
         setDevices(data);
@@ -482,10 +522,83 @@ export default function DeviceManagementPage() {
   };
 
   const online = devices.filter(d => d.status === 'online').length;
+  const selectedStation = stations.find(s => s.id === stationId) || null;
+  const offline = devices.length - online;
 
 
   return (
     <div className="admin-page-container">
+      {embeddedMode === 'central' && roiTab === 0 && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1.3fr repeat(3, minmax(120px, 1fr))',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ border: '1px solid var(--admin-border)', background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
+                  THIẾT BỊ ĐA TRẠM
+                </div>
+                <div style={{ marginTop: 6, fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>
+                  {selectedStation?.name || 'Chưa chọn trạm'}
+                </div>
+                <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
+                    Mã trạm: <b style={{ color: 'var(--admin-text)' }}>{selectedStation?.code || '---'}</b>
+                  </span>
+                  <span style={{ fontSize: '.62rem', fontWeight: 800, color: '#fff', background: 'rgba(14,165,233,0.22)', border: '1px solid rgba(14,165,233,0.35)', padding: '2px 6px' }}>
+                    CHẾ ĐỘ ĐA TRẠM
+                  </span>
+                </div>
+              </div>
+              <div style={{ minWidth: 180 }}>
+                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>CHUYỂN TRẠM ĐANG QUẢN LÝ</div>
+                <select
+                  value={stationId || ''}
+                  onChange={async e => {
+                    const nextId = e.target.value;
+                    onStationIdChange?.(nextId);
+                    await loadDevices(nextId);
+                  }}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(15,23,42,0.65)',
+                    border: '1px solid var(--admin-accent)',
+                    color: 'var(--admin-text)',
+                    padding: '8px 10px',
+                    fontSize: '.74rem',
+                    fontWeight: 700,
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {stations.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {(s.code ? `${s.code} - ` : '') + s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {[
+            { label: 'Tổng thiết bị', value: devices.length, color: 'var(--admin-text)' },
+            { label: 'Đang online', value: online, color: 'var(--admin-success)' },
+            { label: 'Đang offline', value: offline, color: offline > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)' },
+          ].map(card => (
+            <div key={card.label} style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
+              <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>{card.label}</div>
+              <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: card.color }}>{card.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* TOOLBAR */}
       {roiTab === 3 ? (
         <div className="page-toolbar-row">
@@ -532,7 +645,7 @@ export default function DeviceManagementPage() {
       ) : (
         <div className="page-toolbar-row">
           <div className="page-title-cell">
-            <h2>QUẢN LÝ THIẾT BỊ</h2>
+            <h2>{embeddedMode === 'central' ? 'THIẾT BỊ ĐA TRẠM' : 'QUẢN LÝ THIẾT BỊ'}</h2>
           </div>
           <div className="page-toolbar-group">
             {/* Status Indicators */}

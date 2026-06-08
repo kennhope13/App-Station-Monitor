@@ -3,12 +3,21 @@ import './AnalyticsLayout.css';
 import CabinetAnalyticsTab from './tabs/CabinetAnalyticsTab';
 import ThermalForecastTab from './tabs/ThermalForecastTab';
 import PdAnalyticsTab from './tabs/PdAnalyticsTab';
+import CentralAnalyticsLayout from './CentralAnalyticsLayout';
+import { authService } from '@/services/AuthService';
+import { isCentralDrillDown, isCentralUser } from '@/utils/centralAccess';
 
 /**
  * Layout trang Phân tích: bao bọc nội dung phân tích tủ điện, nhiệt độ và phóng điện.
  */
 export default function AnalyticsLayout() {
+  const currentUser = authService.getUser();
+  const showCentralAnalytics = isCentralUser(currentUser) && !isCentralDrillDown(currentUser);
   const [activeTab, setActiveTab] = useState<'cabinet' | 'thermal' | 'pd'>('thermal');
+
+  if (showCentralAnalytics) {
+    return <CentralAnalyticsLayout />;
+  }
 
   return (
     <div className="admin-page-container">

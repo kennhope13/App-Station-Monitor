@@ -70,3 +70,18 @@ backend/StationOS.Api/wwwroot/reports/
 # Temporary Database Files
 data/hangfire.db*
 data/station_monitor.db*
+stationos.db
+
+# Media Recordings and Videos
+backend/StationOS.Api/wwwroot/media/recordings/
+backend/StationOS.Api/wwwroot/media/videos/
+backend/StationOS.Api/wwwroot/media/buffer/
+
+# Scratch Directory
+scratch/
+
+# AI Engine Temporary Data & Models
+ai_engine/data/received_data/
+ai_engine/yolov8n.pt
+
+

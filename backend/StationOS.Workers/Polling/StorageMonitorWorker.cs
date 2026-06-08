@@ -141,7 +141,11 @@ public class StorageMonitorWorker : BackgroundService
         var setting = await db.SystemSettings
             .FirstOrDefaultAsync(s => s.Key == "storage_monitor", ct);
         if (setting == null)
-            db.SystemSettings.Add(new SystemSettings { Key = "storage_monitor", Value = json });
+            db.SystemSettings.Add(new SystemSettings { 
+                StationId = station.Id, 
+                Key = "storage_monitor", 
+                Value = json 
+            });
         else
             setting.Value = json;
 

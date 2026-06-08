@@ -19,6 +19,12 @@ import './RealtimeMonitorPage.css';
 
 type Layout = 'l1' | 'l4' | 'l9';
 
+interface RealtimeMonitorPageProps {
+  embeddedMode?: 'default' | 'central';
+  stationIdOverride?: string | null;
+  onStationIdChange?: (stationId: string) => void;
+}
+
 
 
 
@@ -27,7 +33,11 @@ type Layout = 'l1' | 'l4' | 'l9';
  * Trang giám sát camera trực tiếp — hiển thị lưới stream WebRTC với overlay nhiệt/PD,
  * bảng sự kiện AI theo thời gian thực và đồng hồ trạng thái thiết bị.
  */
-export default function RealtimeMonitorPage() {
+export default function RealtimeMonitorPage({
+  embeddedMode = 'default',
+  stationIdOverride = null,
+  onStationIdChange,
+}: RealtimeMonitorPageProps) {
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [layout, setLayout] = useState<Layout>('l4');
   const [selectedCamFilter, setSelectedCamFilter] = useState('');
@@ -58,12 +68,12 @@ export default function RealtimeMonitorPage() {
   const devices = useMemo(() => Object.values(devicesByStation).flat() as Device[], [devicesByStation]);
   const fetchAlerts = useAlertStore(s => s.fetch);
   const getFirstStationId = useStationStore(s => s.getFirstStationId);
+  const stations = useStationStore(s => s.stations);
   const alertsByFilter = useAlertStore(s => s.alertsByFilter);
   const alerts = alertsByFilter[ALERT_STATUS.OPEN] ?? [];
 
   // 1. Initial Load: Fetch cameras once on mount
   useEffect(() => {
-    const savedStationId = localStorage.getItem('selected_station_id');
     const loadCams = (stationId: string) => {
       stationApi.getCameras(stationId).then(cams => {
         const initialStatus: Record<string, string> = {};
@@ -78,18 +88,19 @@ export default function RealtimeMonitorPage() {
               ...c,
               id: `${c.id}_optical`,
               name: `${c.name} (Quang học)`,
-              config: { ...cfg, go2rtc_id: cfg.go2rtc_optical }
+              config: { ...cfg, go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id }
             } as any);
             expandedCams.push({
               ...c,
               id: `${c.id}_thermal`,
               name: `${c.name} (Nhiệt)`,
-              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
+              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
             } as any);
           } else if (c.type === 'camera_thermal') {
             expandedCams.push({
               ...c,
-              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal }
+              name: c.name.includes('nhiệt') || c.name.includes('Nhiệt') ? c.name : `${c.name} (Nhiệt)`,
+              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
             });
           } else {
             expandedCams.push({
@@ -110,6 +121,7 @@ export default function RealtimeMonitorPage() {
       }).catch(console.error);
     };
 
+    const savedStationId = stationIdOverride || localStorage.getItem('selected_station_id');
     if (savedStationId) {
       fetchDevices(savedStationId);
       fetchAlerts(ALERT_STATUS.OPEN);
@@ -117,6 +129,7 @@ export default function RealtimeMonitorPage() {
     } else {
       getFirstStationId().then((id: string | null) => {
         if (id) {
+          onStationIdChange?.(id);
           fetchDevices(id);
           fetchAlerts(ALERT_STATUS.OPEN);
           loadCams(id);
@@ -137,7 +150,7 @@ export default function RealtimeMonitorPage() {
         return next;
       });
     }).catch(console.error);
-  }, []); // Only run once on mount
+  }, [stationIdOverride]); // Re-run when central station context changes
 
   // 2. Periodic ROI/PD Boundary Refresh
   useEffect(() => {
@@ -233,15 +246,34 @@ export default function RealtimeMonitorPage() {
 
   /** Render các polygon SVG vùng ROI nhiệt lên overlay của ô camera. */
   const renderOverlayBoundaries = (cam: CameraDevice) => {
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
-    const boundaries = roiBoundaries[baseDeviceId] || [];
-    const readings = roiReadings[baseDeviceId] || {};
+    let baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
     const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
 
-    const cfg = cam.config || {};
+    let targetCam = cam;
+    if (!isThermal && cam.type !== 'camera_dual' && !cam.id.includes('_optical')) {
+      const cfg = cam.config || {};
+      if (cfg.ip) {
+        const linkedThermal = devices.find(d => 
+          (d.type === 'camera_thermal' || d.type === 'camera_dual') && 
+          (d.config as any)?.ip === cfg.ip
+        );
+        if (linkedThermal) {
+          baseDeviceId = linkedThermal.id.toLowerCase();
+          targetCam = linkedThermal as any;
+        }
+      }
+    }
+
+    const boundaries = roiBoundaries[baseDeviceId] || [];
+    const readings = roiReadings[baseDeviceId] || {};
+
+    const cfg = targetCam.config || {};
+    const focalOpt = cfg.focal_length_optical;
+    const focalTh = cfg.focal_length_thermal;
+    const isFocalEqual = focalOpt != null && focalTh != null && Number(focalOpt) === Number(focalTh);
     const vvrRaw = (cfg as any).visible_valid_rect;
-    const vvr = vvrCache[baseDeviceId]
-      ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 });
+    const vvr = isFocalEqual ? { x: 0, y: 0, width: 1, height: 1 } : (vvrCache[baseDeviceId]
+      ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 }));
 
     return boundaries.map((b, index) => {
       let poly: [number, number][] = [];
@@ -298,16 +330,36 @@ export default function RealtimeMonitorPage() {
 
   /** Render nhãn tên vùng và nhiệt độ lên overlay dạng HTML div (hỗ trợ blur backdrop). */
   const renderOverlayLabels = (cam: CameraDevice) => {
-    const baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+    let baseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+    const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
+
+    let targetCam = cam;
+    if (!isThermal && cam.type !== 'camera_dual' && !cam.id.includes('_optical')) {
+      const cfg = cam.config || {};
+      if (cfg.ip) {
+        const linkedThermal = devices.find(d => 
+          (d.type === 'camera_thermal' || d.type === 'camera_dual') && 
+          (d.config as any)?.ip === cfg.ip
+        );
+        if (linkedThermal) {
+          baseDeviceId = linkedThermal.id.toLowerCase();
+          targetCam = linkedThermal as any;
+        }
+      }
+    }
+
     const points = roiPoints[baseDeviceId] || [];
     const boundaries = roiBoundaries[baseDeviceId] || [];
     const readings = roiReadings[baseDeviceId] || {};
     const aiState = aiStatsMap[baseDeviceId] || {};
-    const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
-    const cfg = cam.config || {};
+
+    const cfg = targetCam.config || {};
+    const focalOpt = cfg.focal_length_optical;
+    const focalTh = cfg.focal_length_thermal;
+    const isFocalEqual = focalOpt != null && focalTh != null && Number(focalOpt) === Number(focalTh);
     const vvrRaw = (cfg as any).visible_valid_rect;
-    const vvr = vvrCache[baseDeviceId]
-      ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 });
+    const vvr = isFocalEqual ? { x: 0, y: 0, width: 1, height: 1 } : (vvrCache[baseDeviceId]
+      ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 }));
 
     const labels: React.ReactNode[] = [];
 
@@ -398,9 +450,7 @@ export default function RealtimeMonitorPage() {
       const txv = pt.tx ?? (pt.x !== undefined ? pt.x / 100 : 0);
       const tyv = pt.ty ?? (pt.y !== undefined ? pt.y / 100 : 0);
       let rx = txv, ry = tyv;
-      if (!isThermal && pt.ox != null && pt.oy != null) {
-        rx = pt.ox; ry = pt.oy;
-      } else if (!isThermal) {
+      if (!isThermal) {
         rx = txv * vvr.width + vvr.x;
         ry = tyv * vvr.height + vvr.y;
       }
@@ -726,6 +776,50 @@ export default function RealtimeMonitorPage() {
                 zIndex: 2
               }}
             >
+              {/* VVR Dashed Bounding Box for Optical Stream */}
+              {(() => {
+                const isThermal = cam.id.endsWith('_thermal') || cam.type === 'camera_thermal';
+                if (isThermal) return null;
+
+                // Resolve linked thermal camera for CCTV/optical streams
+                let targetCam = cam;
+                let targetBaseDeviceId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+                if (cam.type !== 'camera_dual' && !cam.id.includes('_optical')) {
+                  const c = cam.config || {};
+                  if (c.ip) {
+                    const linkedThermal = devices.find(d => 
+                      (d.type === 'camera_thermal' || d.type === 'camera_dual') && 
+                      (d.config as any)?.ip === c.ip
+                    );
+                    if (linkedThermal) {
+                      targetBaseDeviceId = linkedThermal.id.toLowerCase();
+                      targetCam = linkedThermal as any;
+                    } else {
+                      return null;
+                    }
+                  } else {
+                    return null;
+                  }
+                }
+
+                const cfg = targetCam.config || {};
+                const focalOpt = cfg.focal_length_optical;
+                const focalTh = cfg.focal_length_thermal;
+                const isFocalEqual = focalOpt != null && focalTh != null && Number(focalOpt) === Number(focalTh);
+                const vvrRaw = (cfg as any).visible_valid_rect;
+                const vvr = isFocalEqual ? { x: 0, y: 0, width: 1, height: 1 } : (vvrCache[targetBaseDeviceId]
+                  ?? (vvrRaw && typeof vvrRaw.x === 'number' ? vvrRaw : { x: 0.20, y: 0.084, width: 0.63, height: 0.841 }));
+                
+                // Only show dashed box if it's not the full 1:1 view
+                if (vvr.x === 0 && vvr.y === 0 && vvr.width === 1 && vvr.height === 1) return null;
+
+                const pct = (val: number) => `${val * 100}%`;
+                return (
+                  <div style={{ position:'absolute', left:pct(vvr.x), top:pct(vvr.y), width:pct(vvr.width), height:pct(vvr.height), border:'1.5px dashed rgba(239, 68, 68, 0.55)', pointerEvents:'none', zIndex:5 }}>
+                    <div style={{ position:'absolute', top:-16, left:4, color:'#ef4444', fontSize:9, fontWeight:600, opacity:0.9, background:'rgba(15,23,42,0.85)', border:'1px solid rgba(239,68,68,0.25)', padding:'1px 5px', borderRadius:2, whiteSpace:'nowrap' }}>Vùng ảnh nhiệt</div>
+                  </div>
+                );
+              })()}
               <svg
                 viewBox="0 0 100 100"
                 preserveAspectRatio="none"
@@ -843,12 +937,78 @@ export default function RealtimeMonitorPage() {
     Object.assign(document.createElement('a'), { href: url, download: `snap_${Date.now()}.jpg`, target: '_blank' }).click();
   };
 
+  const selectedStation = stations.find(s => s.id === (stationIdOverride || localStorage.getItem('selected_station_id') || '')) || null;
+
   return (
     <div className="rtm-page">
+      {embeddedMode === 'central' && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1.3fr repeat(2, minmax(120px, 1fr))',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ border: '1px solid var(--admin-border)', background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
+                  LIVEVIEW ĐA TRẠM
+                </div>
+                <div style={{ marginTop: 6, fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>
+                  {selectedStation?.name || 'Chưa chọn trạm'}
+                </div>
+                <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
+                    Mã trạm: <b style={{ color: 'var(--admin-text)' }}>{selectedStation?.code || '---'}</b>
+                  </span>
+                  <span style={{ fontSize: '.62rem', fontWeight: 800, color: '#fff', background: 'rgba(14,165,233,0.22)', border: '1px solid rgba(14,165,233,0.35)', padding: '2px 6px' }}>
+                    CHẾ ĐỘ ĐA TRẠM
+                  </span>
+                </div>
+              </div>
+              <div style={{ minWidth: 180 }}>
+                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>CHUYỂN TRẠM ĐANG XEM</div>
+                <select
+                  value={stationIdOverride || ''}
+                  onChange={e => onStationIdChange?.(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(15,23,42,0.65)',
+                    border: '1px solid var(--admin-accent)',
+                    color: 'var(--admin-text)',
+                    padding: '8px 10px',
+                    fontSize: '.74rem',
+                    fontWeight: 700,
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {stations.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {(s.code ? `${s.code} - ` : '') + s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
+            <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>Camera khả dụng</div>
+            <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: 'var(--admin-text)' }}>{cameras.length}</div>
+          </div>
+          <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
+            <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>Camera online</div>
+            <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: onlineCount > 0 ? 'var(--admin-success)' : 'var(--admin-danger)' }}>{onlineCount}</div>
+          </div>
+        </div>
+      )}
+
       {/* ── Toolbar ── */}
       <div className="page-toolbar-row dash-header">
         <div className="page-title-cell">
-          <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>
+          <h2>{embeddedMode === 'central' ? 'LIVEVIEW ĐA TRẠM' : 'GIÁM SÁT CAMERA TRỰC TIẾP'}</h2>
         </div>
 
         <div className="page-toolbar-group">

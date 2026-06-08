@@ -95,6 +95,9 @@ export default function DashboardPage() {
 
   // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
+    // Set default SLD color to Safety Orange (#f59e0b) to match Industrial interface
+    handleColorChange('#f59e0b');
+
     if (stationId) {
       localStorage.setItem('selected_station_id', stationId);
       return;

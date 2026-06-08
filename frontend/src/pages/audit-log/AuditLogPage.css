@@ -7,6 +7,56 @@
   width: 100%; flex: 1; display: flex; flex-direction: column;
 }
 
+.audit-page-header {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.audit-page-title {
+  min-width: 220px;
+  flex: 1 1 260px;
+}
+
+.audit-page-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 2 1 520px;
+}
+
+.audit-page-control {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--admin-border, var(--admin-border-light));
+  background: var(--admin-card-bg, var(--admin-panel));
+}
+
+.audit-page-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--admin-text-muted);
+  letter-spacing: 0.06em;
+}
+
+.audit-page-select {
+  min-width: 140px;
+  background: transparent;
+  border: none;
+  color: var(--admin-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
 /* Toolbar */
 .audit-toolbar {
   display: flex; justify-content: space-between; align-items: flex-end;
@@ -74,7 +124,23 @@
 /* Column fixed widths */
 .col-time { width: 140px; }
 .col-type { width: 90px; }
+.col-station { width: 120px; }
 .col-action { width: 120px; }
 .col-who { width: 160px; }
 .col-ip { width: 110px; }
 .col-view { width: 60px; }
+
+@media (max-width: 900px) {
+  .audit-page-controls {
+    justify-content: stretch;
+  }
+
+  .audit-page-control {
+    flex: 1 1 220px;
+  }
+
+  .audit-page-select {
+    min-width: 0;
+    width: 100%;
+  }
+}

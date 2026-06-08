@@ -5,6 +5,7 @@
 // ============================================================
 
 using System.Security.Claims;
+using System.Text;
 using StationOS.Data;
 using StationOS.Data.Entities;
 
@@ -21,12 +22,13 @@ public class AuditMiddleware
     /// <param name="db">AppDbContext để ghi audit log vào database.</param>
     public async Task InvokeAsync(HttpContext ctx, AppDbContext db)
     {
+        var method = ctx.Request.Method;
+        var path   = ctx.Request.Path.Value ?? "";
+        var requestBody = await ReadJsonRequestBodyAsync(ctx);
+
         await _next(ctx);
 
         // Chỉ ghi khi: là API call thay đổi dữ liệu, đã authen, thành công
-        var method = ctx.Request.Method;
-        var path   = ctx.Request.Path.Value ?? "";
-
         if (!IsWriteMethod(method)) return;
         if (!path.StartsWith("/api/v1/")) return;
         if (path.Contains("/auth/")) return;
@@ -57,6 +59,7 @@ public class AuditMiddleware
                 Action     = action,
                 EntityType = entityType,
                 EntityId   = entityId,
+                NewValue   = requestBody,
                 IpAddress  = ctx.Connection.RemoteIpAddress?.ToString(),
             });
             await db.SaveChangesAsync();
@@ -82,9 +85,34 @@ public class AuditMiddleware
     private static Guid? ExtractEntityId(string path)
     {
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        // /api/v1/devices/{id} → segments[3] = id
-        if (segments.Length >= 4 && Guid.TryParse(segments[3], out var id))
-            return id;
+        // Ưu tiên GUID cuối cùng để hỗ trợ route lồng nhau như /sld/points/{id}
+        for (var i = segments.Length - 1; i >= 0; i--)
+        {
+            if (Guid.TryParse(segments[i], out var id))
+                return id;
+        }
+
         return null;
+    }
+
+    private static async Task<string?> ReadJsonRequestBodyAsync(HttpContext ctx)
+    {
+        var method = ctx.Request.Method;
+        var path   = ctx.Request.Path.Value ?? "";
+        var contentType = ctx.Request.ContentType ?? "";
+
+        if (!IsWriteMethod(method)) return null;
+        if (!path.StartsWith("/api/v1/")) return null;
+        if (path.Contains("/auth/")) return null;
+        if (!contentType.Contains("application/json", StringComparison.OrdinalIgnoreCase)) return null;
+        if (!ctx.Request.Body.CanRead) return null;
+
+        ctx.Request.EnableBuffering();
+
+        using var reader = new StreamReader(ctx.Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        ctx.Request.Body.Position = 0;
+
+        return string.IsNullOrWhiteSpace(body) ? null : body;
     }
 }

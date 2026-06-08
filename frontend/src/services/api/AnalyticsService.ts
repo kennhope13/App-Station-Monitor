@@ -15,10 +15,12 @@ export class AnalyticsService {
 
   /** Tạo báo cáo mới (daily/monthly/event). Backend xử lý async, trả về ReportItem với status. */
   async generateReport(data: {
-    stationId: string; type: string; from: string; to: string;
+    stationId?: string; type: string; from: string; to: string;
   }): Promise<ReportItem> {
+    const guidEmpty = '00000000-0000-0000-0000-000000000000';
     return apiMutate('POST', '/reports/generate', {
-      stationId: data.stationId, type: data.type,
+      stationId: data.stationId || guidEmpty, 
+      type: data.type,
       from: new Date(data.from).toISOString(),
       to: new Date(data.to).toISOString(),
     });
@@ -26,7 +28,7 @@ export class AnalyticsService {
 
   /** Danh sách báo cáo đã tạo của trạm. */
   async getReports(stationId?: string): Promise<ReportItem[]> {
-    const q = stationId ? `?stationId=${stationId}` : '';
+    const q = stationId ? `?stationId=${stationId}` : '?stationId=00000000-0000-0000-0000-000000000000';
     return apiFetch<ReportItem[]>(`/reports${q}`);
   }
 

@@ -126,10 +126,9 @@ export default function ReportTab({ stationId }: { stationId: string }) {
   }, [type]);
 
   const loadHistory = async () => {
-    if (!stationId) return;
     setHistoryLoading(true);
     try {
-      const reps = await stationApi.getReports(stationId);
+      const reps = await stationApi.getReports(stationId || undefined);
       setHistory(reps);
     } catch {
     } finally {
@@ -142,7 +141,6 @@ export default function ReportTab({ stationId }: { stationId: string }) {
   }, [stationId]);
 
   const generateReport = async () => {
-    if (!stationId) { setErrorMsg('Chưa kết nối backend'); return; }
     if (!from || !to) { setErrorMsg('Chọn đầy đủ ngày'); return; }
     if (new Date(from) > new Date(to)) { setErrorMsg('Ngày bắt đầu phải trước ngày kết thúc'); return; }
 
@@ -159,7 +157,7 @@ export default function ReportTab({ stationId }: { stationId: string }) {
       const [histRaw, alertsInRange, report] = await Promise.all([
         stationApi.getHistoryBulk(stationId, `${from}T00:00`, `${to}T23:59`, 60),
         stationApi.getAlerts(undefined, undefined, undefined, 500),
-        stationApi.generateReport({ stationId, type, from: `${from}T00:00:00`, to: `${to}T23:59:59` }),
+        stationApi.generateReport({ stationId: stationId || undefined, type, from: `${from}T00:00:00`, to: `${to}T23:59:59` }),
       ]);
 
       setCurrentReportId(report.id);

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // UsersController — Quản lý tài khoản người dùng
 // Routes:
 //   GET    /api/v1/users          — Danh sách users (admin only)
@@ -6,6 +6,11 @@
 //   PUT    /api/v1/users/{id}     — Sửa thông tin (admin only)
 //   POST   /api/v1/users/{id}/change-password — Đổi mật khẩu
 //   DELETE /api/v1/users/{id}     — Vô hiệu hóa (admin only)
+//
+// Restricted admin (admin + StationIds):
+//   - Chỉ thấy/quản lý user thuộc trạm mình phụ trách
+//   - Không tạo được global admin (admin không có StationIds)
+//   - Không đụng được user ngoài scope trạm
 // ============================================================
 
 using System.Security.Claims;
@@ -26,41 +31,55 @@ public class UsersController : ControllerBase
 
     public UsersController(AppDbContext db) => _db = db;
 
-    /// <summary>
-    /// Danh sách tất cả users — chỉ admin
-    /// Không trả về PasswordHash
-    /// </summary>
+    // Lấy danh sách StationId mà caller được phép quản lý. null = không giới hạn.
+    private (bool isRestricted, Guid[]? stationIds) GetCallerScope()
+    {
+        var isRestricted = User.FindFirstValue("isRestricted") == "true";
+        if (!isRestricted) return (false, null);
+        var raw = User.FindFirstValue("stationIds") ?? "";
+        var ids = raw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                     .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+                     .Where(g => g.HasValue).Select(g => g!.Value).ToArray();
+        return (true, ids.Length > 0 ? ids : null);
+    }
+
+    // Kiểm tra user B có nằm trong scope của restricted admin không.
+    // Một user thuộc scope nếu StationIds của B giao khác rỗng với stationIds của caller.
+    private static bool UserInScope(Guid[]? targetStationIds, Guid[] callerStationIds)
+    {
+        if (targetStationIds == null || targetStationIds.Length == 0) return false;
+        return targetStationIds.Any(id => callerStationIds.Contains(id));
+    }
+
+    /// <summary>Danh sách users. Restricted admin chỉ thấy user thuộc trạm của mình.</summary>
     [HttpGet]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> GetAll()
     {
-        var users = await _db.Users
-            .OrderByDescending(u => u.CreatedAt)
-            .Select(u => new
-            {
-                u.Id,
-                u.Username,
-                u.FullName,
-                u.Email,
-                u.Role,
-                u.IsActive,
-                u.StationIds,
-                u.CreatedAt
-            })
-            .ToListAsync();
+        var (isRestricted, callerStationIds) = GetCallerScope();
 
-        return Ok(users);
+        var query = _db.Users.OrderByDescending(u => u.CreatedAt);
+        var all = await query.Select(u => new
+        {
+            u.Id, u.Username, u.FullName, u.Email,
+            u.Role, u.IsActive, u.StationIds, u.CreatedAt
+        }).ToListAsync();
+
+        if (isRestricted && callerStationIds != null)
+        {
+            all = all.Where(u => UserInScope(u.StationIds, callerStationIds)).ToList();
+        }
+
+        return Ok(all);
     }
 
-    /// <summary>
-    /// Tạo user mới — chỉ admin
-    /// Validate: username unique, password >= 6 ký tự
-    /// </summary>
+    /// <summary>Tạo user mới. Restricted admin không tạo được global admin và chỉ gán trạm trong scope.</summary>
     [HttpPost]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Create([FromBody] CreateUserRequest req)
     {
-        // Validate username unique
+        var (isRestricted, callerStationIds) = GetCallerScope();
+
         if (await _db.Users.AnyAsync(u => u.Username == req.Username))
             return BadRequest(new { message = $"Tên đăng nhập '{req.Username}' đã tồn tại" });
 
@@ -72,6 +91,21 @@ public class UsersController : ControllerBase
         if (!validRoles.Contains(role))
             return BadRequest(new { message = "Vai trò không hợp lệ (operator|manager|admin)" });
 
+        var stationIds = req.StationIds;
+
+        if (isRestricted && callerStationIds != null)
+        {
+            // Restricted admin không được tạo global admin (admin không có station)
+            if (role == "admin" && (stationIds == null || stationIds.Length == 0))
+                return Forbid();
+
+            // Buộc StationIds phải là subset của caller's stations
+            if (stationIds != null && stationIds.Length > 0)
+                stationIds = stationIds.Intersect(callerStationIds).ToArray();
+            else
+                stationIds = callerStationIds; // Mặc định gán trạm của caller
+        }
+
         var user = new User
         {
             Username     = req.Username.Trim(),
@@ -79,7 +113,8 @@ public class UsersController : ControllerBase
             FullName     = req.FullName?.Trim(),
             Email        = req.Email?.Trim(),
             Role         = role,
-            IsActive     = true
+            IsActive     = true,
+            StationIds   = stationIds
         };
 
         _db.Users.Add(user);
@@ -88,20 +123,22 @@ public class UsersController : ControllerBase
         return Ok(new
         {
             user.Id, user.Username, user.FullName,
-            user.Email, user.Role, user.IsActive, user.CreatedAt
+            user.Email, user.Role, user.IsActive, user.StationIds, user.CreatedAt
         });
     }
 
-    /// <summary>
-    /// Cập nhật thông tin user — chỉ admin
-    /// Có thể sửa: fullName, email, role, isActive
-    /// </summary>
+    /// <summary>Sửa thông tin user. Restricted admin chỉ sửa user trong scope trạm.</summary>
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateUserRequest req)
     {
+        var (isRestricted, callerStationIds) = GetCallerScope();
+
         var user = await _db.Users.FindAsync(id);
         if (user == null) return NotFound(new { message = "Không tìm thấy người dùng" });
+
+        if (isRestricted && callerStationIds != null && !UserInScope(user.StationIds, callerStationIds))
+            return Forbid();
 
         if (req.FullName != null) user.FullName = req.FullName.Trim();
         if (req.Email    != null) user.Email    = req.Email.Trim();
@@ -110,22 +147,36 @@ public class UsersController : ControllerBase
             var validRoles = new[] { "operator", "manager", "admin" };
             if (!validRoles.Contains(req.Role.ToLower()))
                 return BadRequest(new { message = "Vai trò không hợp lệ" });
+
+            // Restricted admin không được nâng user thành global admin
+            if (isRestricted && req.Role.ToLower() == "admin" &&
+                (user.StationIds == null || user.StationIds.Length == 0))
+                return Forbid();
+
             user.Role = req.Role.ToLower();
         }
         if (req.IsActive.HasValue) user.IsActive = req.IsActive.Value;
+        if (req.StationIds != null)
+        {
+            var newIds = req.StationIds;
+            // Restricted admin chỉ gán trạm trong scope của mình
+            if (isRestricted && callerStationIds != null)
+                newIds = newIds.Intersect(callerStationIds).ToArray();
+            user.StationIds = newIds;
+        }
 
         await _db.SaveChangesAsync();
 
         return Ok(new
         {
             user.Id, user.Username, user.FullName,
-            user.Email, user.Role, user.IsActive, user.CreatedAt
+            user.Email, user.Role, user.IsActive, user.StationIds, user.CreatedAt
         });
     }
 
     /// <summary>
     /// Đổi mật khẩu:
-    ///   Admin → có thể đổi bất kỳ user nào (không cần old password)
+    ///   Admin → có thể đổi bất kỳ user nào (trong scope nếu restricted)
     ///   User thường → chỉ đổi của mình + cần cung cấp old password
     /// </summary>
     [HttpPost("{id:guid}/change-password")]
@@ -135,14 +186,20 @@ public class UsersController : ControllerBase
         var currentRole   = User.FindFirstValue(ClaimTypes.Role);
         var isAdmin       = currentRole == "admin";
 
-        // Non-admin chỉ được đổi của mình
         if (!isAdmin && currentUserId != id.ToString())
             return Forbid();
 
         var user = await _db.Users.FindAsync(id);
         if (user == null) return NotFound(new { message = "Không tìm thấy người dùng" });
 
-        // Non-admin cần cung cấp old password
+        // Restricted admin chỉ đổi mật khẩu user trong scope
+        if (isAdmin && currentUserId != id.ToString())
+        {
+            var (isRestricted, callerStationIds) = GetCallerScope();
+            if (isRestricted && callerStationIds != null && !UserInScope(user.StationIds, callerStationIds))
+                return Forbid();
+        }
+
         if (!isAdmin)
         {
             if (string.IsNullOrEmpty(req.OldPassword))
@@ -160,23 +217,22 @@ public class UsersController : ControllerBase
         return Ok(new { message = "Đổi mật khẩu thành công" });
     }
 
-    /// <summary>
-    /// Vô hiệu hóa user (set isActive=false) — chỉ admin
-    /// Admin không thể vô hiệu hóa chính mình
-    /// KHÔNG xóa khỏi DB để bảo toàn audit log
-    /// </summary>
+    /// <summary>Vô hiệu hóa user. Restricted admin chỉ vô hiệu user trong scope trạm.</summary>
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "admin")]
     public async Task<IActionResult> Deactivate(Guid id)
     {
         var currentUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-        // Admin không thể vô hiệu hóa chính mình
         if (currentUserId == id.ToString())
             return BadRequest(new { message = "Không thể vô hiệu hóa tài khoản của chính mình" });
 
+        var (isRestricted, callerStationIds) = GetCallerScope();
+
         var user = await _db.Users.FindAsync(id);
         if (user == null) return NotFound(new { message = "Không tìm thấy người dùng" });
+
+        if (isRestricted && callerStationIds != null && !UserInScope(user.StationIds, callerStationIds))
+            return Forbid();
 
         if (!user.IsActive)
             return BadRequest(new { message = "Tài khoản đã bị vô hiệu hóa" });
@@ -194,14 +250,16 @@ public record CreateUserRequest(
     string Password,
     string? FullName,
     string? Email,
-    string? Role
+    string? Role,
+    Guid[]? StationIds
 );
 
 public record UpdateUserRequest(
     string? FullName,
     string? Email,
     string? Role,
-    bool?   IsActive
+    bool?   IsActive,
+    Guid[]? StationIds
 );
 
 public record ChangePasswordRequest(

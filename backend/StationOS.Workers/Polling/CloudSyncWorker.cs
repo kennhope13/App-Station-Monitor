@@ -84,6 +84,9 @@ public class CloudSyncWorker : BackgroundService
                 {
                     "Alert" => "alerts",
                     "MaintenanceTask" => "maintenance_tasks",
+                    "SensorReading" => "sensor_readings",
+                    "DetectionEvent" => "detection_events",
+                    "AuditLog" => "audit_logs",
                     _ => item.EntityType.ToLower() + "s"
                 };
 

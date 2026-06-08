@@ -40,7 +40,6 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
 
   // Load devices and sensors dynamically
   useEffect(() => {
-    if (!stationId) return;
     setLoadingDevices(true);
     
     const fetchData = async () => {

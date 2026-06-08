@@ -7,38 +7,49 @@
 import { useEffect, useState, Suspense, useRef, useCallback } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { authService } from '@/services/AuthService';
-import { useAlertStore, useSensorStore } from '@/store';
+import { useAlertStore, useSensorStore, useStationStore } from '@/store';
 import { ALERT_STATUS } from '@/types/enums';
 import type { AlertItem, SensorPoint } from '@/types/api.types';
 import { setTheme as setGlobalTheme } from '@/utils/theme-manager';
 import { showToast } from '@/utils/toast';
 import { playAlertSound } from '@/utils/sound-utils';
+import { isCentralUser as isCentralUserAccount } from '@/utils/centralAccess';
 import { createRealtimeHub } from '@/services/realtime.service';
 import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
   LayoutDashboard, Video, AlertTriangle, LineChart, FileText,
   Wrench, FileArchive, Map, Radio, Users, Settings, LogOut,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, ArrowLeft
 } from 'lucide-react';
 
 interface NavSubItem { id: string; path: string; label: string }
 // roles: undefined = tất cả vai trò; có giá trị = chỉ vai trò trong mảng mới thấy
 interface NavItem { id: string; path: string; icon: React.ReactNode; label: string; roles?: string[]; children?: NavSubItem[] }
 
-const NAV_ITEMS: NavItem[] = [
+const CENTRAL_NAV: NavItem[] = [
+  { id: 'multisite', path: '/multisite', icon: <Map size={19} strokeWidth={1.5} />, label: 'Tổng quan' },
+  { id: 'alerts-history', path: '/alerts-history', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Nhật ký' },
+  { id: 'reports', path: '/reports', icon: <FileText size={19} strokeWidth={1.5} />, label: 'Báo cáo', roles: ['admin', 'manager'] },
+  { id: 'audit-log', path: '/audit-log', icon: <FileArchive size={19} strokeWidth={1.5} />, label: 'Nhật ký hệ thống', roles: ['admin'] },
+];
+
+const CENTRAL_ADMIN_NAV: NavItem[] = [
+  { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng', roles: ['admin'] },
+];
+
+const CHILD_NAV: NavItem[] = [
   { id: 'dashboard', path: '/dashboard', icon: <LayoutDashboard size={19} strokeWidth={1.5} />, label: 'Tổng quan' },
   { id: 'realtime', path: '/realtime', icon: <Video size={19} strokeWidth={1.5} />, label: 'Trực tiếp' },
-  { id: 'alerts-history', path: '/alerts-history', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Lịch sử cảnh báo' },
+  { id: 'alerts-history', path: '/alerts-history', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Lịch sử hệ thống' },
   { id: 'analytics', path: '/analytics', icon: <LineChart size={19} strokeWidth={1.5} />, label: 'Phân tích' },
   { id: 'reports', path: '/reports', icon: <FileText size={19} strokeWidth={1.5} />, label: 'Báo cáo', roles: ['admin', 'manager'] },
   { id: 'maintenance', path: '/maintenance', icon: <Wrench size={19} strokeWidth={1.5} />, label: 'Bảo trì', roles: ['admin', 'manager'] },
   { id: 'audit-log', path: '/audit-log', icon: <FileArchive size={19} strokeWidth={1.5} />, label: 'Nhật ký hệ thống', roles: ['admin'] },
-  { id: 'multisite', path: '/multisite', icon: <Map size={19} strokeWidth={1.5} />, label: 'Đa trạm' },
 ];
 
-// ── Nhóm quản trị ────────────────────────────────────────────
-const ADMIN_NAV: NavItem[] = [
+const CHILD_ADMIN_NAV: NavItem[] = [
   { id: 'device-management', path: '/device-management', icon: <Radio size={19} strokeWidth={1.5} />, label: 'Thiết bị', roles: ['admin'] },
+  { id: 'rule-engine', path: '/rule-engine', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Cài đặt cảnh báo', roles: ['admin'] },
   { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng', roles: ['admin'] },
   { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt', roles: ['admin'] },
 ];
@@ -75,6 +86,39 @@ export default function AppShell() {
   }, [user, navigate]);
 
   if (!user) return null;
+
+  // Trạm tổng = tài khoản 'multi' HOẶC admin không bị giới hạn trạm (không có station_ids)
+  const isCentralUser = isCentralUserAccount(user);
+
+  // Global admin drill-down: đang xem trạm con từ màn hình đa trạm
+  const viewingStationId = useStationStore(s => s.viewingStationId);
+  const setViewingStation = useStationStore(s => s.setViewingStation);
+  const isDrillDown = isCentralUser && !!viewingStationId && location.pathname !== '/multisite';
+
+  // Khi navigate về /multisite → clear drill-down
+  useEffect(() => {
+    if (location.pathname === '/multisite') {
+      setViewingStation(null);
+    }
+  }, [location.pathname, setViewingStation]);
+
+  // Trạm hiện tại đang xem (khi drill-down)
+  const stations = useStationStore(s => s.stations);
+  const drillStation = isDrillDown ? stations.find(s => s.id === viewingStationId) : null;
+
+  // Nav mode: central hoặc child
+  const isCentralMode = isCentralUser && !isDrillDown;
+  const navItems = isCentralMode ? CENTRAL_NAV : CHILD_NAV;
+
+  // Lọc adminNavItems theo quyền:
+  // - Restricted admin (trạm con): ẩn settings, license
+  // - Global admin (kể cả khi drill-down): giữ nguyên toàn bộ CHILD_ADMIN_NAV
+  const adminNavItems = (isCentralMode ? CENTRAL_ADMIN_NAV : CHILD_ADMIN_NAV).filter(item => {
+    if (user.is_restricted || (user.station_ids && user.station_ids.length > 0)) {
+      return !['settings', 'license'].includes(item.id);
+    }
+    return true;
+  });
 
   // ── Alerts Management ────────────────────────────────────────
   const [alertQueue, setAlertQueue] = useState<AlertItem[]>([]);
@@ -134,7 +178,10 @@ export default function AppShell() {
              !shownAlertIdsRef.current.has(a.id)
       );
       // Enqueue từng alert chưa xem, delay nhỏ để tránh spam ngay lúc load
-      unseen.forEach((a, i) => setTimeout(() => enqueueAlertWithTrack(a), i * 300));
+      // Trạm tổng không hiện popup
+      if (!isCentralMode) {
+        unseen.forEach((a, i) => setTimeout(() => enqueueAlertWithTrack(a), i * 300));
+      }
     }).catch(() => {});
 
     // Khởi tạo SignalR Hub toàn cục để lắng nghe mọi sự kiện trên mọi Tab
@@ -147,14 +194,23 @@ export default function AppShell() {
       fetchAlerts(ALERT_STATUS.OPEN, true);
 
       const isFire = alert.message?.toLowerCase().includes('cháy') || alert.message?.toLowerCase().includes('fire') || alert.message?.toLowerCase().includes('lửa');
-      const isCritical = alert.level === 'alarm' || alert.level === 'warning' || isFire;
-      
-      if (isCritical) {
-        // Nếu là cháy, chơi âm thanh báo động khẩn cấp
-        playAlertSound(isFire ? 'alarm' : (alert.level === 'alarm' ? 'alarm' : 'warning'));
+      const isAlarm = alert.level === 'alarm' || alert.level === 'danger' || isFire;
+
+      // NẾU LÀ CẢNH BÁO VÀNG (WARNING) HOẶC THẤP HƠN: 
+      // Tắt mọi thông báo âm thanh và hình ảnh để tránh làm phiền liên tục.
+      if (!isAlarm) return;
+
+      // NẾU LÀ BÁO ĐỘNG ĐỎ (ALARM):
+      const isOverview = isCentralMode || location.pathname.includes('multisite');
+
+      if (!isOverview) {
+        // Nếu ở trang chi tiết: Hiện popup to và phát tiếng báo động mạnh
+        playAlertSound(isFire ? 'alarm' : 'alarm');
         enqueueAlertWithTrack(alert);
       } else {
-        showToast(alert.message || 'Cảnh báo mới', 'info');
+        // Nếu ở trang Tổng quan: Chỉ hiện toast thông báo ở góc và phát tiếng tít nhẹ
+        showToast(alert.message || 'Báo động đỏ mới', 'error');
+        playAlertSound('warning'); 
       }
     });
 
@@ -226,7 +282,7 @@ export default function AppShell() {
   /** Chuyển mã vai trò (admin/manager/operator) thành nhãn tiếng Việt hiển thị trong sidebar. */
   const getRoleLabel = (role?: string) => {
     const r = (role || '').toLowerCase();
-    if (r === 'admin') return 'QUẢN TRỊ';
+    if (r === 'admin') return isCentralUser ? 'QUẢN TRỊ TỔNG QUAN' : 'QUẢN TRỊ';
     if (r === 'manager') return 'QUẢN LÝ';
     if (r === 'operator') return 'VẬN HÀNH';
     return '';
@@ -373,56 +429,63 @@ export default function AppShell() {
   return (
     <div className={`app-shell admin-container ${themeClass}`}>
 
+
       {/* ── Full-width header (independent of sidebar) ── */}
-      <header className="admin-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <img
-            alt="StationOS"
-            src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
-            style={{ width: 34, height: 34, flexShrink: 0 }}
-          />
-          <span className="header-title-main">
-            HỆ THỐNG GIÁM SÁT 
-            <span className="header-title-badge">
-              TRẠM ĐIỆN
+      {!isCentralMode && (
+        <header className="admin-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <img
+              alt="StationOS"
+              src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
+              style={{ width: 34, height: 34, flexShrink: 0 }}
+            />
+            <span className="header-title-main">
+              HỆ THỐNG GIÁM SÁT 
+              <span className="header-title-badge">
+                TRẠM ĐIỆN
+              </span>
             </span>
-          </span>
-          <span className="version-badge" style={{ 
-            background: 'var(--admin-layer-2)', 
-            color: 'var(--admin-text-muted)',
-            padding: '3px 8px', 
-            borderRadius: '0px', 
-            fontSize: '0.65rem', 
-            fontWeight: 600,
-            border: '1px solid var(--admin-border-light)',
-            marginLeft: '8px'
-          }}>v{__APP_VERSION__}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div className="header-clock">{time}</div>
-        </div>
-      </header>
+            <span className="version-badge" style={{ 
+              background: 'var(--admin-layer-2)', 
+              color: 'var(--admin-text-muted)',
+              padding: '3px 8px', 
+              borderRadius: '0px', 
+              fontSize: '0.65rem', 
+              fontWeight: 600,
+              border: '1px solid var(--admin-border-light)',
+              marginLeft: '8px'
+            }}>v{__APP_VERSION__}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div className="header-clock">{time}</div>
+          </div>
+        </header>
+      )}
+
 
       {/* ── Body: sidebar + content ── */}
-      <div className="app-body">
+      <div className="app-body" style={isCentralMode ? { margin: 0, padding: 0 } : {}}>
 
         {/* ── Sidebar wrapper ── */}
-        <div className={`sb-wrap${expanded ? ' expanded' : ''}`}>
-          <nav className="sidebar-nav" id="sidebarNav">
+        {!isCentralMode && (
+          <div className={`sb-wrap${expanded ? ' expanded' : ''}`}>
+            <nav className="sidebar-nav" id="sidebarNav">
 
             {/* ── Scrollable nav body ── */}
             <div className="sb-body">
               <div className="sb-group">
                 <div className={`sb-group__label${expanded ? '' : ' hidden'}`}>ĐIỀU HƯỚNG</div>
-                {renderNav(NAV_ITEMS)}
+                {renderNav(navItems)}
               </div>
 
               {user.role === 'admin' && (
                 <>
                   <div className="sb-sep" />
                   <div className="sb-group">
-                    <div className={`sb-group__label${expanded ? '' : ' hidden'}`}>QUẢN TRỊ</div>
-                    {renderNav(ADMIN_NAV)}
+                    <div className={`sb-group__label${expanded ? '' : ' hidden'}`}>
+                      {isCentralUser ? 'QUẢN TRỊ TỔNG QUAN' : 'QUẢN TRỊ'}
+                    </div>
+                    {renderNav(adminNavItems)}
                   </div>
                 </>
               )}
@@ -509,10 +572,10 @@ export default function AppShell() {
                   title={!expanded ? 'Tài khoản' : undefined}
                 >
                   <div className="sb-profile">
-                    <span className="user-avatar">{user.fullname?.[0]?.toUpperCase() || 'A'}</span>
+                    <span className="user-avatar">{isCentralUser ? 'Q' : (user.fullname?.[0]?.toUpperCase() || 'A')}</span>
                     {expanded && (
                       <div className="sb-profile-info">
-                        <div className="sb-profile-name">{user.fullname}</div>
+                        <div className="sb-profile-name">{isCentralUser ? 'Quản trị tổng quan' : user.fullname}</div>
                         {getRoleLabel(user.role) && <div className="sb-profile-role">{getRoleLabel(user.role)}</div>}
                       </div>
                     )}
@@ -539,9 +602,31 @@ export default function AppShell() {
             {expanded ? <ChevronLeft size={12} strokeWidth={2.5} /> : <ChevronRight size={12} strokeWidth={2.5} />}
           </button>
         </div>
+        )}
 
         {/* ── Main view ── */}
         <div className="main-view">
+          {/* Banner drill-down: global admin đang xem trạm con từ đa trạm */}
+          {isDrillDown && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '0 14px', height: 30, flexShrink: 0,
+              background: 'rgba(14,165,233,0.1)', borderBottom: '1px solid rgba(14,165,233,0.25)',
+              fontSize: '0.7rem', fontWeight: 700
+            }}>
+              <button
+                onClick={() => { setViewingStation(null); navigate('/multisite'); }}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--admin-accent)',
+                  display: 'flex', alignItems: 'center', gap: 4, padding: 0, fontWeight: 800, fontSize: '0.7rem'
+                }}
+              >
+                <ArrowLeft size={13} /> Đa trạm
+              </button>
+              <span style={{ color: 'var(--admin-border)', fontWeight: 400 }}>›</span>
+              <span style={{ color: 'var(--admin-text)' }}>{drillStation?.name ?? 'Trạm con'}</span>
+            </div>
+          )}
           <div className="page-content">
             <Suspense fallback={null}>
               <Outlet />
@@ -552,7 +637,7 @@ export default function AppShell() {
       </div>{/* end .app-body */}
 
       {/* ── Rich Alert Modal (queue — hiển thị từng cái) ── */}
-      {activeAlert && (
+      {activeAlert && !isCentralMode && !location.pathname.includes('multisite') && location.pathname !== '/' && (
         <RichAlertModal
           alert={activeAlert}
           queueCount={alertQueue.length}

@@ -6,7 +6,10 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { stationApi } from '@/services/StationApiService';
+import CentralTitleMenu from '@/components/CentralTitleMenu';
+import { stationApi, Station } from '@/services/StationApiService';
+import { authService } from '@/services/AuthService';
+import { isCentralUser } from '@/utils/centralAccess';
 import { fmtDateTime, fmtTimeRange } from '@/utils/format';
 import './AuditLogPage.css';
 
@@ -19,6 +22,8 @@ interface LogItem {
   action: string;
   info: string;
   who: string;
+  stationId?: string;
+  stationName?: string;
   raw: any;       // object gốc từ API, dùng khi expand dòng
 }
 
@@ -32,6 +37,12 @@ export default function AuditLogPage() {
   const [loginLogs, setLoginLogs] = useState<any[]>([]);
   const [notifyLogs, setNotifyLogs] = useState<any[]>([]);
   const [triggerLogs, setTriggerLogs] = useState<any[]>([]);
+
+  const currentUser = authService.getUser();
+  const isCentralMode = isCentralUser(currentUser);
+
+  const [stationsList, setStationsList] = useState<Station[]>([]);
+  const [filterStation, setFilterStation] = useState<string>('');
 
   // Theo dõi dòng nào đang mở rộng để xem raw JSON
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
@@ -66,13 +77,21 @@ export default function AuditLogPage() {
     }
   };
 
+  useEffect(() => {
+    if (isCentralMode) {
+      stationApi.getStations()
+        .then(data => setStationsList(data))
+        .catch(err => console.error('Lỗi tải danh sách trạm:', err));
+    }
+  }, [isCentralMode]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setExpandedIds({});
     
     const from = dates.from ? new Date(dates.from).toISOString() : undefined;
     const to = dates.to ? new Date(dates.to + 'T23:59:59').toISOString() : undefined;
-    const params = { from, to, limit: 100 };
+    const params = { from, to, limit: 100, stationId: filterStation || undefined };
 
     try {
       if (activeTab === 'all') {
@@ -84,10 +103,10 @@ export default function AuditLogPage() {
         ]);
 
         const merged: LogItem[] = [
-          ...audit.map(l => ({ ts: l.ts, type: 'audit', action: l.action, info: entityLabel(l.entityType ?? null), who: l.fullName || l.username || 'system', raw: l })),
-          ...logins.map(l => ({ ts: l.ts, type: 'login', action: 'Auth', info: l.action === 'login' ? 'Đăng nhập thành công' : 'Thất bại/Thoát', who: l.username || 'system', raw: l })),
-          ...notify.map(l => ({ ts: l.sentAt, type: 'notify', action: 'Notify', info: `${l.channel}: ${l.status === 'sent' ? 'Gửi thành công' : 'Lỗi'}`, who: l.recipient || 'system', raw: l })),
-          ...triggers.map(l => ({ ts: l.triggeredAt, type: 'trigger', action: 'Rule', info: l.ruleName || 'Quy tắc kích hoạt', who: l.deviceName || 'system', raw: l }))
+          ...audit.map(l => ({ ts: l.ts, type: 'audit', action: l.action, info: entityLabel(l.entityType ?? null), who: l.fullName || l.username || 'system', stationId: l.stationId, stationName: l.stationName, raw: l })),
+          ...logins.map(l => ({ ts: l.ts, type: 'login', action: 'Auth', info: l.action === 'login' ? 'Đăng nhập thành công' : 'Thất bại/Thoát', who: l.username || 'system', stationId: l.stationId, stationName: l.stationName, raw: l })),
+          ...notify.map(l => ({ ts: l.sentAt, type: 'notify', action: 'Notify', info: `${l.channel}: ${l.status === 'sent' ? 'Gửi thành công' : 'Lỗi'}`, who: l.recipient || 'system', stationId: l.stationId, stationName: l.stationName, raw: l })),
+          ...triggers.map(l => ({ ts: l.triggeredAt, type: 'trigger', action: 'Rule', info: l.ruleName || 'Quy tắc kích hoạt', who: l.deviceName || 'system', stationId: l.stationId, stationName: l.stationName, raw: l }))
         ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
 
         setLogs(merged);
@@ -109,7 +128,7 @@ export default function AuditLogPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, dates]);
+  }, [activeTab, dates, filterStation]);
 
   useEffect(() => {
     loadData();
@@ -121,6 +140,7 @@ export default function AuditLogPage() {
         <tr>
           <th className="col-time">Thời gian</th>
           <th className="col-type">Loại</th>
+          {isCentralMode && <th className="col-station">Trạm</th>}
           <th>Hành động / Sự kiện</th>
           <th className="col-who">Đối tượng</th>
           <th className="col-view">Xem</th>
@@ -132,6 +152,7 @@ export default function AuditLogPage() {
         <tr>
           <th className="col-time">Thời gian</th>
           <th className="col-action">Hành động</th>
+          {isCentralMode && <th className="col-station">Trạm</th>}
           <th>Đối tượng tác động</th>
           <th className="col-who">Người thực hiện</th>
           <th className="col-view">Xem</th>
@@ -142,6 +163,7 @@ export default function AuditLogPage() {
       return (
         <tr>
           <th className="col-time">Thời gian</th>
+          {isCentralMode && <th className="col-station">Trạm</th>}
           <th className="col-action">Tên đăng nhập</th>
           <th>Kết quả</th>
           <th className="col-ip">Địa chỉ IP</th>
@@ -152,6 +174,7 @@ export default function AuditLogPage() {
       return (
         <tr>
           <th className="col-time">Thời gian</th>
+          {isCentralMode && <th className="col-station">Trạm</th>}
           <th className="col-type">Kênh</th>
           <th>Người nhận</th>
           <th className="col-action">Trạng thái</th>
@@ -161,6 +184,7 @@ export default function AuditLogPage() {
     return (
       <tr>
         <th className="col-time">Thời gian</th>
+        {isCentralMode && <th className="col-station">Trạm</th>}
         <th>Quy tắc</th>
         <th>Thiết bị</th>
         <th className="col-action">Giá trị</th>
@@ -180,7 +204,7 @@ export default function AuditLogPage() {
     if (loading) {
       return (
         <tr>
-          <td colSpan={6} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)' }}>
+          <td colSpan={isCentralMode ? 6 : 5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)' }}>
             Đang tải dữ liệu...
           </td>
         </tr>
@@ -191,7 +215,7 @@ export default function AuditLogPage() {
       if (logs.length === 0) {
         return (
           <tr>
-            <td colSpan={5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
+            <td colSpan={isCentralMode ? 6 : 5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
               Không có dữ liệu tổng hợp.
             </td>
           </tr>
@@ -212,6 +236,11 @@ export default function AuditLogPage() {
               <td className="col-type">
                 <span className={`tag-all tag-${m.type}`}>{m.type.toUpperCase()}</span>
               </td>
+              {isCentralMode && (
+                <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+                  {m.stationName || '—'}
+                </td>
+              )}
               <td style={{ fontWeight: 600 }}>
                 {m.info} <small style={{ color: 'var(--admin-text-muted)', fontWeight: 'normal' }}>({m.action})</small>
               </td>
@@ -226,7 +255,7 @@ export default function AuditLogPage() {
             </tr>
             {hasDetail && isExpanded && (
               <tr className="audit-detail-row">
-                <td colSpan={5} style={{ padding: 16 }}>
+                <td colSpan={isCentralMode ? 6 : 5} style={{ padding: 16 }}>
                   <div className="log-diff-box">
                     <div className="diff-item">
                       <b>CŨ</b>
@@ -249,7 +278,7 @@ export default function AuditLogPage() {
       if (auditLogs.length === 0) {
         return (
           <tr>
-            <td colSpan={5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
+            <td colSpan={isCentralMode ? 6 : 5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
               Không có nhật ký hành động.
             </td>
           </tr>
@@ -268,6 +297,11 @@ export default function AuditLogPage() {
               <td className="col-action">
                 <b>{l.action.toUpperCase()}</b>
               </td>
+              {isCentralMode && (
+                <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+                  {l.stationName || '—'}
+                </td>
+              )}
               <td>
                 {entityLabel(l.entityType)}{' '}
                 <small style={{ color: 'var(--admin-text-muted)', fontSize: '0.7rem' }}>{l.entityId?.slice(0, 8) || ''}</small>
@@ -281,7 +315,7 @@ export default function AuditLogPage() {
             </tr>
             {isExpanded && (
               <tr className="audit-detail-row">
-                <td colSpan={5} style={{ padding: 16 }}>
+                <td colSpan={isCentralMode ? 6 : 5} style={{ padding: 16 }}>
                   <div className="log-diff-box">
                     <div className="diff-item">
                       <b>CŨ</b>
@@ -304,7 +338,7 @@ export default function AuditLogPage() {
       if (loginLogs.length === 0) {
         return (
           <tr>
-            <td colSpan={4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
+            <td colSpan={isCentralMode ? 5 : 4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
               Không có nhật ký đăng nhập.
             </td>
           </tr>
@@ -314,6 +348,11 @@ export default function AuditLogPage() {
       return loginLogs.map((l, idx) => (
         <tr key={idx}>
           <td className="col-time">{fmtDateTime(l.ts)}</td>
+          {isCentralMode && (
+            <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+              {l.stationName || '—'}
+            </td>
+          )}
           <td className="col-action">
             <b>{l.username}</b>
           </td>
@@ -327,7 +366,7 @@ export default function AuditLogPage() {
       if (notifyLogs.length === 0) {
         return (
           <tr>
-            <td colSpan={4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
+            <td colSpan={isCentralMode ? 5 : 4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
               Không có nhật ký gửi thông báo.
             </td>
           </tr>
@@ -337,6 +376,11 @@ export default function AuditLogPage() {
       return notifyLogs.map((l, idx) => (
         <tr key={idx}>
           <td className="col-time">{fmtDateTime(l.sentAt)}</td>
+          {isCentralMode && (
+            <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+              {l.stationName || '—'}
+            </td>
+          )}
           <td className="col-type">
             <b>{l.channel.toUpperCase()}</b>
           </td>
@@ -349,7 +393,7 @@ export default function AuditLogPage() {
     if (triggerLogs.length === 0) {
       return (
         <tr>
-          <td colSpan={4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
+          <td colSpan={isCentralMode ? 5 : 4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
             Không có nhật ký quy tắc kích hoạt.
           </td>
         </tr>
@@ -359,6 +403,11 @@ export default function AuditLogPage() {
     return triggerLogs.map((l, idx) => (
       <tr key={idx}>
         <td className="col-time">{fmtDateTime(l.triggeredAt)}</td>
+        {isCentralMode && (
+          <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+            {l.stationName || '—'}
+          </td>
+        )}
         <td>
           {l.ruleId ? (
             <a href="#"
@@ -388,19 +437,34 @@ export default function AuditLogPage() {
 
   return (
     <div className="admin-page-container">
-      <div className="page-toolbar-row">
-        <div className="page-title-cell">
-          <h2>NHẬT KÝ</h2>
+      <div className="audit-page-header">
+        <div className="audit-page-title">
+          <CentralTitleMenu title="NHẬT KÝ" />
         </div>
 
-        {/* Right controls */}
-        <div className="page-toolbar-group">
-          <div className="page-toolbar-cell" style={{ height: 28 }}>
-            <span className="page-cell-label">LOẠI:</span>
+        <div className="audit-page-controls">
+          {isCentralMode && (
+            <div className="audit-page-control">
+              <span className="audit-page-label">TRẠM:</span>
+              <select
+                value={filterStation}
+                onChange={e => setFilterStation(e.target.value)}
+                className="audit-page-select"
+              >
+                <option value="">Tất cả ({stationsList.length})</option>
+                {stationsList.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="audit-page-control">
+            <span className="audit-page-label">LOẠI:</span>
             <select
               value={activeTab}
               onChange={e => setActiveTab(e.target.value as TabId)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--admin-text)', fontSize: '.75rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
+              className="audit-page-select"
             >
               <option value="all">Tất cả nhật ký</option>
               <option value="audit">Hành động hệ thống</option>
@@ -410,12 +474,12 @@ export default function AuditLogPage() {
             </select>
           </div>
 
-          <div className="page-toolbar-cell" style={{ height: 28 }}>
-            <span className="page-cell-label">THỜI GIAN:</span>
+          <div className="audit-page-control">
+            <span className="audit-page-label">THỜI GIAN:</span>
             <select
               value={timeRange}
               onChange={e => setTimeRange(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--admin-text)', fontSize: '.75rem', fontWeight: 600, outline: 'none', cursor: 'pointer' }}
+              className="audit-page-select"
             >
               <option value="today">Hôm nay</option>
               <option value="yesterday">Hôm qua</option>

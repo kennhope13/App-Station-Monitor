@@ -14,6 +14,9 @@ type FormData = {
   rtspThermal: string; go2rtcThermal: string;
   cabinetId: string; zone: string; mountType: string;
   port: number; unitId: number; enableHealthScore: boolean;
+  focalLengthOptical?: number;
+  focalLengthThermal?: number;
+  jetsonIp: string;
 };
 
 const DEFAULT_FORM: FormData = {
@@ -25,6 +28,9 @@ const DEFAULT_FORM: FormData = {
   rtspThermal: '', go2rtcThermal: '',
   cabinetId: '', zone: '', mountType: 'outdoor',
   port: 502, unitId: 1, enableHealthScore: false,
+  focalLengthOptical: undefined,
+  focalLengthThermal: undefined,
+  jetsonIp: '',
 };
 
 type Props = {
@@ -64,6 +70,9 @@ export default function DeviceModal({ open, editingDevice, stationId, onClose, o
         rtspThermal: cfg.rtsp_thermal || '', go2rtcThermal: cfg.go2rtc_thermal || '',
         cabinetId: cfg.cabinetId || '', zone: cfg.zone || '', mountType: cfg.mountType || 'outdoor',
         port: cfg.port ?? 502, unitId: cfg.unit_id ?? 1, enableHealthScore: cfg.enableHealthScore ?? false,
+        focalLengthOptical: cfg.focal_length_optical != null ? parseFloat(cfg.focal_length_optical) : undefined,
+        focalLengthThermal: cfg.focal_length_thermal != null ? parseFloat(cfg.focal_length_thermal) : undefined,
+        jetsonIp: cfg.jetson_ip || '',
       });
     } else {
       setHadPassword(false);
@@ -89,11 +98,25 @@ export default function DeviceModal({ open, editingDevice, stationId, onClose, o
         protocol = 'rtsp';
         const gOptical = formData.go2rtcOptical.trim() || `cam_${formData.ip.replace(/\./g, '_')}_optical`;
         const gThermal = formData.go2rtcThermal.trim() || `cam_${formData.ip.replace(/\./g, '_')}_thermal`;
-        Object.assign(configObj, { rtsp_optical: formData.rtspOptical.trim(), go2rtc_optical: gOptical, rtsp_thermal: formData.rtspThermal.trim(), go2rtc_thermal: gThermal, username: formData.username, password: effectivePassword });
+        Object.assign(configObj, {
+          rtsp_optical: formData.rtspOptical.trim(),
+          go2rtc_optical: gOptical,
+          rtsp_thermal: formData.rtspThermal.trim(),
+          go2rtc_thermal: gThermal,
+          username: formData.username,
+          password: effectivePassword,
+          focal_length_optical: formData.focalLengthOptical,
+          focal_length_thermal: formData.focalLengthThermal,
+          ...(formData.jetsonIp.trim() ? { jetson_ip: formData.jetsonIp.trim() } : {})
+        });
       } else if (formData.type === 'camera_thermal') {
         protocol = 'rtsp';
         const gThermal = formData.go2rtcThermal.trim() || `cam_${formData.ip.replace(/\./g, '_')}_thermal`;
-        Object.assign(configObj, { rtsp_thermal: formData.rtspThermal.trim(), go2rtc_thermal: gThermal, username: formData.username, password: effectivePassword });
+        Object.assign(configObj, {
+          rtsp_thermal: formData.rtspThermal.trim(), go2rtc_thermal: gThermal,
+          username: formData.username, password: effectivePassword,
+          ...(formData.jetsonIp.trim() ? { jetson_ip: formData.jetsonIp.trim() } : {})
+        });
       } else if (formData.type.startsWith('camera')) {
         protocol = 'rtsp';
         let rp = formData.rtspPath.trim();
@@ -241,6 +264,10 @@ export default function DeviceModal({ open, editingDevice, stationId, onClose, o
                   </label>
                   <input type="text" className="form-input" placeholder="/Streaming/Channels/201" value={formData.rtspThermal} onChange={e => set({ rtspThermal: e.target.value })} />
                 </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>IP Jetson <small style={{ opacity: .7, fontWeight: 400 }}>(đồng bộ điểm nhiệt tự động)</small></label>
+                  <input type="text" className="form-input" placeholder="VD: 192.168.10.104" value={formData.jetsonIp} onChange={e => set({ jetsonIp: e.target.value })} />
+                </div>
               </div>
             )}
 
@@ -258,6 +285,19 @@ export default function DeviceModal({ open, editingDevice, stationId, onClose, o
                     </select>
                   </label>
                   <input type="text" className="form-input" placeholder="/Streaming/Channels/101" value={formData.rtspOptical} onChange={e => set({ rtspOptical: e.target.value })} />
+                </div>
+              </div>
+            )}
+
+            {formData.type === 'camera_dual' && (
+              <div style={{ gridColumn: '1/-1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: '16px', background: 'rgba(16,185,129,.04)', border: '1px solid rgba(16,185,129,.18)', borderRadius: 6 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ color: 'var(--admin-text)' }}>Tiêu cự Quang học (mm)</label>
+                  <input type="number" step="0.1" className="form-input" placeholder="VD: 4.0" value={formData.focalLengthOptical ?? ''} onChange={e => set({ focalLengthOptical: e.target.value === '' ? undefined : parseFloat(e.target.value) })} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ color: 'var(--admin-text)' }}>Tiêu cự Nhiệt (mm)</label>
+                  <input type="number" step="0.1" className="form-input" placeholder="VD: 4.0" value={formData.focalLengthThermal ?? ''} onChange={e => set({ focalLengthThermal: e.target.value === '' ? undefined : parseFloat(e.target.value) })} />
                 </div>
               </div>
             )}
