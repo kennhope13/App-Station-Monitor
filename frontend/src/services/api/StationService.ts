@@ -5,7 +5,7 @@
 // Export: stationService (singleton), dùng qua StationApiService facade
 // ============================================================
 
-import { apiFetch } from './BaseApiService';
+import { apiFetch, apiMutate } from './BaseApiService';
 import type { Station } from '@/types/api.types';
 
 export class StationService {
@@ -17,8 +17,22 @@ export class StationService {
   /** Lấy id của trạm đầu tiên — dùng khi URL không chứa stationId. */
   async getFirstStationId(): Promise<string | null> {
     const stations = await this.getStations();
+    if (stations.length === 0) return null;
+    const laStation = stations.find(s => s.code === 'TBA-LA01');
+    if (laStation) return laStation.id;
     return stations[0]?.id ?? null;
+  }
+
+  /** Tạo trạm mới. */
+  async createStation(name: string, code: string, location: string): Promise<Station> {
+    return apiMutate<Station>('POST', '/stations', { name, code, location });
+  }
+
+  /** Xóa trạm. */
+  async deleteStation(id: string): Promise<void> {
+    return apiMutate<void>('DELETE', `/stations/${id}`);
   }
 }
 
 export const stationService = new StationService();
+

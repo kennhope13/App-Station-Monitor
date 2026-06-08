@@ -109,12 +109,19 @@ class ThermalConfig(BaseModel):
     password:   str
     points:     list[ThermalPointConfig] = []
     zones:      list[ThermalZoneConfig] = []
+    # Nguồn gốc yêu cầu: 'backend' (từ người dùng/StationOS) hoặc 'jetson' (từ Jetson tự ping)
+    # Khi source='jetson' thì KHÔNG reset bộ đếm 5 phút để tránh vòng lặp gửi liên tục
+    source:     str = "backend"
 
 @router.post("/config/thermal")
-async def configure_thermal(body: ThermalConfig):
+async def configure_thermal(body: ThermalConfig, request: Request):
     """
     Cấu hình điểm và vùng đo nhiệt cho một camera thermal.
     """
+    # Tự động nhận diện nguồn gốc từ IP: Jetson (192.168.10.104) hoặc Backend/người dùng
+    remote_ip = request.client.host if request.client else ""
+    is_from_jetson = remote_ip.startswith("192.168.10.104") or body.source == "jetson"
+    
     # 1. Cập nhật ngay danh sách targets cho AI Forecasting (Quan trọng để aggregator nhận data)
     new_targets = []
     for pt in body.points:
@@ -149,9 +156,13 @@ async def configure_thermal(body: ThermalConfig):
         zones = [ThermalZone(**z.model_dump()) for z in body.zones]
         
         if prev_analyzer:
-            # Hot-reload in-memory config for existing analyzer (always do this on update)
-            prev_analyzer.update_config(points, zones)
-            logger.info("[Routes] Thermal analyzer config updated/hot-reloaded for %s (points=%d, zones=%d)", body.stream_id, len(points), len(zones))
+            # Hot-reload in-memory config for existing analyzer
+            # Chỉ reset bộ đếm 5 phút khi request đến từ người dùng (backend), KHÔNG reset khi Jetson tự ping
+            prev_analyzer.update_config(points, zones, force_jetson_push=not is_from_jetson)
+            if not is_from_jetson:
+                logger.info("[Routes] Thermal analyzer config updated/hot-reloaded for %s (points=%d, zones=%d)", body.stream_id, len(points), len(zones))
+            else:
+                logger.debug("[Routes] Jetson ping accepted for %s — timer NOT reset (5-min cycle preserved)", body.stream_id)
         else:
             # Create and start a new analyzer
             analyzer = ThermalAnalyzer(
@@ -345,6 +356,8 @@ class ThermalQueryBody(BaseModel):
     password:   str
     points:     list[ThermalQueryPoint] = []
     rois:       list[ThermalQueryRoi]   = []
+    focal_length_optical: float = 0.0
+    focal_length_thermal: float = 0.0
 
 @router.post("/thermal/query-temps")
 async def thermal_query_temps(body: ThermalQueryBody):
@@ -360,6 +373,8 @@ async def thermal_query_temps(body: ThermalQueryBody):
     matrix: np.ndarray = data["matrix"]
     w, h = data["w"], data["h"]
     mapping = data["mapping"]
+    if body.focal_length_optical > 0 and body.focal_length_thermal > 0 and body.focal_length_optical == body.focal_length_thermal:
+        mapping = {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0}
 
     temps = []
     for pt in body.points:

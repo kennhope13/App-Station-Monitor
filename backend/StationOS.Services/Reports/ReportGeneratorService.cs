@@ -37,23 +37,29 @@ public class ReportGeneratorService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        bool isFleet = opts.StationId == Guid.Empty;
+
         // ── Lấy dữ liệu ─────────────────────────────────────
-        var station = await db.Stations.FindAsync(opts.StationId);
-        var stationName = station?.Name ?? "Trạm biến áp";
+        var station = isFleet ? null : await db.Stations.FindAsync(opts.StationId);
+        var stationName = isFleet ? "Toàn hệ thống (Fleet Summary)" : (station?.Name ?? "Trạm biến áp");
 
         // Alerts trong kỳ
-        var alerts = await db.Alerts
-            .Where(a => a.StationId == opts.StationId
-                     && a.TriggeredAt >= opts.PeriodFrom
+        var alertQuery = db.Alerts.AsQueryable();
+        if (!isFleet) alertQuery = alertQuery.Where(a => a.StationId == opts.StationId);
+        
+        var alerts = await alertQuery
+            .Where(a => a.TriggeredAt >= opts.PeriodFrom
                      && a.TriggeredAt <= opts.PeriodTo)
             .OrderByDescending(a => a.TriggeredAt)
-            .Take(100)
+            .Take(isFleet ? 200 : 100)
             .ToListAsync();
 
         // Sensor readings — lấy thống kê theo thiết bị và điểm đo
-        var readings = await db.SensorReadings
-            .Where(r => r.StationId == opts.StationId
-                     && r.Time >= opts.PeriodFrom
+        var readingQuery = db.SensorReadings.AsQueryable();
+        if (!isFleet) readingQuery = readingQuery.Where(r => r.StationId == opts.StationId);
+
+        var readings = await readingQuery
+            .Where(r => r.Time >= opts.PeriodFrom
                      && r.Time <= opts.PeriodTo)
             .ToListAsync();
 
@@ -71,16 +77,19 @@ public class ReportGeneratorService
             .ToList();
 
         // Metadata để resolve tên thân thiện
-        var devices = await db.Devices.Where(d => d.StationId == opts.StationId).ToDictionaryAsync(d => d.Id);
+        var devicesQuery = db.Devices.AsQueryable();
+        if (!isFleet) devicesQuery = devicesQuery.Where(d => d.StationId == opts.StationId);
+        var devices = await devicesQuery.ToDictionaryAsync(d => d.Id);
+
         var roiPoints = await db.RoiPoints.Where(r => devices.Keys.Contains(r.DeviceId)).ToListAsync();
         var boundaries = await db.Boundaries.Where(b => devices.Keys.Contains(b.DeviceId)).ToListAsync();
 
         // ── Tạo PDF ──────────────────────────────────────────
         var titleMap = new Dictionary<string, string>
         {
-            ["daily"]   = "BÁO CÁO VẬN HÀNH HÀNG NGÀY",
-            ["monthly"] = "BÁO CÁO VẬN HÀNH HÀNG THÁNG",
-            ["event"]   = "BÁO CÁO SỰ CỐ",
+            ["daily"]   = isFleet ? "BÁO CÁO TỔNG HỢP HÀNG NGÀY" : "BÁO CÁO VẬN HÀNH HÀNG NGÀY",
+            ["monthly"] = isFleet ? "BÁO CÁO TỔNG HỢP HÀNG THÁNG" : "BÁO CÁO VẬN HÀNH HÀNG THÁNG",
+            ["event"]   = "BÁO CÁO SỰ CỐ TỔNG HỢP",
         };
         var title = titleMap.GetValueOrDefault(opts.Type, "BÁO CÁO VẬN HÀNH");
         var fmtDate = (DateTime d) => d.ToString("dd/MM/yyyy");

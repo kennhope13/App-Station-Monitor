@@ -159,11 +159,19 @@ async def _load_config_from_backend() -> None:
                                 if tx is None or ty is None:
                                     if ox is not None and oy is not None:
                                         # Map from optical to thermal
-                                        vvr_raw = cfg_raw.get("visible_valid_rect", {})
-                                        vvr_x = float(vvr_raw.get("x", 0.20))
-                                        vvr_y = float(vvr_raw.get("y", 0.084))
-                                        vvr_w = float(vvr_raw.get("width", 0.63))
-                                        vvr_h = float(vvr_raw.get("height", 0.841))
+                                        focal_opt = cfg_raw.get("focal_length_optical")
+                                        focal_th = cfg_raw.get("focal_length_thermal")
+                                        if focal_opt is not None and focal_th is not None and float(focal_opt) == float(focal_th) and float(focal_opt) > 0:
+                                            vvr_x = 0.0
+                                            vvr_y = 0.0
+                                            vvr_w = 1.0
+                                            vvr_h = 1.0
+                                        else:
+                                            vvr_raw = cfg_raw.get("visible_valid_rect", {})
+                                            vvr_x = float(vvr_raw.get("x", 0.20))
+                                            vvr_y = float(vvr_raw.get("y", 0.084))
+                                            vvr_w = float(vvr_raw.get("width", 0.63))
+                                            vvr_h = float(vvr_raw.get("height", 0.841))
                                         
                                         # Inverse mapping: from full optical frame to thermal valid rect
                                         tx = (ox - vvr_x) / vvr_w

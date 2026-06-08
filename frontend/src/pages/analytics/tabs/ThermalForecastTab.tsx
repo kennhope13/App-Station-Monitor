@@ -153,7 +153,7 @@ export default function ThermalForecastTab() {
         let activeStationId = savedStationId;
         if (!activeStationId) {
           const stations = await stationApi.getStations();
-          const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
+          const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
           activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
         }
 
@@ -295,16 +295,24 @@ export default function ThermalForecastTab() {
 // Map each target to its latest reading
 targets.forEach(t => {
   let actualVal: number | null = null;
+  let currentIdx = historyData.length - 1;
   for (let i = historyData.length - 1; i >= 0; i--) {
     const item = historyData[i];
-    if (item && item[`${t}_actual`] != null && item[`${t}_actual`] !== '') { actualVal = Number(item[`${t}_actual`]); break; }
+    if (item && item[`${t}_actual`] != null && item[`${t}_actual`] !== '') {
+      actualVal = Number(item[`${t}_actual`]);
+      currentIdx = i;
+      break;
+    }
   }
   let predVal: number | null = null;
   // Tìm giá trị dự báo mới nhất có trong lịch sử (quét từ cuối lên)
   for (let i = historyData.length - 1; i >= 0; i--) {
     const item = historyData[i];
     if (item && item[`${t}_pred`] != null && item[`${t}_pred`] !== '') {
-      predVal = Number(item[`${t}_pred`]);
+      // Chỉ chấp nhận nếu dự báo nằm ở tương lai hoặc không cũ quá 10 phút so với thời điểm hiện tại
+      if (i >= currentIdx - 10) {
+        predVal = Number(item[`${t}_pred`]);
+      }
       break;
     }
   }

@@ -41,6 +41,8 @@ async function performRefresh(): Promise<string | null> {
       role: payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? 'operator',
       active: true,
       created_at: new Date().toISOString(),
+      is_restricted: payload['isRestricted'] === 'true' || !!payload['stationIds'],
+      station_ids: payload['stationIds'] ? payload['stationIds'].split(',') : undefined,
     };
 
     store.setSession(user, token, newRefreshToken);

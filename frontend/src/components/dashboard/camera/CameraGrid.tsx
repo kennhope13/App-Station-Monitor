@@ -107,19 +107,10 @@ export default function CameraGrid({ sensors, alertsCount, rules = [], camOption
     sensors.forEach(s => {
       const pid = s.pid.toUpperCase();
       const thresholds = getThresholdsFromRules(pid, rules);
-      
-      const pointName = s.pointName || CAM_POINT_LABELS[pid] || '';
       const rawPidPart = pid.split('_').pop() || '';
       
-      // Kiểm tra xem ID có phải là mã kỹ thuật (UUID hoặc Hash dài) hay không
-      const isTechnicalId = /^[0-9A-F]{8,}/i.test(rawPidPart) || 
-                            /^[0-9A-F]{8,}/i.test(pid) ||
-                            (s.pointName && /^[0-9A-F]{8,}/i.test(s.pointName));
-      
-      // Nếu là mã kỹ thuật mà KHÔNG được đặt tên thân thiện -> Ẩn hoàn toàn để sạch giao diện
-      if (isTechnicalId && !s.pointName && !CAM_POINT_LABELS[pid]) return;
-
-      const label = s.pointName || pointName || pid;
+      const labelFromMap = s.pointName || CAM_POINT_LABELS[rawPidPart] || CAM_POINT_LABELS[pid];
+      const label = labelFromMap || pid;
 
       // Cải tiến nhận diện PD: Dựa vào Unit (dB) hoặc từ khóa trong PID/Label
       const isPd = s.unit?.toUpperCase() === 'DB' ||
@@ -129,6 +120,12 @@ export default function CameraGrid({ sensors, alertsCount, rules = [], camOption
                    label.toUpperCase().startsWith('PD') ||
                    label.toUpperCase().includes('PHÓNG ĐIỆN') ||
                    label.toUpperCase().includes('PHONG DIEN');
+
+      // LOGIC HIỂN THỊ MỚI: 
+      // 1. Nếu là Phóng điện (PD): LUÔN HIỂN THỊ (vì đây là dữ liệu an toàn quan trọng)
+      // 2. Nếu là Nhiệt độ: CHỈ HIỂN THỊ nếu điểm này có trong cấu hình (đã được đặt tên/label từ backend)
+      //    Nếu s.pointName là undefined nghĩa là điểm này không tồn tại trong danh sách ROI/Boundaries của trạm.
+      if (!isPd && s.pointName === undefined) return;
       
       const row = {
         pid,
@@ -296,11 +293,12 @@ export default function CameraGrid({ sensors, alertsCount, rules = [], camOption
                 const val = row.sensor?.value;
                 const color = val !== undefined ? getStatusColor(val, row.warn, row.alarm) : 'var(--admin-border)';
                 const isHottest = row.pid === hottest?.pid && val !== undefined;
+                const unit = row.sensor?.unit || '°C';
                 return (
                   <div key={row.pid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderBottom: idx < thermalRows.length - 1 ? '1px solid var(--admin-border-light)' : 'none', background: isHottest && val !== undefined && row.alarm !== null && val >= row.alarm ? 'rgba(239,68,68,0.06)' : 'transparent' }}>
                     <div style={{ width: 6, height: 6, borderRadius: 0, background: color, flexShrink: 0 }} />
                     <span style={{ flex: 1, fontSize: '0.68rem', color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isHottest ? 700 : 400 }}>{row.label}</span>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>{val !== undefined ? `${val.toFixed(1)}°C` : '--'}</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>{val !== undefined ? `${val.toFixed(1)}${unit}` : '--'}</span>
                     {isHottest && val !== undefined && (
                       <span style={{ fontSize: '0.52rem', fontWeight: 800, color: 'var(--admin-danger)', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 0, padding: '1px 4px', flexShrink: 0 }}>MAX</span>
                     )}
@@ -344,11 +342,12 @@ export default function CameraGrid({ sensors, alertsCount, rules = [], camOption
               pdRows.map((row, idx) => {
                 const val = row.sensor?.value;
                 const color = val !== undefined ? getStatusColor(val, row.warn, row.alarm, true) : 'var(--admin-border)';
+                const unit = row.sensor?.unit || 'dB';
                 return (
                   <div key={row.pid} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderBottom: idx < pdRows.length - 1 ? '1px solid var(--admin-border-light)' : 'none' }}>
                     <div style={{ width: 6, height: 6, borderRadius: 0, background: color, flexShrink: 0 }} />
                     <span style={{ flex: 1, fontSize: '0.68rem', color: 'var(--admin-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.label}</span>
-                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>{val !== undefined ? `${val.toFixed(1)} dB` : '--'}</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, color, fontFamily: 'Consolas,monospace', flexShrink: 0 }}>{val !== undefined ? `${val.toFixed(1)} ${unit}` : '--'}</span>
                   </div>
                 );
               })

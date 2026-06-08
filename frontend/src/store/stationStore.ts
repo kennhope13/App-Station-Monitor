@@ -7,6 +7,8 @@
 import { create } from 'zustand';
 import { stationService } from '@/services/api/StationService';
 import type { Station } from '@/types/api.types';
+import { useAuthStore } from './authStore';
+import { isCentralUser, MULTISITE_DRILL_STATION_KEY } from '@/utils/centralAccess';
 
 const STALE_MS = 60_000;
 
@@ -15,9 +17,12 @@ interface StationStore {
   isLoading: boolean;
   lastFetchedAt: number | null;
   error: string | null;
+  // Global admin drill-down: ID trạm con đang được xem từ màn hình đa trạm
+  viewingStationId: string | null;
   fetch: (force?: boolean) => Promise<Station[]>;
   invalidate: () => void;
   getFirstStationId: () => Promise<string | null>;
+  setViewingStation: (id: string | null) => void;
 }
 
 let inflight: Promise<Station[]> | null = null;
@@ -27,6 +32,7 @@ export const useStationStore = create<StationStore>((set, get) => ({
   isLoading: false,
   lastFetchedAt: null,
   error: null,
+  viewingStationId: localStorage.getItem(MULTISITE_DRILL_STATION_KEY) ?? null,
 
   fetch: async (force = false) => {
     const state = get();
@@ -50,19 +56,39 @@ export const useStationStore = create<StationStore>((set, get) => ({
 
   invalidate: () => set({ lastFetchedAt: null }),
 
+  setViewingStation: (id) => {
+    if (id) {
+      localStorage.setItem(MULTISITE_DRILL_STATION_KEY, id);
+      localStorage.setItem('selected_station_id', id);
+    } else {
+      localStorage.removeItem(MULTISITE_DRILL_STATION_KEY);
+    }
+    set({ viewingStationId: id });
+  },
+
   getFirstStationId: async () => {
     const saved = localStorage.getItem('selected_station_id');
     const stations = await get().fetch();
-    if (saved && stations.some(s => s.id === saved)) {
-      return saved;
+    const user = useAuthStore.getState().user;
+    // Global admin đang drill-down: tôn trọng selected_station_id
+    if (isCentralUser(user)) {
+      if (saved && stations.some(s => s.id === saved)) return saved;
+      if (stations.length === 0) return null;
+      const first = stations[0]?.id ?? null;
+      if (first) localStorage.setItem('selected_station_id', first);
+      return first;
     }
-    if (stations.length === 0) return null;
-    // Tìm Trạm Biến Áp Chính (TBA-001) trước vì đây là trạm chính có đầy đủ camera
-    const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
-    const defaultId = mainStation?.id ?? stations[0]?.id ?? null;
-    if (defaultId) {
-      localStorage.setItem('selected_station_id', defaultId);
+
+    // Restricted admin / operator / manager: ép về trạm Long An (demo default)
+    const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
+    if (mainStation) {
+      localStorage.setItem('selected_station_id', mainStation.id);
+      return mainStation.id;
     }
+
+    if (saved && stations.some(s => s.id === saved)) return saved;
+    const defaultId = stations[0]?.id ?? null;
+    if (defaultId) localStorage.setItem('selected_station_id', defaultId);
     return defaultId;
   },
 }));

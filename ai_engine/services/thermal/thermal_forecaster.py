@@ -145,12 +145,22 @@ def process_thermal_payload(payload: dict) -> dict:
     targets, w_size, hor = cfg["targets"], int(cfg["window_size"]), int(cfg["horizon"])
     save_raw_payload(payload)
     try: row = thermal_json_to_row(payload, targets)
-    except Exception: return {"success": False}
+    except Exception as e: 
+        logger.error("[Forecaster] Payload conversion failed: %s", e)
+        return {"success": False}
     append_history_row(row, targets)
     
-    # Re-enable local AI prediction (linear regression) as a backup
-    # prediction = compute_prediction(targets, w_size, hor)
-    # if prediction: save_prediction(prediction, targets)
+    # Re-enable local AI prediction (linear regression)
+    try:
+        prediction = compute_prediction(targets, w_size, hor)
+        if prediction:
+            save_prediction(prediction, targets)
+            append_prediction_history(prediction, targets)
+            logger.info("[Forecaster] Prediction saved for %s", prediction.get("forecast_timestamp"))
+        else:
+            logger.warning("[Forecaster] No prediction generated (not enough data?)")
+    except Exception as e:
+        logger.error("[Forecaster] Prediction logic failed: %s", e)
     
     return {"success": True, "timestamp": row["timestamp"]}
 

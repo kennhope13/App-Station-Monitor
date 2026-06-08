@@ -103,13 +103,19 @@ public class AuthService
             Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Name, user.Username),
             new Claim(ClaimTypes.Role, user.Role),
             new Claim("fullName", user.FullName ?? user.Username),
         };
+
+        if (user.StationIds != null && user.StationIds.Length > 0)
+        {
+            claims.Add(new Claim("isRestricted", "true"));
+            claims.Add(new Claim("stationIds", string.Join(",", user.StationIds)));
+        }
 
         var token = new JwtSecurityToken(
             issuer: _config["Jwt:Issuer"],
@@ -139,19 +145,32 @@ public class AuthService
     /// </summary>
     public async Task SeedAdminIfNotExistsAsync()
     {
-        if (!await _db.Users.AnyAsync())
+        // 1. Upsert admin (Trạm con)
+        var admin = await _db.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        if (admin == null)
         {
-            _db.Users.Add(new User
-            {
-                Username = "admin",
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123", workFactor: 12),
-                FullName = "Quản trị viên",
-                Email = "admin@StationOS.vn",
-                Role = "admin",
-                IsActive = true,
-                MustChangePassword = true,  // Bắt buộc đổi password lần đầu (security)
-            });
-            await _db.SaveChangesAsync();
+            admin = new User { Username = "admin", Role = "admin" };
+            _db.Users.Add(admin);
         }
+        admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123", workFactor: 12);
+        admin.FullName = "Quản trị viên Trạm con";
+        admin.Email = "admin@StationOS.vn";
+        admin.IsActive = true;
+        admin.MustChangePassword = false;
+
+        // 2. Upsert multi (Đa trạm)
+        var multi = await _db.Users.FirstOrDefaultAsync(u => u.Username == "multi");
+        if (multi == null)
+        {
+            multi = new User { Username = "multi", Role = "admin" };
+            _db.Users.Add(multi);
+        }
+        multi.PasswordHash = BCrypt.Net.BCrypt.HashPassword("Demo@2024", workFactor: 12);
+        multi.FullName = "Quản trị viên Đa trạm";
+        multi.Email = "multi@StationOS.vn";
+        multi.IsActive = true;
+        multi.MustChangePassword = false;
+
+        await _db.SaveChangesAsync();
     }
 }

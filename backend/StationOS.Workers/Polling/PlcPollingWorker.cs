@@ -96,8 +96,8 @@ public class PlcPollingWorker : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            // Giữ lại 3 ngày gần nhất (Có thể nâng lên sau khi mở rộng đĩa)
-            var cutoff = DateTime.UtcNow.AddDays(-3);
+            // Giữ lại 30 ngày gần nhất (Thay vì 3 ngày để xem được lịch sử dài hơn)
+            var cutoff = DateTime.UtcNow.AddDays(-30);
             _logger.LogInformation("[PLC] Đang dọn dẹp dữ liệu cũ trước {Time} (UTC)", cutoff);
 
             // Sử dụng SQL trực tiếp để xóa nhanh nhất mà không tải bản ghi vào RAM
@@ -340,6 +340,28 @@ public class PlcPollingWorker : BackgroundService
             if (shouldSaveDb)
             {
                 db.SensorReadings.AddRange(readings);
+
+                // Đồng bộ lên Cloud: tạo SyncQueue cho từng điểm đo (EntityType = SensorReading)
+                foreach (var r in readings)
+                {
+                    db.SyncQueues.Add(new SyncQueue
+                    {
+                        EntityType = "SensorReading",
+                        EntityId = Guid.NewGuid(), // SensorReading dùng composite key (Time, Id) nên sinh Guid tạm cho SyncQueue
+                        Payload = JsonSerializer.Serialize(new
+                        {
+                            station_id = r.StationId,
+                            device_id = r.DeviceId,
+                            point_id = r.PointId,
+                            value = r.Value,
+                            unit = r.Unit,
+                            time = r.Time,
+                            quality = r.Quality
+                        }),
+                        Status = "pending"
+                    });
+                }
+
                 await db.SaveChangesAsync(ct);
             }
 

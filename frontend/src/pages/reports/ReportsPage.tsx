@@ -6,30 +6,46 @@
 
 import { useState, useEffect } from 'react';
 import { stationApi, AlertItem } from '@/services/StationApiService';
+import { useStationStore } from '@/store';
 import { TabId } from './types';
 import ExportTab from './tabs/ExportTab';
 import ReportTab from './tabs/ReportTab';
+import CentralTitleMenu from '@/components/CentralTitleMenu';
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('export');
   const [stationId, setStationId] = useState('');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const stations = useStationStore(s => s.stations);
+  const fetchStations = useStationStore(s => s.fetch);
 
   useEffect(() => {
-    stationApi.getStations().then(st => {
-      if (st[0]) setStationId(st[0].id);
+    fetchStations().then(() => {
+      // Mặc định chọn "Tất cả các trạm" (stationId = '')
     }).catch(() => {});
     stationApi.getAlerts(undefined, undefined, undefined, 500).then(setAlerts).catch(() => {});
-  }, []);
+  }, [fetchStations]);
 
   return (
     <div className="admin-page-container">
       {/* TOOLBAR & TAB BAR */}
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <h2>BÁO CÁO</h2>
+          <CentralTitleMenu title="BÁO CÁO" />
         </div>
         <div className="page-toolbar-group">
+          <div className="page-toolbar-cell" style={{ height: 28 }}>
+            <span className="page-cell-label">TRẠM:</span>
+            <select 
+              className="form-select" 
+              style={{ width: 150, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} 
+              value={stationId} 
+              onChange={e => setStationId(e.target.value)}
+            >
+              <option value="">Tất cả các trạm</option>
+              {stations.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}
+            </select>
+          </div>
           <button 
             onClick={() => setActiveTab('export')} 
             className={`btn-industrial ${activeTab === 'export' ? 'btn-primary' : ''}`} 

@@ -651,6 +651,8 @@ public class DevicesController : ControllerBase
 
         // Parse config JSON trực tiếp
         string ip = "", username = "admin", password = "";
+        double focalOptical = 0;
+        double focalThermal = 0;
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(device.Config ?? "{}");
@@ -659,6 +661,17 @@ public class DevicesController : ControllerBase
             username = root.TryGetProperty("username", out var userEl) ? userEl.GetString() ?? "admin" : "admin";
             var rawPass = root.TryGetProperty("password", out var passEl) ? passEl.GetString() ?? "" : "";
             try { password = _crypto.Decrypt(rawPass); } catch { password = rawPass; }
+
+            if (root.TryGetProperty("focal_length_optical", out var foEl))
+            {
+                if (foEl.ValueKind == System.Text.Json.JsonValueKind.Number && foEl.TryGetDouble(out var foVal)) focalOptical = foVal;
+                else if (foEl.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(foEl.GetString(), out var foSVal)) focalOptical = foSVal;
+            }
+            if (root.TryGetProperty("focal_length_thermal", out var ftEl))
+            {
+                if (ftEl.ValueKind == System.Text.Json.JsonValueKind.Number && ftEl.TryGetDouble(out var ftVal)) focalThermal = ftVal;
+                else if (ftEl.ValueKind == System.Text.Json.JsonValueKind.String && double.TryParse(ftEl.GetString(), out var ftSVal)) focalThermal = ftSVal;
+            }
         }
         catch { }
 
@@ -675,6 +688,8 @@ public class DevicesController : ControllerBase
                 camera_ip = ip,
                 username  = username,
                 password  = password,
+                focal_length_optical = focalOptical,
+                focal_length_thermal = focalThermal,
                 points = (req.Points ?? new List<LiveTempPoint>())
                     .Select(p => new { id = p.Id, x = p.X, y = p.Y }).ToList(),
                 rois = (req.Rois ?? new List<LiveTempRoi>())

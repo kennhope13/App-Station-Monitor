@@ -74,7 +74,7 @@ public class AlertsController : ControllerBase
         if (from.HasValue) q = q.Where(a => a.TriggeredAt >= from.Value);
         if (to.HasValue)   q = q.Where(a => a.TriggeredAt <= to.Value);
 
-        var alerts = await q
+        var alertsRaw = await q
             .OrderByDescending(a => a.TriggeredAt)
             .Take(limit)
             .GroupJoin(
@@ -87,12 +87,31 @@ public class AlertsController : ControllerBase
                 x.Alert.Id, x.Alert.Source, x.Alert.Level, x.Alert.Status,
                 x.Alert.Message, x.Alert.Value,
                 x.Alert.DeviceId, x.Alert.RuleId,
+                x.Alert.StationId,
                 x.Alert.TriggeredAt, x.Alert.AckedAt, x.Alert.ClosedAt,
                 x.Alert.AckNote,
                 x.Alert.ImageUrl, x.Alert.VideoUrl, x.Alert.ThumbnailUrl,
                 metadata = x.Detection != null ? x.Detection.Metadata : null
             })
             .ToListAsync();
+
+        // Lấy tên trạm để trả về cho frontend trạm tổng
+        var stationIds = alertsRaw.Select(a => a.StationId).Distinct().ToList();
+        var stationNames = await _db.Stations
+            .Where(s => stationIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, s => s.Name);
+
+        var alerts = alertsRaw.Select(x => new {
+            x.Id, x.Source, x.Level, x.Status,
+            x.Message, x.Value,
+            x.DeviceId, x.RuleId,
+            x.StationId,
+            stationName = stationNames.TryGetValue(x.StationId, out var sn) ? sn : null,
+            x.TriggeredAt, x.AckedAt, x.ClosedAt,
+            x.AckNote,
+            x.ImageUrl, x.VideoUrl, x.ThumbnailUrl,
+            x.metadata
+        });
 
         return Ok(alerts);
     }
@@ -124,10 +143,17 @@ public class AlertsController : ControllerBase
                 .Select(h => new { h.Status, h.ChangedAt, h.Note, h.ChangedBy })
                 .ToListAsync();
 
+            var stationName2 = await _db.Stations
+                .Where(s => s.Id == alertData.Alert.StationId)
+                .Select(s => s.Name)
+                .FirstOrDefaultAsync();
+
             return Ok(new {
                 alertData.Alert.Id, alertData.Alert.Source, alertData.Alert.Level, alertData.Alert.Status,
                 alertData.Alert.Message, alertData.Alert.Value,
                 alertData.Alert.DeviceId, alertData.Alert.RuleId,
+                alertData.Alert.StationId,
+                stationName = stationName2,
                 alertData.Alert.TriggeredAt, alertData.Alert.AckedAt, alertData.Alert.ClosedAt, alertData.Alert.AckNote,
                 alertData.Alert.ImageUrl, alertData.Alert.VideoUrl, alertData.Alert.ThumbnailUrl,
                 metadata = alertData.Detection?.Metadata,

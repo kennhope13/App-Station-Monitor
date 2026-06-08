@@ -85,12 +85,18 @@ class ThermalAnalyzer:
                 asyncio.create_task(self._http_client.aclose())
             except Exception: pass
 
-    def update_config(self, points: list[ThermalPoint], zones: list[ThermalZone]) -> None:
-        """Cập nhật cấu hình các điểm và vùng đo nhiệt."""
+    def update_config(self, points: list[ThermalPoint], zones: list[ThermalZone], force_jetson_push: bool = False) -> None:
+        """Cập nhật cấu hình các điểm và vùng đo nhiệt.
+        
+        force_jetson_push=True: Reset bộ đếm 5 phút, gửi sang Jetson ngay lần tiếp theo.
+                                Dùng khi người dùng thay đổi cấu hình điểm đo trên giao diện.
+        force_jetson_push=False (mặc định): Giữ nguyên bộ đếm, KHÔNG reset.
+                                Dùng khi Jetson tự ping /config/thermal để đồng bộ (tránh vòng lặp).
+        """
         self.points = points
         self.zones = zones
-        # Ép gửi dữ liệu sang Jetson và đồng bộ lịch sử ngay lập tức khi có thay đổi cấu hình
-        self._last_jetson_push = 0.0
+        if force_jetson_push:
+            self._last_jetson_push = 0.0
         self._last_history_save = 0.0
 
     # ── Main process (gọi định kỳ từ scheduler) ──────────────
@@ -174,19 +180,36 @@ class ThermalAnalyzer:
                 jetson_points += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
                 
                 if jetson_points:
-                    payload = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": jetson_points}
-                    logger.info("[ThermalAnalyzer] Pushing %d points/zones to Jetson: %s", len(jetson_points), payload)
+                    payload = {
+                        "camera_ip": self.camera_ip,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "points": jetson_points
+                    }
+                    logger.info("[ThermalAnalyzer] Pushing %d points/zones to Jetson (%s): %s", len(jetson_points), self.camera_ip, payload)
                     try:
                         r1 = requests.post("http://192.168.10.104:8080/api/thermal-data", json=payload, timeout=5.0)
                         logger.info("[ThermalAnalyzer] Push to /api/thermal-data status: %d", r1.status_code)
                     except Exception as e:
                         logger.error("[ThermalAnalyzer] Failed to push to /api/thermal-data: %s", e)
                         
-                    try:
-                        r2 = requests.post("http://192.168.10.104:8080/config/thermal", json=payload, timeout=5.0)
-                        logger.info("[ThermalAnalyzer] Push to /config/thermal status: %d", r2.status_code)
-                    except Exception as e:
-                        logger.error("[ThermalAnalyzer] Failed to push to /config/thermal: %s", e)
+                # 4.4 Gửi cấu hình tọa độ điểm/vùng sang Jetson (KHÔNG chứa temperature)
+                config_points = [{"id": pt.label or pt.id, "x": pt.x, "y": pt.y, "pre_alarm": pt.pre_alarm, "alarm": pt.alarm, "label": pt.label or pt.id} for pt in self.points]
+                config_zones = [{"id": zn.label or zn.id, "polygon": zn.polygon, "pre_alarm": zn.pre_alarm, "alarm": zn.alarm, "label": zn.label or zn.id} for zn in self.zones]
+                config_payload = {
+                    "stream_id": self.stream_id,
+                    "device_id": self.device_id,
+                    "camera_ip": self.camera_ip,
+                    "username": self.username,
+                    "password": self.password,
+                    "points": config_points,
+                    "zones": config_zones
+                }
+                try:
+                    logger.info("[ThermalAnalyzer] Pushing config to Jetson: %s", config_payload)
+                    r2 = requests.post("http://192.168.10.104:8080/config/thermal", json=config_payload, timeout=5.0)
+                    logger.info("[ThermalAnalyzer] Push to /config/thermal status: %d", r2.status_code)
+                except Exception as e:
+                    logger.error("[ThermalAnalyzer] Failed to push to /config/thermal: %s", e)
             except Exception as ex:
                 logger.error("[ThermalAnalyzer] Critical push error: %s", ex)
 
@@ -199,9 +222,13 @@ class ThermalAnalyzer:
                 p_payload = [{"id": pt.label or pt.id, "temperature": point_temps.get(pt.id)} for pt in self.points if point_temps.get(pt.id) is not None]
                 p_payload += [{"id": zn.label or zn.id, "temperature": zone_results[zn.id]["max"]} for zn in self.zones if zn.id in zone_results]
                 if p_payload:
+                    logger.info("[ThermalAnalyzer] Sending %d points to forecaster", len(p_payload))
                     process_thermal_payload({"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "points": p_payload})
                     self._last_history_save = now
-            except Exception: pass
+                else:
+                    logger.debug("[ThermalAnalyzer] No points available for forecaster")
+            except Exception as e:
+                logger.error("[ThermalAnalyzer] Forecaster call failed: %s", e)
 
 
         # 5. Serve MJPEG

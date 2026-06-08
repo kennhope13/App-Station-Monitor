@@ -27,21 +27,44 @@ const LoginPage = React.lazy(() => import('@/pages/login/LoginPage'));
 const LicensePage = React.lazy(() => import('@/pages/license/LicensePage'));
 
 import { authService } from '@/services/AuthService';
+import { isCentralDrillDown, isCentralUser } from '@/utils/centralAccess';
 
 // Bảo vệ route và phân quyền theo vai trò
-const ProtectedRoute = ({ children, roles }: { children: React.ReactNode, roles?: string[] }) => {
+const ProtectedRoute = ({ children, roles, allowOnlyMulti, denyRestricted }: { children: React.ReactNode, roles?: string[], allowOnlyMulti?: boolean, denyRestricted?: boolean }) => {
   const user = authService.getUser();
   
   if (!user) {
     return <Navigate to="/login" replace />;
   }
   
-  if (roles && !roles.includes(user.role)) {
+  const isCentral = isCentralUser(user);
+  const isCentralInDrillDown = isCentralDrillDown(user);
+
+  if (allowOnlyMulti && !isCentral) {
+    // Nếu trang chỉ dành cho đa trạm nhưng user không phải 'multi' hoặc global admin, đưa về Dashboard
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (denyRestricted && user.is_restricted && !isCentralInDrillDown) {
+    // Nếu trang cấm restricted admin (admin trạm con), đưa về Dashboard
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  const hasRole = !roles || roles.includes(user.role) || (isCentral && roles.includes('admin'));
+  if (!hasRole) {
     // Nếu user không có quyền truy cập trang này, đưa về Dashboard
     return <Navigate to="/dashboard" replace />;
   }
   
   return <>{children}</>;
+};
+
+const IndexRedirect = () => {
+  const user = authService.getUser();
+  if (isCentralUser(user)) {
+    return <Navigate to="/multisite" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
 };
 
 const ScreenLoader = () => {
@@ -80,7 +103,7 @@ export default function App() {
 
           {/* AppShell bọc toàn bộ layout (sidebar + header + content) */}
           <Route path="/" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route index element={<IndexRedirect />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="realtime" element={<RealtimeMonitorPage />} />
             <Route path="alerts-history" element={<AlertsHistoryPage />} />
@@ -91,14 +114,14 @@ export default function App() {
 
             <Route path="reports" element={<ProtectedRoute roles={['admin', 'manager']}><ReportsPage /></ProtectedRoute>} />
             <Route path="maintenance" element={<ProtectedRoute roles={['admin', 'manager']}><MaintenancePage /></ProtectedRoute>} />
-            <Route path="audit-log" element={<ProtectedRoute roles={['admin']}><AuditLogPage /></ProtectedRoute>} />
-            <Route path="multisite" element={<MultisitePage />} />
+            <Route path="audit-log" element={<ProtectedRoute roles={['admin']} denyRestricted><AuditLogPage /></ProtectedRoute>} />
+            <Route path="multisite" element={<ProtectedRoute allowOnlyMulti><MultisitePage /></ProtectedRoute>} />
             <Route path="device-management" element={<ProtectedRoute roles={['admin']}><DeviceManagementPage /></ProtectedRoute>} />
             <Route path="device-management/:deviceId/thermal-config" element={<ProtectedRoute roles={['admin']}><ThermalConfigPage /></ProtectedRoute>} />
             <Route path="user-management" element={<ProtectedRoute roles={['admin']}><UserManagementPage /></ProtectedRoute>} />
             <Route path="rule-engine" element={<ProtectedRoute roles={['admin']}><RuleEnginePage /></ProtectedRoute>} />
-            <Route path="settings" element={<ProtectedRoute roles={['admin']}><SettingsPage /></ProtectedRoute>} />
-            <Route path="license" element={<ProtectedRoute roles={['admin']}><LicensePage /></ProtectedRoute>} />
+            <Route path="settings" element={<ProtectedRoute roles={['admin']} denyRestricted><SettingsPage /></ProtectedRoute>} />
+            <Route path="license" element={<ProtectedRoute roles={['admin']} denyRestricted><LicensePage /></ProtectedRoute>} />
             <Route path="*" element={<div style={{color:'var(--admin-text)', padding:20}}>404 - Page not found</div>} />
           </Route>
         </Routes>

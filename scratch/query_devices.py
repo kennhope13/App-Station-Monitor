@@ -4,7 +4,7 @@ import json
 conn = psycopg2.connect("host=localhost port=5432 dbname=StationOS user=postgres password=postgres123")
 cur = conn.cursor()
 
-cur.execute("SELECT id, name, type, subtype, config FROM \"Devices\"")
+cur.execute("SELECT "Id", "Name", "Type", "Subtype", "Config" FROM \"Devices\"")
 devices = cur.fetchall()
 
 print("--- Devices ---")
@@ -13,7 +13,7 @@ for d in devices:
     print(f"Config: {d[4]}")
     print()
 
-cur.execute("SELECT id, device_id, label, type, x, y, polygon, alarm, pre_alarm FROM \"ThermalPoints\"")
+cur.execute("SELECT "Id", "DeviceId", "Label", "Type", "X", "Y", "Polygon", "Alarm", "PreAlarm" FROM \"ThermalPoints\"")
 points = cur.fetchall()
 print("--- ThermalPoints ---")
 for p in points:

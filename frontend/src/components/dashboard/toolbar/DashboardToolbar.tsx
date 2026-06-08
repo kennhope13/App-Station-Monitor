@@ -3,6 +3,8 @@
 import { Settings } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { authService } from '@/services/AuthService';
+import { isCentralUser } from '@/utils/centralAccess';
 
 interface DashboardToolbarProps {
   stationName: string;
@@ -23,6 +25,9 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
 
+  const user = authService.getUser();
+  const isMulti = isCentralUser(user);
+
   return (
     <div
       id="sldToolbar"
@@ -39,19 +44,21 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
     >
       {/* Title & Toggle Row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button
-          onClick={() => navigate('/multisite')}
-          className="btn-industrial btn-sm"
-          style={{
-            fontSize: '0.65rem',
-            padding: '2px 8px',
-            height: 24,
-            fontWeight: 700,
-            cursor: 'pointer'
-          }}
-        >
-          ← TRẠM TỔNG
-        </button>
+        {isMulti && (
+          <button
+            onClick={() => navigate('/multisite')}
+            className="btn-industrial btn-sm"
+            style={{
+              fontSize: '0.65rem',
+              padding: '2px 8px',
+              height: 24,
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            ← TRẠM TỔNG
+          </button>
+        )}
 
         <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--admin-text)', whiteSpace: 'nowrap' }}>
           {stationName.toUpperCase() || 'SƠ ĐỒ TRẠM'}
@@ -136,7 +143,7 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
           <label title="Màu đường nét" style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', color: 'var(--admin-text-muted)', fontSize: 10 }}>
             <input 
               type="color" 
-              defaultValue="#38bdf8"
+              defaultValue="#f59e0b"
               onChange={e => onColorChange(e.target.value)}
               style={{ width: 18, height: 14, border: 'none', padding: 0, background: 'none', cursor: 'pointer', borderRadius: 0 }} 
             />

@@ -34,7 +34,7 @@ export default function PdAnalyticsTab() {
         let activeStationId = savedStationId;
         if (!activeStationId) {
           const stations = await stationApi.getStations();
-          const mainStation = stations.find(s => s.code === 'TBA-001' || s.name.includes('Chính'));
+          const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
           activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
         }
 

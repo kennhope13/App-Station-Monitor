@@ -10,35 +10,39 @@ import type { AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry 
 
 export class LogService {
   /** Log hành động người dùng (tạo/sửa/xóa thiết bị, rule, user...). */
-  async getAuditLogs(opts?: { limit?: number; action?: string }): Promise<AuditLogEntry[]> {
+  async getAuditLogs(opts?: { limit?: number; action?: string; stationId?: string }): Promise<AuditLogEntry[]> {
     const params = new URLSearchParams({ limit: String(opts?.limit ?? 200) });
     if (opts?.action) params.set('action', opts.action);
+    if (opts?.stationId) params.set('stationId', opts.stationId);
     return apiFetch(`/logs/audit?${params}`);
   }
 
   /** Lịch sử đăng nhập/đăng xuất theo khoảng thời gian. */
-  async getLoginLogs(opts?: { from?: string; to?: string }): Promise<LoginLogEntry[]> {
+  async getLoginLogs(opts?: { from?: string; to?: string; stationId?: string }): Promise<LoginLogEntry[]> {
     const params = new URLSearchParams();
     if (opts?.from) params.set('from', opts.from);
     if (opts?.to)   params.set('to', opts.to);
+    if (opts?.stationId) params.set('stationId', opts.stationId);
     const q = params.toString() ? `?${params}` : '';
     return apiFetch(`/logs/login${q}`);
   }
 
   /** Log gửi thông báo (email/SMS) từ rule engine. */
-  async getNotifyLogs(opts?: { from?: string; to?: string }): Promise<NotifyLogEntry[]> {
+  async getNotifyLogs(opts?: { from?: string; to?: string; stationId?: string }): Promise<NotifyLogEntry[]> {
     const params = new URLSearchParams();
     if (opts?.from) params.set('from', opts.from);
     if (opts?.to)   params.set('to', opts.to);
+    if (opts?.stationId) params.set('stationId', opts.stationId);
     const q = params.toString() ? `?${params}` : '';
     return apiFetch(`/logs/notify${q}`);
   }
 
   /** Log các lần rule được kích hoạt (trigger) — dùng để debug rule engine. */
-  async getRuleTriggerLogs(opts?: { from?: string; to?: string }): Promise<RuleTriggerLogEntry[]> {
+  async getRuleTriggerLogs(opts?: { from?: string; to?: string; stationId?: string }): Promise<RuleTriggerLogEntry[]> {
     const params = new URLSearchParams();
     if (opts?.from) params.set('from', opts.from);
     if (opts?.to)   params.set('to', opts.to);
+    if (opts?.stationId) params.set('stationId', opts.stationId);
     const q = params.toString() ? `?${params}` : '';
     return apiFetch(`/logs/rule-triggers${q}`);
   }
