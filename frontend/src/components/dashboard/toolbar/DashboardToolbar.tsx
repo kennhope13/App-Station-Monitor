@@ -53,22 +53,6 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
     >
       {/* Title & Toggle Row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {isMulti && onBackToCentral && (
-          <button
-            onClick={onBackToCentral}
-            className="btn-industrial btn-sm"
-            style={{
-              fontSize: '0.65rem',
-              padding: '2px 8px',
-              height: 24,
-              fontWeight: 700,
-              cursor: 'pointer'
-            }}
-          >
-            ← TRẠM TỔNG
-          </button>
-        )}
-
         <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--admin-text)', whiteSpace: 'nowrap' }}>
           {stationName.toUpperCase() || 'SƠ ĐỒ TRẠM'}
         </span>

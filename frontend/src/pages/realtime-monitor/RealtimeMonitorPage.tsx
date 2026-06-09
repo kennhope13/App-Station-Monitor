@@ -1060,7 +1060,29 @@ export default function RealtimeMonitorPage({
         <div className="page-title-cell">
           {embeddedMode !== 'central' && <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>}
           {embeddedMode === 'central' && (
-            <div style={{ display: 'inline-block' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {!isCentralFleetView && (
+                <button
+                  className="btn-industrial"
+                  onClick={() => {
+                    setExpandedCamId(null);
+                    setSelectedCamFilter('');
+                    onStationIdChange?.('');
+                  }}
+                  style={{
+                    height: 28,
+                    padding: '0 10px',
+                    fontSize: '.68rem',
+                    fontWeight: 800,
+                    color: 'var(--admin-accent)',
+                    borderColor: 'var(--admin-accent)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  ← Trở về
+                </button>
+              )}
+              <div style={{ display: 'inline-block' }}>
               {stationMenuOpen && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
               )}
@@ -1124,6 +1146,7 @@ export default function RealtimeMonitorPage({
                   ))}
                 </div>
               )}
+              </div>
             </div>
           )}
         </div>
