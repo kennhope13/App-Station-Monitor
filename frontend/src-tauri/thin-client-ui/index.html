@@ -328,17 +328,26 @@
   </div>
 
   <script>
-    if (!window.__TAURI__) {
-      window.__TAURI__ = {
-        core: {
-          invoke: async (cmd, args) => {
-            console.warn("Tauri API not injected. Command ignored:", cmd, args);
-            throw new Error("Tauri API is not available.");
-          }
-        }
+    let invoke;
+    if (window.__TAURI__) {
+      if (window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
+        invoke = window.__TAURI__.core.invoke;
+      } else if (typeof window.__TAURI__.invoke === 'function') {
+        invoke = window.__TAURI__.invoke;
+      } else if (window.__TAURI__.tauri && typeof window.__TAURI__.tauri.invoke === 'function') {
+        invoke = window.__TAURI__.tauri.invoke;
+      } else {
+        invoke = async (cmd, args) => {
+          console.warn("Could not find invoke function in window.__TAURI__:", cmd, args);
+          throw new Error("Tauri invoke function not found.");
+        };
+      }
+    } else {
+      invoke = async (cmd, args) => {
+        console.warn("Tauri API not injected. Command ignored:", cmd, args);
+        throw new Error("Tauri API is not available.");
       };
     }
-    const { invoke } = window.__TAURI__.core;
 
     // Điền ví dụ
     function fillExample(ip) {
@@ -405,44 +414,11 @@
       setConnecting();
 
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
-        
-        let online = false;
-        try {
-          // Gửi request tới health endpoint của Backend (thông qua proxy Vite)
-          const res = await fetch(`${normalized}/api/v1/health`, {
-            signal: controller.signal,
-          });
-          if (res.ok || res.status === 200) {
-            online = true;
-          }
-        } catch (e) {
-          if (e.name === 'AbortError') {
-            showStatus('error', 'Kết nối quá hạn (Timeout). Vui lòng kiểm tra lại IP hoặc bật VPN.');
-            setIdle();
-            return;
-          }
-          
-          // Thử fetch trang root để kiểm tra xem Web Server có phản hồi không
-          try {
-            const rootRes = await fetch(normalized, { signal: controller.signal, mode: 'no-cors' });
-            online = true;
-          } catch (rootErr) {
-            showStatus('error', 'Không thể kết nối tới máy chủ. Vui lòng kiểm tra lại IP hoặc bật VPN.');
-            setIdle();
-            return;
-          }
-        } finally {
-          clearTimeout(timer);
-        }
-
-        // Lưu URL và điều hướng
-        showStatus('success', 'Kết nối thành công! Đang mở dashboard...');
+        // Lưu URL và điều hướng ngay lập tức (không chạy fetch kiểm tra tránh lỗi CORS/mạng)
+        showStatus('success', 'Đang kết nối tới máy chủ...');
         await invoke('connect_to_server', { url: normalized });
-
       } catch (err) {
-        showStatus('error', `Lỗi kết nối: ${err}`);
+        showStatus('error', `Không thể kết nối: ${err}`);
         setIdle();
       }
     }
