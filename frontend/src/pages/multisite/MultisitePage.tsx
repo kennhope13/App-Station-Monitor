@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStationStore, useAlertStore, useDeviceStore } from '@/store';
 import type { Station, StationLocation, AlertItem } from '@/types/api.types';
 import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
@@ -81,12 +81,20 @@ export default function MultisitePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as MultisiteTab) || 'overview';
+
+  const setActiveTab = (tab: MultisiteTab) => {
+    setSearchParams(prev => {
+      prev.set('tab', tab);
+      return prev;
+    }, { replace: true });
+  };
+
   const [statusFilter, setStatusFilter] = useState<'all' | 'warning' | 'normal'>('all');
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
-  const [showRightPanel, setShowRightPanel] = useState(true);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
-  const [activeTab, setActiveTab] = useState<MultisiteTab>('overview');
+  const [showRightPanel, setShowRightPanel] = useState(true);
   const [devicePanelAction, setDevicePanelAction] = useState<'new' | null>(null);
   const showEmbeddedBackButton = activeTab !== 'overview' && !!selectedStationId;
 
@@ -104,16 +112,6 @@ export default function MultisitePage() {
       setViewingStation(null);
     }
   };
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const requestedTab = params.get('tab');
-    if (requestedTab && requestedTab in MULTISITE_TAB_TITLES) {
-      setActiveTab(requestedTab as MultisiteTab);
-      params.delete('tab');
-      navigate(`${location.pathname}${params.toString() ? `?${params.toString()}` : ''}`, { replace: true });
-    }
-  }, [location.pathname, location.search, navigate]);
 
   useEffect(() => {
     if (activeTab === 'overview') {
@@ -253,19 +251,17 @@ export default function MultisitePage() {
     });
   }, [stations, alertsByFilter, devicesByStation]);
 
-  // Filtered station list based on search and status tabs
   const filteredViews = useMemo(() => {
     return views.filter(v => {
-      const matchesSearch = 
-        v.station.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (v.station.code || '').toLowerCase().includes(searchQuery.toLowerCase());
-      
-      if (statusFilter === 'all') return matchesSearch;
-      if (statusFilter === 'warning') return matchesSearch && v.kpi.alerts > 0;
-      if (statusFilter === 'normal') return matchesSearch && v.kpi.alerts === 0;
-      return matchesSearch;
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'warning') return v.kpi.alerts > 0;
+      if (statusFilter === 'normal') return v.kpi.alerts === 0;
+      return true;
     });
-  }, [views, searchQuery, statusFilter]);
+  }, [views, statusFilter]);
+
+  // Alias tương thích cho các đoạn JSX/refresh cũ còn tham chiếu tên trước đó.
+  const filteredStationStats = filteredViews;
 
   // Selected station view details helper
   const selectedView = useMemo(() => {
@@ -660,19 +656,6 @@ export default function MultisitePage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ display: 'flex', gap: 12, fontSize: '0.68rem', color: 'var(--admin-text-muted)', borderRight: '1px solid var(--admin-border)', paddingRight: 12 }}>
-            <div title="Tổng số trạm" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Map size={12} /> <b style={{ color: 'var(--admin-text)' }}>{globalStats.totalStations}</b>
-            </div>
-            <div title="Cảnh báo hoạt động" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <AlertTriangle size={12} style={{ color: globalStats.totalAlerts > 0 ? 'var(--admin-danger)' : 'var(--admin-success)' }} />
-              <b style={{ color: globalStats.totalAlerts > 0 ? 'var(--admin-danger)' : 'var(--admin-success)' }}>{globalStats.totalAlerts}</b>
-            </div>
-            <div title="Thiết bị Online" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Wifi size={12} /> <b style={{ color: 'var(--admin-text)' }}>{globalStats.onlineDevices}/{globalStats.totalDevices}</b>
-            </div>
-          </div>
-
           <div style={{
             display: 'flex',
             gap: 4,
@@ -868,29 +851,7 @@ export default function MultisitePage() {
          </div>
          
          <div style={{ flex: 1 }} />
-         
-         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <Search size={12} style={{ position: 'absolute', left: 8, opacity: 0.4 }} />
-            <input 
-              type="text" 
-              placeholder="TÌM TRẠM..." 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ 
-                background: 'var(--admin-panel)', 
-                border: '1px solid var(--admin-border)', 
-                borderRadius: 2, 
-                padding: '3px 10px 3px 26px', 
-                fontSize: '.65rem', 
-                fontWeight: 800,
-                color: 'var(--admin-text)',
-                width: 180,
-                outline: 'none',
-                textTransform: 'uppercase'
-              }} 
-            />
          </div>
-      </div>
 
       {activeTab === 'analytics' && (
         <div

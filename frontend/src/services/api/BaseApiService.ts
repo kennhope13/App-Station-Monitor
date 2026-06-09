@@ -63,7 +63,7 @@ async function getValidToken(): Promise<string | null> {
     const jsonBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
     const payload = JSON.parse(new TextDecoder('utf-8').decode(jsonBytes));
     
-    // Nếu token sắp hết hạn trong vòng 10 giây -> làm mới chủ động
+    // Nếu token sắp hết hạn trong vòng 10 giây -> tải lại chủ động
     const exp = payload.exp * 1000;
     if (Date.now() + 10000 >= exp) {
       if (!refreshPromise) {
@@ -85,7 +85,7 @@ async function getValidToken(): Promise<string | null> {
   return token;
 }
 
-/** GET request với Bearer token tự động. Tự động làm mới và thử lại nếu token hết hạn. */
+/** GET request với Bearer token tự động. Tự động tải lại và thử lại nếu token hết hạn. */
 export async function apiFetch<T>(path: string): Promise<T> {
   let token = await getValidToken();
   let res = await fetch(`${API_BASE}${path}`, {
@@ -110,7 +110,7 @@ export async function apiFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** POST/PUT/PATCH/DELETE với JSON body và Bearer token. Tự động làm mới và thử lại nếu token hết hạn. */
+/** POST/PUT/PATCH/DELETE với JSON body và Bearer token. Tự động tải lại và thử lại nếu token hết hạn. */
 export async function apiMutate<T = any>(method: string, path: string, body?: object): Promise<T> {
   let token = await getValidToken();
   const headers: Record<string, string> = {

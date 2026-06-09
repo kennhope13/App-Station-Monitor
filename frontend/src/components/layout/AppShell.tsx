@@ -262,9 +262,12 @@ export default function AppShell() {
     let isMounted = true;
     const startHub = async () => {
       try {
+        if (isMounted) setSyncState('syncing');
         await hub.start();
+        if (isMounted) setSyncState('ok');
         console.log('[AppShell] SignalR Global Connected.');
       } catch (err) {
+        if (isMounted) setSyncState('offline');
         console.warn('[AppShell] SignalR Global Connection failed, retrying in 5s...', err);
         if (isMounted) {
           setTimeout(startHub, 5000);
@@ -280,6 +283,7 @@ export default function AppShell() {
   }, [fetchAlerts, invalidateAlerts]);
 
   const [time, setTime] = useState(new Date().toLocaleTimeString('vi-VN'));
+  const [syncState, setSyncState] = useState<'ok' | 'syncing' | 'offline'>(navigator.onLine ? 'syncing' : 'offline');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showThemeList, setShowThemeList] = useState(false);
@@ -350,12 +354,18 @@ export default function AppShell() {
       }
     };
     window.addEventListener('theme-changed', handleThemeChange);
+    const handleOnline = () => setSyncState('syncing');
+    const handleOffline = () => setSyncState('offline');
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     // Đồng hồ realtime cập nhật mỗi giây
     const t = setInterval(() => setTime(new Date().toLocaleTimeString('vi-VN')), 1000);
     return () => {
       clearInterval(t);
       window.removeEventListener('theme-changed', handleThemeChange);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
@@ -481,7 +491,16 @@ export default function AppShell() {
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
-            <div className="header-clock">{time}</div>
+            <div className="header-clock">
+              <span className="header-clock-label">
+                <span className={`header-clock-state state-${syncState}`}>
+                  {syncState === 'ok' ? 'SYNC OK' : syncState === 'syncing' ? 'SYNCING' : 'OFFLINE'}
+                </span>
+                <span className="header-clock-separator">•</span>
+                {new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+              </span>
+              <span className="header-clock-time">{time}</span>
+            </div>
           </div>
         </header>
       )}

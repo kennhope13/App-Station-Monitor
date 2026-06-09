@@ -81,17 +81,28 @@ export default function DeviceManagementPage({
   });
 
 
-  const [roiTab, setRoiTab] = useState(0); // page tabs: 0=all, 2=pd region, 3=thermal, 4=fire config
+  const activeRoiTab = parseInt(searchParams.get('roiTab') || '0', 10);
+  const scanTab = parseInt(searchParams.get('scanTab') || '0', 10);
+
+  const setRoiTab = (tab: number) => {
+    setSearchParams(prev => {
+      prev.set('roiTab', tab.toString());
+      return prev;
+    }, { replace: true });
+  };
+
+  const setScanTab = (tab: number) => {
+    setSearchParams(prev => {
+      prev.set('scanTab', tab.toString());
+      return prev;
+    }, { replace: true });
+  };
+
   const [selectedRoiDevice, setSelectedRoiDevice] = useState<CameraDevice | null>(null);
   const [selectedPdDevice, setSelectedPdDevice] = useState<CameraDevice | null>(null);
   const [selectedFireDevice, setSelectedFireDevice] = useState<CameraDevice | null>(null);
 
-  // PD Refactor hook
-
-  // Trạng thái modal dò tìm thiết bị trên mạng
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
-  const [scanTab, setScanTab] = useState(0); // 0=Ping scan, 1=ONVIF, 2=Test thủ công
-
   const [scanSubnet, setScanSubnet] = useState('192.168.10');
   const [isScanning, setIsScanning] = useState(false);
   const [scanResults, setScanResults] = useState<any[] | null>(null);
@@ -546,205 +557,192 @@ export default function DeviceManagementPage({
 
 
   return (
-    <div className="admin-page-container">
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', height: '100%', overflow: 'hidden' }}>
 
-      {/* TOOLBAR */}
-      {roiTab === 3 ? (
-        <div className="page-toolbar-row">
-          <div className="page-title-cell">
-            <button
-              className="btn-industrial btn-sm"
-              onClick={() => { setRoiTab(0); setSelectedRoiDevice(null); }}
-            >
-              ← QUAY LẠI
-            </button>
-            <h2 style={{ fontSize: '1rem', marginLeft: 15 }}>
-              CẤU HÌNH NHIỆT: {selectedRoiDevice?.name || '---'}
-            </h2>
-          </div>
-        </div>
-      ) : roiTab === 4 ? (
-        <div className="page-toolbar-row">
-          <div className="page-title-cell">
-            <button
-              className="btn-industrial btn-sm"
-              onClick={() => { setRoiTab(0); setSelectedFireDevice(null); }}
-            >
-              ← QUAY LẠI
-            </button>
-            <h2 style={{ fontSize: '1rem', marginLeft: 15 }}>
-              CẤU HÌNH CẢNH BÁO CHÁY: {selectedFireDevice?.name || '---'}
-            </h2>
-          </div>
-        </div>
-      ) : roiTab === 2 ? (
-        <div className="page-toolbar-row">
-          <div className="page-title-cell">
-            <button
-              className="btn-industrial btn-sm"
-              onClick={() => { setRoiTab(0); setSelectedPdDevice(null); }}
-            >
-              ← QUAY LẠI
-            </button>
-            <h2 style={{ fontSize: '1rem', marginLeft: 15 }}>
-              VẼ VÙNG PD: {selectedPdDevice?.name || '---'}
-            </h2>
-          </div>
-        </div>
-      ) : (
-        <div className="page-toolbar-row">
-          <div className="page-title-cell">
-            {embeddedMode !== 'central' && <h2>QUẢN LÝ THIẾT BỊ</h2>}
-            {embeddedMode === 'central' && (
-              <div style={{ display: 'inline-block' }}>
-                {stationMenuOpen && (
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
-                )}
-                <button
-                  ref={stationBtnRef}
-                  onClick={() => {
-                    const r = stationBtnRef.current?.getBoundingClientRect();
-                    if (r) setStationMenuPos({ top: r.bottom, left: r.left, width: r.width });
-                    setStationMenuOpen(o => !o);
-                  }}
-                  style={{
-                    width: 260, background: '#0f1729',
-                    border: '1px solid var(--admin-border)',
-                    color: 'var(--admin-text)', padding: '4px 10px',
-                    fontSize: '.72rem', fontWeight: 700, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
-                  }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {stations.find(s => s.id === stationId)?.name || 'Chọn trạm'}
-                  </span>
-                  <span style={{ flexShrink: 0, opacity: 0.5, fontSize: '.65rem' }}>▾</span>
-                </button>
-                {stationMenuOpen && (
-                  <div style={{
-                    position: 'fixed', top: stationMenuPos.top, left: stationMenuPos.left,
-                    width: stationMenuPos.width, zIndex: 9999,
-                    background: '#0f1729', border: '1px solid var(--admin-border)',
-                    maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                  }}>
-                    {stations.map(s => (
-                      <div
-                        key={s.id}
-                        onClick={async () => { onStationIdChange?.(s.id); await loadDevices(s.id); setStationMenuOpen(false); }}
-                        style={{
-                          padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
-                          fontWeight: stationId === s.id ? 800 : 500,
-                          color: stationId === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
-                          background: stationId === s.id ? 'rgba(14,165,233,0.12)' : 'transparent',
-                          borderLeft: `2px solid ${stationId === s.id ? 'var(--admin-accent)' : 'transparent'}`,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}
-                        onMouseEnter={e => { if (stationId !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
-                        onMouseLeave={e => { if (stationId !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-                      >
-                        {(s.code ? `${s.code} - ` : '') + s.name}
-                      </div>
-                    ))}
-                  </div>
-                )}
+      {/* Embedded Central Header */}
+      {embeddedMode === 'central' && (
+        <div style={{ padding: '20px 20px 0 20px' }}>
+          <div className="admin-card" style={{ padding: '16px 20px', background: 'var(--admin-panel)', borderBottom: 'none', borderRadius: '4px 4px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <LayoutList size={14} /> QUẢN LÝ THIẾT BỊ KẾT NỐI
               </div>
-            )}
-          </div>
-          <div className="page-toolbar-group">
-            {/* Status Indicators */}
-            <div className="page-toolbar-cell" style={{ height: 28 }}>
-              <span style={{ color: 'var(--admin-success)', fontWeight: 800, fontSize: '.75rem' }}>🟢 {online} ONLINE</span>
-              <span style={{ color: 'var(--admin-text-muted)', opacity: 0.3, margin: '0 4px' }}>|</span>
-              <span style={{ color: 'var(--admin-danger)', fontWeight: 800, fontSize: '.75rem' }}>{devices.length - online} OFFLINE</span>
+              <div style={{ marginTop: 6, fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-text)' }}>
+                {stationIdOverride ? (stations.find(s => s.id === stationIdOverride)?.name || 'Trạm đã chọn') : 'Toàn bộ trạm'}
+              </div>
             </div>
-  
-            {/* Action Buttons */}
-            <button 
-              className="btn-industrial btn-primary" 
-              disabled={requiresStationSelection}
-              onClick={() => openDeviceModal()}
-              style={requiresStationSelection ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-            >
-              + THÊM THIẾT BỊ
-            </button>
-            <button 
-              className="btn-industrial" 
-              disabled={requiresStationSelection}
-              onClick={() => setIsScanModalOpen(true)}
-              style={requiresStationSelection ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-            >
-              QUÉT LAN
-            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ minWidth: 240 }}>
+                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>TRẠM ĐANG QUẢN LÝ</div>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    ref={stationBtnRef}
+                    onClick={() => {
+                      if (!stationBtnRef.current) return;
+                      const rect = stationBtnRef.current.getBoundingClientRect();
+                      setStationMenuPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+                      setStationMenuOpen(!stationMenuOpen);
+                    }}
+                    style={{
+                      width: '100%', textAlign: 'left', padding: '8px 12px', background: 'rgba(15,23,42,0.65)',
+                      border: '1px solid var(--admin-accent)', color: 'var(--admin-text)', fontSize: '.74rem',
+                      fontWeight: 700, borderRadius: 2, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    }}
+                  >
+                    <span>{stationIdOverride ? (stations.find(s => s.id === stationIdOverride)?.name || 'Trạm đã chọn') : 'Tất cả các trạm'}</span>
+                    <span style={{ opacity: 0.5, fontSize: 10 }}>▼</span>
+                  </button>
+
+                  {stationMenuOpen && (
+                    <>
+                      <div style={{ position: 'fixed', inset: 0, zIndex: 999 }} onClick={() => setStationMenuOpen(false)} />
+                      <div style={{
+                        position: 'fixed', top: stationMenuPos.top, left: stationMenuPos.left, width: stationMenuPos.width,
+                        background: 'var(--admin-panel)', border: '1px solid var(--admin-border)', borderRadius: 4,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)', zIndex: 1000, maxHeight: 300, overflowY: 'auto'
+                      }}>
+                        <div
+                          style={{
+                            padding: '8px 12px', fontSize: '.74rem', fontWeight: 700, cursor: 'pointer',
+                            color: !stationIdOverride ? 'var(--admin-accent)' : 'var(--admin-text)',
+                            background: !stationIdOverride ? 'var(--admin-layer-3)' : 'transparent',
+                            borderBottom: '1px solid var(--admin-border)'
+                          }}
+                          onClick={() => { onStationIdChange?.(''); setStationMenuOpen(false); }}
+                        >
+                          Tất cả các trạm
+                        </div>
+                        {stations.map(s => (
+                          <div
+                            key={s.id}
+                            style={{
+                              padding: '8px 12px', fontSize: '.74rem', fontWeight: 700, cursor: 'pointer',
+                              color: stationIdOverride === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
+                              background: stationIdOverride === s.id ? 'var(--admin-layer-3)' : 'transparent',
+                            }}
+                            onClick={() => { onStationIdChange?.(s.id); setStationMenuOpen(false); }}
+                            onMouseEnter={e => { if (stationIdOverride !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                            onMouseLeave={e => { if (stationIdOverride !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                          >
+                            {(s.code ? `${s.code} - ` : '') + s.name}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ height: 32, width: 1, background: 'var(--admin-border)' }} />
+
+              <button 
+                className="btn-industrial" 
+                style={{ padding: '6px 14px', fontSize: '.7rem', fontWeight: 800, borderColor: 'var(--admin-text-muted)', color: 'var(--admin-text)' }}
+                onClick={() => setIsScanModalOpen(true)}
+              >
+                QUÉT MẠNG LAN
+              </button>
+              <button 
+                className="btn-industrial btn-primary" 
+                style={{ padding: '6px 16px', fontSize: '.75rem', fontWeight: 800 }}
+                onClick={() => handleOpenModal()}
+              >
+                + THÊM THIẾT BỊ
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ═══ TAB 0: ALL DEVICES ═══ */}
-      {roiTab === 0 && (
-        <div className="admin-card" style={{ padding: 0, overflow: 'auto', flex: 1 }}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Tên thiết bị</th>
-                <th>Loại</th>
-                <th>IP / Địa chỉ</th>
-                <th>Trạng thái</th>
-                <th>Ngày thêm</th>
-                <th style={{ width: 80 }}>Hành động</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>⏳ Đang tải...</td></tr>
-              ) : embeddedMode === 'central' && !stationId ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Chọn một trạm để xem thiết bị.</td></tr>
-              ) : devices.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Chưa có thiết bị nào.</td></tr>
-              ) : (
-                devices.map(d => (
-                  <tr key={d.id}>
-                    <td><b>{d.name}</b></td>
-                    <td>{TYPE_LABELS[d.type] || d.type}</td>
-                    <td>
-                      <code style={{ fontSize: '.8rem' }}>{d.config?.ip || '---'}</code>
-                      {d.type.startsWith('camera') && d.config?.go2rtc_id && <><br/><small style={{ opacity: .5 }}>go2rtc: {d.config.go2rtc_id}</small></>}
-                      {d.type.startsWith('camera') && d.config?.go2rtc_thermal && <><br/><small style={{ opacity: .5, color: 'var(--admin-danger)' }}>thermal: {d.config.go2rtc_thermal}</small></>}
-                      {d.type === 'camera_pd' && <><br/><small style={{ opacity: .7, color: 'var(--admin-accent)', fontWeight: 700 }}>PD band 25–49 kHz</small></>}
-                      {d.type === 'cabinet' && <><br/><small style={{ opacity: .5 }}>3 cảm biến nhiệt + 1 PD</small></>}
-                    </td>
-                    <td>
-                      <span className="status-dot" style={{ background: d.status === 'online' ? 'var(--admin-success)' : 'var(--admin-danger)' }}></span>
-                      {d.status === 'online' ? ' Online' : ' Offline'}
-                    </td>
-                    <td style={{ fontSize: '.8rem', opacity: .7 }}>{new Date(d.createdAt).toLocaleDateString('vi-VN')}</td>
+      {/* Main Content Area */}
+      <div style={{ padding: '0 20px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-                    <td style={{ textAlign: 'center' }}>
-                      <ActionDropdown>
-                        <ActionDropdownItem icon={<Settings size={14} />} label="Sửa thiết bị" onClick={() => openDeviceModal(d)} />
-                        <ActionDropdownItem icon={<LayoutList size={14} />} label="Kiểm tra kết nối" onClick={() => handleTestDevice(d.id)} />
-                        <ActionDropdownItem icon={<ShieldAlert size={14} />} label="Quy tắc giám sát" onClick={() => handleOpenRulesModal(d)} />
-                        {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                          <ActionDropdownItem icon={<Thermometer size={14} />} label="Cấu hình nhiệt" onClick={() => { setSelectedRoiDevice(d as CameraDevice); setRoiTab(3); }} />
-                        )}
-                        {(d.type === 'camera_thermal' || d.type === 'camera_dual') && (
-                          <ActionDropdownItem icon={<Flame size={14} />} label="Cấu hình cảnh báo cháy" onClick={() => { setSelectedFireDevice(d as CameraDevice); setRoiTab(4); }} />
-                        )}
-                        {d.type === 'camera_pd' && (
-                          <ActionDropdownItem icon={<Zap size={14} />} label="Vẽ vùng PD" onClick={() => { setSelectedPdDevice(d as CameraDevice); setRoiTab(2); }} />
-                        )}
-                        <ActionDropdownItem icon={<Trash2 size={14} />} label="Xóa thiết bị" danger onClick={() => handleDelete(d)} />
-                      </ActionDropdown>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        {embeddedMode !== 'central' && (
+          <div className="page-toolbar-row" style={{ marginBottom: 16 }}>
+            <div className="page-title-cell">
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <LayoutList size={22} /> Thiết bị giám sát
+              </h2>
+            </div>
+            <div className="page-toolbar-group">
+              <button className="btn-industrial" style={{ height: 32, padding: '0 16px', fontSize: '.72rem', fontWeight: 700 }} onClick={() => setIsScanModalOpen(true)}>Dò tìm thiết bị</button>
+              <button className="btn-industrial btn-primary" style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }} onClick={() => handleOpenModal()}>+ Thêm thiết bị</button>
+            </div>
+          </div>
+        )}
+
+        <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', borderRadius: embeddedMode === 'central' ? '0 0 4px 4px' : 4, borderTop: embeddedMode === 'central' ? '1px solid var(--admin-border)' : undefined }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <table className="data-table" style={{ width: '100%', margin: 0, borderCollapse: 'collapse' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--admin-layer-1)' }}>
+                <tr>
+                  <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                  {embeddedMode === 'central' && !stationIdOverride && <th>Trạm</th>}
+                  <th>Thiết bị / Tên / IP</th>
+                  <th>Phân loại</th>
+                  <th>Giao thức / Stream / Trạng thái</th>
+                  <th style={{ textAlign: 'center' }}>Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>⏳ Đang tải...</td></tr>
+                ) : embeddedMode === 'central' && !stationIdOverride ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>Chọn một trạm để xem thiết bị.</td></tr>
+                ) : devices.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>Chưa có thiết bị nào.</td></tr>
+                ) : (
+                  devices.map((device, idx) => (
+                    <tr key={device.id} style={{ borderBottom: '1px solid var(--admin-border)' }}>
+                      <td style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>{idx + 1}</td>
+                      {embeddedMode === 'central' && !stationIdOverride && (
+                         <td style={{ fontSize: '.75rem', fontWeight: 700 }}>{stations.find(s => s.id === device.stationId)?.name || '---'}</td>
+                      )}
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <b style={{ fontSize: '.8rem', color: 'var(--admin-text)', marginBottom: 2 }}>{device.name}</b>
+                          <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontFamily: 'monospace' }}>IP: {device.config?.ip || 'Không khai báo'}</div>
+                          {device.config?.cabinetId && (
+                            <span style={{ marginTop: 4, display: 'inline-block', fontSize: '.6rem', background: 'var(--admin-layer-2)', color: 'var(--admin-text)', padding: '2px 6px', borderRadius: 4, border: '1px solid var(--admin-border)' }}>
+                              Tủ liên kết: {device.config.cabinetId}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ 
+                          background: 'rgba(255,255,255,0.05)', color: 'var(--admin-text)', padding: '2px 8px', 
+                          borderRadius: 4, fontSize: '.65rem', fontWeight: 800, border: '1px solid var(--admin-border)'
+                        }}>
+                          {TYPE_LABELS[device.type] || device.type}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '.7rem', color: 'var(--admin-text-muted)' }}>
+                          {renderDeviceConfig(device)}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+                          <ActionDropdown
+                            actions={getDeviceActions(device)}
+                            triggerLabel="Thao tác"
+                            compact={true}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      )}
+      </div>
 
       {/* ═══ TAB 2: CẤU HÌNH VÙNG PD ═══ */}
-      {roiTab === 2 && (
+      {activeRoiTab === 2 && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
 
@@ -765,7 +763,7 @@ export default function DeviceManagementPage({
       )}
 
       {/* ═══ TAB 3: CẤU HÌNH ĐIỂM ĐO NHIỆT ĐỘ ═══ */}
-      {roiTab === 3 && selectedRoiDevice && (
+      {activeRoiTab === 3 && selectedRoiDevice && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           <ThermalConfigTab
             device={selectedRoiDevice}
@@ -775,7 +773,7 @@ export default function DeviceManagementPage({
       )}
 
       {/* ═══ TAB 4: CẤU HÌNH CẢNH BÁO CHÁY ═══ */}
-      {roiTab === 4 && selectedFireDevice && (
+      {activeRoiTab === 4 && selectedFireDevice && (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           <FireAlarmConfigTab
             device={selectedFireDevice}

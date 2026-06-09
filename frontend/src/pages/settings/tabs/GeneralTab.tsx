@@ -371,9 +371,6 @@ export default function GeneralTab() {
           <button className="btn-industrial" style={{ background: 'var(--admin-layer-3)', marginRight: 8, borderRadius: 0, fontSize: '.7rem' }} onClick={resetToFactoryDefaults}>
             CÀI LẠI MẶC ĐỊNH
           </button>
-          <button className="btn-industrial" style={{ background: 'var(--admin-layer-2)', borderRadius: 0, fontSize: '.7rem' }} onClick={loadSettings}>
-            TẢI LẠI DỮ LIỆU
-          </button>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

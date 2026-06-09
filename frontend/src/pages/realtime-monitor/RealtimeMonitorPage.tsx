@@ -64,7 +64,6 @@ export default function RealtimeMonitorPage({
   // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
   const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
   const [stationMenuOpen, setStationMenuOpen] = useState(false);
-  const [stationSearch, setStationSearch] = useState('');
   const [stationMenuPos, setStationMenuPos] = useState({ top: 0, left: 0, width: 260 });
   const stationBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -377,11 +376,9 @@ export default function RealtimeMonitorPage({
     return { totalStations, totalCams, onlineCams, totalAlerts, avgHealth };
   }, [stationCameraStats, alerts, stations]);
 
-  const filteredStationStats = useMemo(() => {
-    if (!stationSearch) return stationCameraStats;
-    const q = stationSearch.toLowerCase();
-    return stationCameraStats.filter(s => s.stationName.toLowerCase().includes(q));
-  }, [stationCameraStats, stationSearch]);
+  const filteredStats = useMemo(() => {
+    return stationCameraStats;
+  }, [stationCameraStats]);
 
   /** Render các polygon SVG vùng ROI nhiệt lên overlay của ô camera. */
   const renderOverlayBoundaries = (cam: CameraDevice) => {
@@ -1228,33 +1225,12 @@ export default function RealtimeMonitorPage({
                </div>
                
                <div style={{ flex: 1 }} />
-
-               <div style={{ position: 'relative' }}>
-                  <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
-                  <input 
-                    type="text" 
-                    placeholder="TÌM KIẾM TRẠM..." 
-                    value={stationSearch} 
-                    onChange={e => setStationSearch(e.target.value)}
-                    style={{ 
-                      background: 'rgba(0,0,0,0.2)', 
-                      border: '1px solid var(--admin-border)', 
-                      borderRadius: 2, 
-                      padding: '4px 10px 4px 26px', 
-                      fontSize: '.65rem', 
-                      fontWeight: 800,
-                      color: 'var(--admin-text)',
-                      width: 180,
-                      textTransform: 'uppercase'
-                    }} 
-                  />
-               </div>
             </div>
 
             {/* Station Mosaic Grid */}
             <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
-                  {filteredStationStats.map(stat => {
+                  {filteredStats.map(stat => {
                      const cam = stat.firstCam;
                      const health = stat.total > 0 ? Math.round((stat.online / stat.total) * 100) : 0;
                      const healthColor = health === 100 ? 'var(--admin-success)' : health >= 50 ? 'var(--admin-accent)' : 'var(--admin-danger)';

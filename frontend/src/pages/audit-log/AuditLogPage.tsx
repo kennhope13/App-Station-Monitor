@@ -5,6 +5,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { stationApi, Station } from '@/services/StationApiService';
 import { authService } from '@/services/AuthService';
 import { isCentralUser } from '@/utils/centralAccess';
@@ -32,7 +33,16 @@ interface LogItem {
 }
 
 export default function AuditLogPage({ embeddedMode = 'default', stationIdOverride = null }: AuditLogPageProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('all');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as TabId) || 'all';
+
+  const setActiveTab = (tab: TabId) => {
+    setSearchParams(prev => {
+      prev.set('tab', tab);
+      return prev;
+    }, { replace: true });
+  };
+
   const [timeRange, setTimeRange] = useState('today');
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<LogItem[]>([]);       // log đã gộp + chuẩn hóa
@@ -374,118 +384,117 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
   };
 
   return (
-    <div className="admin-page-container">
-      <div className="page-toolbar-row">
-        <div className="page-title-cell">
-          {embeddedMode !== 'central' && <h2>NHẬT KÝ</h2>}
-        </div>
-
-        <div className="page-toolbar-group">
-          {isCentralMode && (
-            <div className="page-toolbar-cell" style={{ height: 28 }}>
-              <span className="page-cell-label">TRẠM:</span>
-              <ToolbarSelect
-                value={filterStation}
-                onChange={setFilterStation}
-                options={[{ value: '', label: `Tất cả (${stationsList.length})` }, ...stationsList.map(s => ({ value: s.id, label: s.name }))]}
-                width={140}
-              />
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', height: '100%', overflow: 'hidden' }}>
+      
+      <div style={{ padding: '20px 20px 0 20px' }}>
+        <div className="admin-card" style={{ padding: 16, background: 'var(--admin-panel)', borderBottom: 'none', borderRadius: '4px 4px 0 0' }}>
+          <div className="page-toolbar-row" style={{ margin: 0, padding: 0 }}>
+            <div className="page-title-cell">
+              {embeddedMode !== 'central' && <h2>NHẬT KÝ</h2>}
             </div>
-          )}
 
-          <div className="page-toolbar-cell" style={{ height: 28 }}>
-            <span className="page-cell-label">LOẠI:</span>
-            <ToolbarSelect
-              value={activeTab}
-              onChange={(v: string) => setActiveTab(v as TabId)}
-              options={[
-                { value: 'all', label: 'Tất cả nhật ký' },
-                { value: 'audit', label: 'Hành động hệ thống' },
-                { value: 'login', label: 'Nhật ký đăng nhập' },
-              ]}
-              width={140}
-            />
-          </div>
+            <div className="page-toolbar-group">
+              {isCentralMode && (
+                <div className="page-toolbar-cell" style={{ height: 28 }}>
+                  <span className="page-cell-label">TRẠM:</span>
+                  <ToolbarSelect
+                    value={filterStation}
+                    onChange={setFilterStation}
+                    options={[{ value: '', label: `Tất cả (${stationsList.length})` }, ...stationsList.map(s => ({ value: s.id, label: s.name }))]}
+                    width={140}
+                  />
+                </div>
+              )}
 
-          <div className="page-toolbar-cell" style={{ height: 28 }}>
-            <span className="page-cell-label">THỜI GIAN:</span>
-            <ToolbarSelect
-              value={timeRange}
-              onChange={setTimeRange}
-              options={[
-                { value: 'today', label: 'Hôm nay' },
-                { value: 'yesterday', label: 'Hôm qua' },
-                { value: '7d', label: '7 ngày qua' },
-                { value: '30d', label: '30 ngày qua' },
-                { value: 'all', label: 'Tất cả lịch sử' },
-              ]}
-              width={110}
-            />
-          </div>
-
-          <button 
-            className="btn-industrial btn-primary" 
-            style={{ height: 28, padding: '0 12px', fontSize: '.72rem', fontWeight: 800 }}
-            onClick={loadData}
-          >
-            ↻ LÀM MỚI
-          </button>
-        </div>
-      </div>
-
-      <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: shouldGroupByStation ? 12 : 0 }}>
-          {shouldGroupByStation ? (
-            groupedStations.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {groupedStations.map(group => (
-                  <div key={group.id} className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '10px 14px',
-                      background: 'var(--admin-layer-1)',
-                      borderBottom: '1px solid var(--admin-border-subtle)'
-                    }}>
-                      <strong style={{ fontSize: '.84rem', letterSpacing: '.04em' }}>{group.name}</strong>
-                      <span style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{group.items.length} bản ghi</span>
-                    </div>
-                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead style={{ background: 'var(--admin-layer-1)' }}>
-                        {renderTableHead()}
-                      </thead>
-                      <tbody>
-                        {renderTableBody(group.items, `station-${group.id}-${activeTab}`)}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+              <div className="page-toolbar-cell" style={{ height: 28 }}>
+                <span className="page-cell-label">LOẠI:</span>
+                <ToolbarSelect
+                  value={activeTab}
+                  onChange={(v: string) => setActiveTab(v as TabId)}
+                  options={[
+                    { value: 'all', label: 'Tất cả nhật ký' },
+                    { value: 'audit', label: 'Hành động hệ thống' },
+                    { value: 'login', label: 'Nhật ký đăng nhập' },
+                  ]}
+                  width={140}
+                />
               </div>
+
+              <div className="page-toolbar-cell" style={{ height: 28 }}>
+                <span className="page-cell-label">THỜI GIAN:</span>
+                <ToolbarSelect
+                  value={timeRange}
+                  onChange={setTimeRange}
+                  options={[
+                    { value: 'today', label: 'Hôm nay' },
+                    { value: 'yesterday', label: 'Hôm qua' },
+                    { value: '7d', label: '7 ngày qua' },
+                    { value: '30d', label: '30 ngày qua' },
+                    { value: 'all', label: 'Tất cả lịch sử' },
+                  ]}
+                  width={110}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+      <div style={{ padding: '0 20px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', borderRadius: '0 0 4px 4px', borderTop: '1px solid var(--admin-border)' }}>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {shouldGroupByStation ? (
+              groupedStations.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 12 }}>
+                  {groupedStations.map(group => (
+                    <div key={group.id} className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        background: 'var(--admin-layer-1)',
+                        borderBottom: '1px solid var(--admin-border-subtle)'
+                      }}>
+                        <strong style={{ fontSize: '.84rem', letterSpacing: '.04em' }}>{group.name}</strong>
+                        <span style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{group.items.length} bản ghi</span>
+                      </div>
+                      <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+                        <thead style={{ background: 'var(--admin-layer-1)' }}>
+                          {renderTableHead()}
+                        </thead>
+                        <tbody>
+                          {renderTableBody(group.items, `station-${group.id}-${activeTab}`)}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+                  <tbody>
+                    {renderTableBody()}
+                  </tbody>
+                </table>
+              )
             ) : (
-              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--admin-layer-1)' }}>
+                  {renderTableHead()}
+                </thead>
                 <tbody>
                   {renderTableBody()}
                 </tbody>
               </table>
-            )
-          ) : (
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--admin-layer-1)' }}>
-                {renderTableHead()}
-              </thead>
-              <tbody>
-                {renderTableBody()}
-              </tbody>
-            </table>
-          )}
+            )}
+          </div>
+        </div>
+
+        <div className="audit-footer" style={{ marginTop: 8, padding: '0 4px', display: 'flex', justifyContent: 'space-between', fontSize: '.7rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>
+          <span>Nhật ký thời gian thực — không thể sửa đổi</span>
+          <span>{getRecordCount()} bản ghi</span>
         </div>
       </div>
-
-      <div className="audit-footer" style={{ marginTop: 8 }}>
-        <span>Nhật ký thời gian thực — không thể sửa đổi</span>
-        <span>{getRecordCount()} bản ghi</span>
-      </div>
     </div>
+  </div>
   );
 }

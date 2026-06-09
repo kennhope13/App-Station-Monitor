@@ -5,6 +5,7 @@
 // ============================================================
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { stationApi, AlertItem } from '@/services/StationApiService';
 import { useStationStore } from '@/store';
@@ -17,7 +18,16 @@ interface ReportsPageProps {
 }
 
 export default function ReportsPage({ embeddedMode = 'default' }: ReportsPageProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('export');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get('tab') as TabId) || 'export';
+
+  const setActiveTab = (tab: TabId) => {
+    setSearchParams(prev => {
+      prev.set('tab', tab);
+      return prev;
+    }, { replace: true });
+  };
+
   const [stationId, setStationId] = useState('');
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const stations = useStationStore(s => s.stations);
@@ -31,41 +41,46 @@ export default function ReportsPage({ embeddedMode = 'default' }: ReportsPagePro
   }, [fetchStations]);
 
   return (
-    <div className="admin-page-container">
-      {/* TOOLBAR & TAB BAR */}
-      <div className="page-toolbar-row">
-        <div className="page-title-cell">
-          {embeddedMode !== 'central' && <h2>BÁO CÁO</h2>}
-        </div>
-        <div className="page-toolbar-group">
-          <div className="page-toolbar-cell" style={{ height: 28 }}>
-            <span className="page-cell-label">TRẠM:</span>
-            <ToolbarSelect
-              value={stationId}
-              onChange={setStationId}
-              options={[{ value: '', label: 'Tất cả các trạm' }, ...stations.map(s => ({ value: s.id, label: s.name }))]}
-              width={160}
-            />
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', height: '100%', overflow: 'hidden' }}>
+      <div style={{ padding: '20px 20px 0 20px' }}>
+        <div className="admin-card" style={{ padding: 16, background: 'var(--admin-panel)', borderBottom: 'none', borderRadius: '4px 4px 0 0' }}>
+          <div className="page-toolbar-row" style={{ margin: 0, padding: 0 }}>
+            <div className="page-title-cell">
+              {embeddedMode !== 'central' && <h2>BÁO CÁO</h2>}
+            </div>
+            <div className="page-toolbar-group">
+              <div className="page-toolbar-cell" style={{ height: 28 }}>
+                <span className="page-cell-label">TRẠM:</span>
+                <ToolbarSelect
+                  value={stationId}
+                  onChange={setStationId}
+                  options={[{ value: '', label: 'Tất cả các trạm' }, ...stations.map(s => ({ value: s.id, label: s.name }))]}
+                  width={160}
+                />
+              </div>
+              <button 
+                onClick={() => setActiveTab('export')} 
+                className={`btn-industrial ${activeTab === 'export' ? 'btn-primary' : ''}`} 
+              >
+                Xuất dữ liệu
+              </button>
+              <button 
+                onClick={() => setActiveTab('report')} 
+                className={`btn-industrial ${activeTab === 'report' ? 'btn-primary' : ''}`} 
+              >
+                Báo cáo phân tích
+              </button>
+            </div>
           </div>
-          <button 
-            onClick={() => setActiveTab('export')} 
-            className={`btn-industrial ${activeTab === 'export' ? 'btn-primary' : ''}`} 
-          >
-            Xuất dữ liệu
-          </button>
-          <button 
-            onClick={() => setActiveTab('report')} 
-            className={`btn-industrial ${activeTab === 'report' ? 'btn-primary' : ''}`} 
-          >
-            Báo cáo phân tích
-          </button>
         </div>
       </div>
  
       {/* CONTENT */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {activeTab === 'export' && <ExportTab stationId={stationId} alerts={alerts} />}
-        {activeTab === 'report' && <ReportTab stationId={stationId} />}
+      <div style={{ padding: '0 20px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="admin-card" style={{ padding: 16, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column', borderRadius: '0 0 4px 4px', borderTop: '1px solid var(--admin-border)' }}>
+          {activeTab === 'export' && <ExportTab stationId={stationId} alerts={alerts} />}
+          {activeTab === 'report' && <ReportTab stationId={stationId} />}
+        </div>
       </div>
     </div>
   );

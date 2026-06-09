@@ -193,14 +193,6 @@ export default function MaintenancePage() {
           >
             + TẠO LỊCH MỚI
           </button>
-
-          <button
-            className="btn-industrial"
-            style={{ height: 32, padding: '0 10px', fontSize: '.75rem', fontWeight: 700 }}
-            onClick={() => loadData(stationId)}
-          >
-            ↺ LÀM MỚI
-          </button>
         </div>
       </div>
 

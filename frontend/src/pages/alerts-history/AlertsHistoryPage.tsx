@@ -414,12 +414,6 @@ export default function AlertsHistoryPage() {
           >
             ⬇ CSV
           </button>
-          <button 
-            className="btn-industrial btn-primary" 
-            onClick={loadAlerts} 
-          >
-            ↺ MỚI
-          </button>
         </div>
       </div>
 
@@ -733,9 +727,6 @@ function AlertDetailView({ data, onClose, onAck, onCloseAlert, onRefresh, device
         <span style={{ fontFamily: 'var(--admin-font-mono)', fontSize: '0.65rem', opacity: 0.5, flex: 1, textAlign: 'right', paddingRight: 12 }}>ID: {data.id.slice(0, 8)}</span>
         
         <div style={{ display: 'flex', gap: 6 }}>
-          <button className="btn-industrial" style={{ width: 28, height: 24, padding: 0, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }} onClick={onRefresh} title="Cập nhật">
-            <RefreshCw size={12} />
-          </button>
           <button className="btn-industrial" style={{ width: 28, height: 24, padding: 0, border: '1px solid var(--admin-border)', background: 'var(--admin-layer-2)' }} onClick={onClose}>✕</button>
         </div>
       </div>

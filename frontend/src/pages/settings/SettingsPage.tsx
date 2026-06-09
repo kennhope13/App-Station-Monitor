@@ -8,6 +8,7 @@
 // ============================================================
 
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import GeneralTab from './tabs/GeneralTab';
 import NotificationTab from './tabs/NotificationTab';
 import CloudSyncTab from './tabs/CloudSyncTab';
@@ -16,7 +17,15 @@ import './SettingsPage.css';
 const TABS = ['CHUNG', 'THÔNG BÁO', 'CLOUD SYNC'];
 
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = parseInt(searchParams.get('tab') || '0', 10);
+
+  const setActiveTab = (tab: number) => {
+    setSearchParams(prev => {
+      prev.set('tab', tab.toString());
+      return prev;
+    }, { replace: true });
+  };
 
   return (
     <div className="admin-page-container">

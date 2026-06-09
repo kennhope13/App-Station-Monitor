@@ -1,4 +1,205 @@
 /* AnalyticsLayout.css – Shared styles for Analytics pages, reusing AlertsHistory styles */
 @import "../alerts-history/AlertsHistoryPage.css";
 
-/* If any Analytics-specific overrides needed, add below */
+.analytics-shell {
+  gap: 14px;
+  padding: 14px 16px 18px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--admin-accent) 12%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--admin-bg) 82%, #020617), var(--admin-bg));
+}
+
+.analytics-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--admin-border);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--admin-layer-2) 92%, #fff), transparent 58%),
+    linear-gradient(180deg, color-mix(in srgb, var(--admin-panel) 88%, #09111c), color-mix(in srgb, var(--admin-bg) 78%, #040816));
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.14);
+  border-radius: 18px;
+}
+
+.analytics-hero-copy {
+  min-width: 0;
+}
+
+.analytics-eyebrow {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--admin-accent);
+}
+
+.analytics-hero-copy h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: 0.06em;
+}
+
+.analytics-hero-copy p {
+  margin: 8px 0 0;
+  max-width: 52ch;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--admin-text-muted);
+}
+
+.analytics-hero-status {
+  flex-shrink: 0;
+  min-width: 190px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--admin-accent) 24%, var(--admin-border));
+  background: color-mix(in srgb, var(--admin-layer-2) 72%, var(--admin-panel));
+  border-radius: 14px;
+  text-align: right;
+}
+
+.analytics-status-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--admin-text-muted);
+}
+
+.analytics-hero-status strong {
+  font-size: 0.92rem;
+  color: var(--admin-text);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.analytics-tab-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.analytics-tab-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--admin-border);
+  background: color-mix(in srgb, var(--admin-panel) 84%, transparent);
+  border-radius: 16px;
+  color: var(--admin-text);
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.analytics-tab-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--admin-accent) 34%, var(--admin-border));
+  background: color-mix(in srgb, var(--admin-layer-2) 80%, var(--admin-panel));
+}
+
+.analytics-tab-card.is-active {
+  border-color: color-mix(in srgb, var(--admin-accent) 45%, var(--admin-border));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--admin-accent) 14%, transparent), transparent 55%),
+    color-mix(in srgb, var(--admin-layer-2) 82%, var(--admin-panel));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+.analytics-tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  color: var(--admin-accent);
+  background: color-mix(in srgb, var(--admin-layer-2) 75%, transparent);
+  flex-shrink: 0;
+}
+
+.analytics-tab-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.analytics-tab-text strong {
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+}
+
+.analytics-tab-text small {
+  margin-top: 2px;
+  color: var(--admin-text-muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+}
+
+.analytics-content-surface {
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--admin-panel) 96%, #0b1220), color-mix(in srgb, var(--admin-bg) 92%, #050812));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+}
+
+.central-analytics-shell {
+  background:
+    radial-gradient(circle at top center, color-mix(in srgb, var(--admin-accent) 8%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--admin-bg) 78%, #020617), var(--admin-bg));
+}
+
+.central-analytics-header {
+  position: relative;
+  overflow: hidden;
+}
+
+.central-analytics-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--admin-accent) 16%, transparent), transparent 38%);
+  pointer-events: none;
+}
+
+.central-analytics-main {
+  gap: 12px;
+  padding: 12px;
+}
+
+.central-analytics-left,
+.central-analytics-right {
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
+}
+
+.central-analytics-map {
+  border: 1px solid var(--admin-border);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.14);
+}
+
+@media (max-width: 980px) {
+  .analytics-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .analytics-hero-status {
+    min-width: 0;
+    text-align: left;
+  }
+
+  .analytics-tab-strip {
+    grid-template-columns: 1fr;
+  }
+}
