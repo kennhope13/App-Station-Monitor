@@ -403,23 +403,36 @@
       setConnecting();
 
       try {
-        // Kiểm tra server có online không (qua fetch)
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
+        const timer = setTimeout(() => controller.abort(), 6000);
+        
+        let online = false;
         try {
+          // Gửi request tới health endpoint của Backend (thông qua proxy Vite)
           const res = await fetch(`${normalized}/api/v1/health`, {
             signal: controller.signal,
-            mode: 'no-cors'
           });
-          clearTimeout(timer);
-        } catch(e) {
-          clearTimeout(timer);
+          if (res.ok || res.status === 200) {
+            online = true;
+          }
+        } catch (e) {
           if (e.name === 'AbortError') {
-            showStatus('error', 'Không thể kết nối tới máy chủ. Kiểm tra lại địa chỉ IP.');
+            showStatus('error', 'Kết nối quá hạn (Timeout). Vui lòng kiểm tra lại IP hoặc bật VPN.');
             setIdle();
             return;
           }
-          // no-cors thường throw TypeError nhưng server vẫn đang chạy → OK
+          
+          // Thử fetch trang root để kiểm tra xem Web Server có phản hồi không
+          try {
+            const rootRes = await fetch(normalized, { signal: controller.signal, mode: 'no-cors' });
+            online = true;
+          } catch (rootErr) {
+            showStatus('error', 'Không thể kết nối tới máy chủ. Vui lòng kiểm tra lại IP hoặc bật VPN.');
+            setIdle();
+            return;
+          }
+        } finally {
+          clearTimeout(timer);
         }
 
         // Lưu URL và điều hướng
@@ -427,7 +440,7 @@
         await invoke('connect_to_server', { url: normalized });
 
       } catch (err) {
-        showStatus('error', `Lỗi: ${err}`);
+        showStatus('error', `Lỗi kết nối: ${err}`);
         setIdle();
       }
     }
