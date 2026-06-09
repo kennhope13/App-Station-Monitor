@@ -74,6 +74,36 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Cài đặt Tailscale từ file setup đóng gói sẵn
+#[tauri::command]
+fn install_tailscale(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::path::BaseDirectory;
+
+    let installer_path = app
+        .path()
+        .resolve("resources/tailscale-setup.exe", BaseDirectory::Resource)
+        .map_err(|e| format!("Không tìm thấy file cài đặt: {}", e))?;
+
+    if !installer_path.exists() {
+        return Err("File cài đặt Tailscale không tồn tại trong tài nguyên của app.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new(installer_path)
+            .spawn()
+            .map_err(|e| format!("Không thể khởi chạy trình cài đặt Tailscale: {}", e))?;
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app; // Tránh cảnh báo unused variable
+        return Err("Tính năng cài đặt nhanh Tailscale chỉ hỗ trợ trên hệ điều hành Windows.".to_string());
+    }
+
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -91,7 +121,8 @@ fn main() {
             get_server_url,
             connect_to_server,
             disconnect,
-            open_url
+            open_url,
+            install_tailscale
         ])
         .run(tauri::generate_context!())
         .expect("error while running station-monitor");

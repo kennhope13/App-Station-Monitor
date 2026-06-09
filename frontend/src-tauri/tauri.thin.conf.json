@@ -39,6 +39,9 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
+    "resources": [
+      "resources/tailscale-setup.exe"
+    ],
     "windows": {
       "digestAlgorithm": "sha256",
       "timestampUrl": "https://timestamp.digicert.com",

@@ -320,11 +320,16 @@
       <!-- Hint -->
       <div class="hint" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05)">
         <div style="margin-bottom: 8px;">Nhập địa chỉ IP của máy chủ trạm điện. App sẽ nhớ cho lần sau.</div>
-        <div style="margin-top: 8px; font-size: 11px; background: rgba(59,130,246,0.08); padding: 8px 12px; border-radius: 8px; border: 1px dashed rgba(59,130,246,0.2); text-align: left;">
-          <span style="color: var(--text-muted);">Kết nối từ xa hoặc khác dải mạng?</span><br/>
-          <a href="#" onclick="openTailscale()" style="color: #60a5fa; font-weight: 600; text-decoration: underline; display: inline-block; margin-top: 4px;">
-            Tải Tailscale VPN tại đây để thông mạng
-          </a>
+        <div style="margin-top: 8px; font-size: 11px; background: rgba(59,130,246,0.08); padding: 10px 12px; border-radius: 8px; border: 1px dashed rgba(59,130,246,0.2); text-align: left;">
+          <span style="color: var(--text-muted); font-weight: 600;">Kết nối từ xa hoặc khác dải mạng?</span><br/>
+          <div style="margin-top: 6px; display: flex; flex-direction: column; gap: 6px;">
+            <button onclick="runTailscaleInstaller()" style="background: #2563eb; color: #fff; border: none; padding: 6px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; text-align: center; transition: background 0.2s;">
+              🚀 Cài đặt nhanh Tailscale từ App
+            </button>
+            <a href="#" onclick="openTailscale()" style="color: #60a5fa; text-decoration: underline; font-size: 10px; text-align: center;">
+              Hoặc tải từ trang chủ tailscale.com
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -432,6 +437,18 @@
         await invoke('open_url', { url: 'https://tailscale.com/download' });
       } catch (err) {
         alert('Không thể mở trình duyệt: ' + err);
+      }
+    }
+
+    async function runTailscaleInstaller() {
+      try {
+        showStatus('connecting', 'Đang khởi chạy trình cài đặt Tailscale...');
+        await invoke('install_tailscale');
+        showStatus('success', 'Đã mở trình cài đặt Tailscale trên Windows!');
+        setTimeout(setIdle, 3000);
+      } catch (err) {
+        showStatus('error', `Lỗi: ${err}`);
+        setTimeout(setIdle, 4000);
       }
     }
 
