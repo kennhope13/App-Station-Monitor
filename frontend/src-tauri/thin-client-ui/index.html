@@ -336,6 +336,16 @@
   </div>
 
   <script>
+    if (!window.__TAURI__) {
+      window.__TAURI__ = {
+        core: {
+          invoke: async (cmd, args) => {
+            console.warn("Tauri API not injected. Command ignored:", cmd, args);
+            throw new Error("Tauri API is not available.");
+          }
+        }
+      };
+    }
     const { invoke } = window.__TAURI__.core;
 
     // Điền ví dụ
