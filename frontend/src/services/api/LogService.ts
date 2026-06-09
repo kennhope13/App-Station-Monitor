@@ -10,9 +10,11 @@ import type { AuditLogEntry, LoginLogEntry, NotifyLogEntry, RuleTriggerLogEntry 
 
 export class LogService {
   /** Log hành động người dùng (tạo/sửa/xóa thiết bị, rule, user...). */
-  async getAuditLogs(opts?: { limit?: number; action?: string; stationId?: string }): Promise<AuditLogEntry[]> {
+  async getAuditLogs(opts?: { limit?: number; action?: string; from?: string; to?: string; stationId?: string }): Promise<AuditLogEntry[]> {
     const params = new URLSearchParams({ limit: String(opts?.limit ?? 200) });
     if (opts?.action) params.set('action', opts.action);
+    if (opts?.from) params.set('from', opts.from);
+    if (opts?.to) params.set('to', opts.to);
     if (opts?.stationId) params.set('stationId', opts.stationId);
     return apiFetch(`/logs/audit?${params}`);
   }

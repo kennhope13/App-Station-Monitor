@@ -82,6 +82,10 @@ scratch/
 
 # AI Engine Temporary Data & Models
 ai_engine/data/received_data/
+ai_engine/data/live_predictions_*
+ai_engine/data/live_predictions_history_*
+ai_engine/data/live_thermal_history_*
+ai_engine/data/*.csv
 ai_engine/yolov8n.pt
 
 

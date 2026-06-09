@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SensorPoint, stationApi } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore, useSensorStore } from '@/store';
 import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
@@ -27,6 +27,7 @@ import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
  * Nhận cập nhật realtime qua SignalR và tự động resolve stationId từ URL hoặc API.
  */
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // Ưu tiên stationId từ URL (?stationId=...), nếu không có thì tự fetch trạm đầu tiên
   const [stationId, setStationId] = useState(searchParams.get('stationId') ?? '');
@@ -51,6 +52,8 @@ export default function DashboardPage() {
   const stations = useStationStore(s => s.stations);
   const fetchStations = useStationStore(s => s.fetch);
   const getFirstStationId = useStationStore(s => s.getFirstStationId);
+  const viewingStationId = useStationStore(s => s.viewingStationId);
+  const setViewingStation = useStationStore(s => s.setViewingStation);
 
   // Lấy map gốc rồi useMemo derive ra array — tránh infinite re-render do `?? []` tạo ref mới
   const devicesByStation = useDeviceStore(s => s.devicesByStation);
@@ -92,6 +95,8 @@ export default function DashboardPage() {
     const cfg = (cam as any).config || {};
     return (cfg.go2rtc_optical || cfg.go2rtc_id || cfg.go2rtc_thermal) as string | undefined;
   }, [devices]);
+
+  const isMulti = Boolean(searchParams.get('stationId') || viewingStationId);
 
   // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
@@ -361,6 +366,11 @@ export default function DashboardPage() {
         stationName={stationName || 'StationOS'}
         isEditMode={isEditMode}
         onToggleEditMode={() => setIsEditMode(!isEditMode)}
+        isMulti={isMulti}
+        onBackToCentral={() => {
+          setViewingStation(null);
+          navigate('/multisite');
+        }}
         showLabels={showLabels}
         onToggleLabels={() => setShowLabels(!showLabels)}
         onFit={handleFit}

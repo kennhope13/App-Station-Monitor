@@ -79,13 +79,6 @@ export const useStationStore = create<StationStore>((set, get) => ({
       return first;
     }
 
-    // Restricted admin / operator / manager: ép về trạm Long An (demo default)
-    const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
-    if (mainStation) {
-      localStorage.setItem('selected_station_id', mainStation.id);
-      return mainStation.id;
-    }
-
     if (saved && stations.some(s => s.id === saved)) return saved;
     const defaultId = stations[0]?.id ?? null;
     if (defaultId) localStorage.setItem('selected_station_id', defaultId);

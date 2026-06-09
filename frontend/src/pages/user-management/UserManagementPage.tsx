@@ -4,13 +4,16 @@
 // Chức năng: thêm/sửa tài khoản, đổi mật khẩu, vô hiệu hóa, phân quyền trạm
 // ============================================================
 
-import { useState, useEffect } from 'react';
-import CentralTitleMenu from '@/components/CentralTitleMenu';
+import { useState, useEffect, useMemo } from 'react';
 import { stationApi, UserItem, Station } from '@/services/StationApiService';
 import { confirmDialog } from '@/utils/confirm';
 import { authService } from '@/services/AuthService';
 
-export default function UserManagementPage() {
+interface UserManagementPageProps {
+  embeddedMode?: 'default' | 'central';
+}
+
+export default function UserManagementPage({ embeddedMode = 'default' }: UserManagementPageProps) {
   const currentUser = authService.getUser();
   const isRestrictedAdmin = currentUser?.station_ids && currentUser.station_ids.length > 0;
   const myStationIds: string[] = currentUser?.station_ids ?? [];
@@ -18,6 +21,7 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [stationsList, setStationsList] = useState<Station[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterStationId, setFilterStationId] = useState('');
 
   // Modals state
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -159,11 +163,90 @@ export default function UserManagementPage() {
     return 'Tất cả trạm (mặc định)';
   };
 
+  const filteredUsers = useMemo(() => {
+    if (!filterStationId) return users;
+    return users.filter(u => (u.stationIds ?? []).includes(filterStationId));
+  }, [users, filterStationId]);
+
+  const scopedSummary = useMemo(() => {
+    const list = filteredUsers;
+    return {
+      total: list.length,
+      active: list.filter(u => u.isActive).length,
+      admins: list.filter(u => u.role === 'admin').length,
+    };
+  }, [filteredUsers]);
+
   return (
     <div className="admin-page-container">
+      {embeddedMode === 'central' && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1.3fr repeat(3, minmax(120px, 1fr))',
+            gap: 12,
+            marginBottom: 12,
+          }}
+        >
+          <div style={{ border: '1px solid var(--admin-border)', background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
+                  NGƯỜI DÙNG
+                </div>
+                <div style={{ marginTop: 6, fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>
+                  {filterStationId ? (stationsList.find(s => s.id === filterStationId)?.name || 'Không rõ trạm') : 'Toàn mạng lưới'}
+                </div>
+                <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
+                    Phạm vi: <b style={{ color: 'var(--admin-text)' }}>{filterStationId ? 'Theo trạm' : 'Tất cả trạm'}</b>
+                  </span>
+                </div>
+              </div>
+              <div style={{ minWidth: 220 }}>
+                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>LỌC NGƯỜI DÙNG THEO TRẠM</div>
+                <select
+                  value={filterStationId}
+                  onChange={e => setFilterStationId(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'rgba(15,23,42,0.65)',
+                    border: '1px solid var(--admin-accent)',
+                    color: 'var(--admin-text)',
+                    padding: '8px 10px',
+                    fontSize: '.74rem',
+                    fontWeight: 700,
+                    outline: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="">Tất cả các trạm</option>
+                  {stationsList.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {(s.code ? `${s.code} - ` : '') + s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {[
+            { label: 'Tổng tài khoản', value: scopedSummary.total, color: 'var(--admin-text)' },
+            { label: 'Đang hoạt động', value: scopedSummary.active, color: 'var(--admin-success)' },
+            { label: 'Tài khoản admin', value: scopedSummary.admins, color: 'var(--admin-accent)' },
+          ].map(card => (
+            <div key={card.label} style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
+              <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>{card.label}</div>
+              <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: card.color }}>{card.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <CentralTitleMenu title="NGƯỜI DÙNG" />
+          {embeddedMode !== 'central' && <h2>NGƯỜI DÙNG</h2>}
         </div>
         <div className="page-toolbar-group">
           <button 
@@ -191,10 +274,12 @@ export default function UserManagementPage() {
           <tbody>
             {loading ? (
               <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 32 }}>⏳ Đang tải...</td></tr>
-            ) : users.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 32 }}>Chưa có người dùng nào</td></tr>
+            ) : filteredUsers.length === 0 ? (
+              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 32 }}>
+                {filterStationId ? 'Không có người dùng nào thuộc trạm đã chọn' : 'Chưa có người dùng nào'}
+              </td></tr>
             ) : (
-              users.map(u => {
+              filteredUsers.map(u => {
                 const roleColor = u.role === 'admin' ? 'var(--admin-danger)' : u.role === 'manager' ? 'var(--admin-warning)' : 'var(--admin-success)';
                 const roleLabel = u.role === 'admin' ? 'ADMIN' : u.role === 'manager' ? 'MANAGER' : 'OPERATOR';
                 return (

@@ -6,6 +6,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { Calendar, RefreshCw, Play, Camera } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import CentralTitleMenu from '@/components/CentralTitleMenu';
@@ -345,62 +346,66 @@ export default function AlertsHistoryPage() {
           {isCentralMode && (
             <div className="page-toolbar-cell" style={{ height: 28 }}>
               <span className="page-cell-label">TRẠM:</span>
-              <select 
-                className="form-select" 
-                style={{ width: 120, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} 
-                value={filterStation} 
-                onChange={e => setFilterStation(e.target.value)}
-              >
-                <option value="">Tất cả ({stations.length})</option>
-                {stations.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}
-              </select>
+              <ToolbarSelect
+                value={filterStation}
+                onChange={setFilterStation}
+                options={[{ value: '', label: `Tất cả (${stations.length})` }, ...stations.map(s => ({ value: s.id, label: s.name }))]}
+                width={140}
+              />
             </div>
           )}
           <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">LỌC NHANH:</span>
-            <select className="form-select" style={{ width: 95, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} value={timeRange} onChange={e => { setTimeRange(e.target.value); if (e.target.value === 'custom') setDateModalOpen(true); }}>
-
-              <option value="today">Hôm nay</option>
-              <option value="yesterday">Hôm qua</option>
-              <option value="7d">7 ngày</option>
-              <option value="30d">30 ngày</option>
-              <option value="all">Tất cả</option>
-              <option value="custom">Tùy chỉnh</option>
-            </select>
+            <ToolbarSelect
+              value={timeRange}
+              onChange={v => { setTimeRange(v); if (v === 'custom') setDateModalOpen(true); }}
+              options={[
+                { value: 'today', label: 'Hôm nay' },
+                { value: 'yesterday', label: 'Hôm qua' },
+                { value: '7d', label: '7 ngày' },
+                { value: '30d', label: '30 ngày' },
+                { value: 'all', label: 'Tất cả' },
+                { value: 'custom', label: 'Tùy chỉnh' },
+              ]}
+              width={110}
+            />
             <button className="btn-industrial" style={{ height: 22, width: 22, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '.8rem', border: 'none', background: 'transparent', opacity: 0.8 }} title="Chọn ngày" onClick={() => setDateModalOpen(true)}><Calendar size={14} strokeWidth={2} /></button>
           </div>
           <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">THIẾT BỊ:</span>
-            <select className="form-select" style={{ width: 110, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} value={filterDevice} onChange={e => setFilterDevice(e.target.value)}>
-              <option value="">Tất cả ({devices.length})</option>
-              {devices.map(d => (<option key={d.id} value={d.id}>{d.name}</option>))}
-            </select>
+            <ToolbarSelect
+              value={filterDevice}
+              onChange={setFilterDevice}
+              options={[{ value: '', label: `Tất cả (${devices.length})` }, ...devices.map(d => ({ value: d.id, label: d.name }))]}
+              width={130}
+            />
           </div>
           <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">SỰ KIỆN:</span>
-            <select className="form-select" style={{ width: 85, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} value={filterType} onChange={e => setFilterType(e.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="nguoi">Người</option>
-              <option value="chay">Cháy</option>
-              <option value="diem">Nhiệt</option>
-            </select>
+            <ToolbarSelect
+              value={filterType}
+              onChange={setFilterType}
+              options={[{ value: '', label: 'Tất cả' }, { value: 'nguoi', label: 'Người' }, { value: 'chay', label: 'Cháy' }, { value: 'diem', label: 'Nhiệt' }]}
+              width={90}
+            />
           </div>
           <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">MỨC:</span>
-            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="alarm">Báo động</option>
-              <option value="warning">Cảnh báo</option>
-            </select>
+            <ToolbarSelect
+              value={filterLevel}
+              onChange={setFilterLevel}
+              options={[{ value: '', label: 'Tất cả' }, { value: 'alarm', label: 'Báo động' }, { value: 'warning', label: 'Cảnh báo' }]}
+              width={100}
+            />
           </div>
           <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">TT:</span>
-            <select className="form-select" style={{ width: 80, height: 22, fontSize: '.75rem', padding: '0 4px', background: 'transparent', border: 'none', color: 'var(--admin-text)', fontWeight: 600 }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-              <option value="">Tất cả</option>
-              <option value="open">Mở</option>
-              <option value="acked">Đang XL</option>
-              <option value="closed">Đóng</option>
-            </select>
+            <ToolbarSelect
+              value={filterStatus}
+              onChange={setFilterStatus}
+              options={[{ value: '', label: 'Tất cả' }, { value: 'open', label: 'Mở' }, { value: 'acked', label: 'Đang XL' }, { value: 'closed', label: 'Đóng' }]}
+              width={90}
+            />
           </div>
           <button 
             className="btn-industrial" 

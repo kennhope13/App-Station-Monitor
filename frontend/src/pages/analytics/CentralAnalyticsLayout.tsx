@@ -211,7 +211,7 @@ export default function CentralAnalyticsLayout() {
       <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
         <section style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)' }}>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.78rem', color: 'var(--admin-text)' }}>
-            Xếp hạng rủi ro đa trạm
+            Xếp hạng rủi ro
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -325,7 +325,7 @@ export default function CentralAnalyticsLayout() {
             );
           })}
           {thermalRanking.length === 0 && (
-            <div style={{ color: 'var(--admin-text-muted)' }}>Chưa có dữ liệu nhiệt đa trạm.</div>
+            <div style={{ color: 'var(--admin-text-muted)' }}>Chưa có dữ liệu nhiệt.</div>
           )}
         </div>
       </section>
@@ -502,7 +502,7 @@ export default function CentralAnalyticsLayout() {
       </div>
 
       {loading ? (
-        <div style={{ padding: 24, color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>Đang tổng hợp dữ liệu phân tích đa trạm...</div>
+        <div style={{ padding: 24, color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>Đang tổng hợp dữ liệu phân tích...</div>
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           {activeTab === 'overview' && renderOverview()}

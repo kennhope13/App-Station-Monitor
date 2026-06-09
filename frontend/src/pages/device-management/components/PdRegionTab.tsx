@@ -82,7 +82,7 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
       try {
         const token = authService.getToken() || '';
         const backend = API_BASE_URL.replace('/api/v1', '');
-        const fetchUrl = `/pd-monitor/${cam.id}/state?token=${token}&backend=${backend}`;
+        const fetchUrl = `${AI_ENGINE_URL}/pd-monitor/${cam.id}/state?token=${token}&backend=${backend}`;
         const res = await fetch(fetchUrl);
         if (res.ok) {
           const data = await res.json();
@@ -338,38 +338,42 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
               const statusColor = isAlarm ? '#ef4444' : isWarning ? '#fbbf24' : '#10b981';
 
               const count = aiStats.discharge_counts?.[b.name] || 0;
+              const displayDb = aiStats.db ?? null;
+              const displayHz = aiStats.hz ?? null;
 
               return (
                 <div key={b.id} style={{ 
                   position:'absolute', left:`${cx}%`, top:`${cy}%`, transform:'translate(-50%,-50%)', 
-                  background:'rgba(13,17,23,0.9)', padding:'2px 4px', borderRadius: 2,
-                  color:'#fff', fontSize:8, fontWeight:700, pointerEvents:'none',
-                  border: isActive ? `1px solid ${statusColor}` : '1px solid rgba(255,255,255,0.15)',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0,
-                  boxShadow: isActive ? `0 0 4px ${statusColor}44` : 'none',
+                  background:'rgba(10,14,20,0.88)', padding:'5px 8px', borderRadius: 3,
+                  color:'#fff', pointerEvents:'none',
+                  border: `1px solid ${isActive ? statusColor : 'rgba(255,255,255,0.2)'}`,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                  boxShadow: isActive ? `0 0 10px ${statusColor}55` : 'none',
                   zIndex: isActive ? 20 : 10,
-                  transition: 'all 0.3s ease'
+                  transition: 'all 0.3s ease',
+                  minWidth: 70,
                 }}>
-                  <div style={{ opacity: 0.85, fontSize: 8 }}>
+                  {/* dB — số lớn */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                    <span style={{
+                      fontSize: isActive ? 20 : 14, fontWeight: 900, fontFamily: 'monospace', lineHeight: 1,
+                      color: isActive ? statusColor : 'rgba(255,255,255,0.55)',
+                    }}>
+                      {displayDb != null ? displayDb.toFixed(1) : '--'}
+                    </span>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.4)' }}>dB</span>
+                  </div>
+                  {/* Hz */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 3 }}>
+                    <span style={{ fontSize: 10, fontWeight: 800, fontFamily: 'monospace', color: 'rgba(255,255,255,0.7)' }}>
+                      {displayHz != null ? (displayHz / 1000).toFixed(1) : '--'}
+                    </span>
+                    <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.35)' }}>kHz</span>
+                  </div>
+                  {/* Tên vùng + số lần */}
+                  <div style={{ fontSize: 8, opacity: 0.7, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 2, marginTop: 1 }}>
                     {isActive && <span style={{ marginRight: 2 }}>⚡</span>}{displayName} ({count})
                   </div>
-                  {isActive && (
-                    <div style={{ 
-                      color: statusColor, 
-                      fontSize: '9px', 
-                      fontFamily: 'monospace', 
-                      borderTop: '1px solid rgba(255,255,255,0.1)', 
-                      paddingTop: 2, 
-                      marginTop: 2, 
-                      fontWeight: 800,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center'
-                    }}>
-                      <div>{currentDb != null ? `${currentDb.toFixed(1)} dB` : '-- dB'}</div>
-                      {aiStats.hz != null && <div style={{ fontSize: '8px', opacity: 0.85 }}>{aiStats.hz.toFixed(0)} Hz</div>}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -385,6 +389,7 @@ export default function PdRegionTab({ initialCamera: cam }: Props) {
           )}
         </div>
       </div>
+
 
       {/* ── Sidebar ── */}
       <div style={{ width:280, borderLeft:'1px solid var(--admin-border)', background:'var(--admin-layer-1)', display:'flex', flexDirection:'column', flexShrink:0 }}>

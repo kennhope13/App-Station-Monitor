@@ -4,7 +4,7 @@
 // Tính năng: Thêm/sửa/xóa, kiểm tra kết nối, dò tìm mạng (scan)
 // ============================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LayoutList, Trash2, Settings, Zap, Thermometer, Eye, EyeOff, ShieldAlert, Flame } from 'lucide-react';
 import { stationApi, Device, CameraDevice, Rule } from '@/services/StationApiService';
@@ -15,6 +15,7 @@ import { useStationStore } from '@/store';
 import ThermalConfigTab from './components/ThermalConfigTab';
 import PdRegionTab from './components/PdRegionTab';
 import FireAlarmConfigTab from './components/FireAlarmConfigTab';
+import { MULTISITE_DRILL_STATION_KEY } from '@/utils/centralAccess';
 
 import ActionDropdown, { ActionDropdownItem } from '@/components/ui/ActionDropdown';
 
@@ -51,6 +52,7 @@ export default function DeviceManagementPage({
 }: DeviceManagementPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const stations = useStationStore(s => s.stations);
+  const viewingStationId = useStationStore(s => s.viewingStationId);
   const [stationId, setStationId] = useState<string | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +119,9 @@ export default function DeviceManagementPage({
   const [isEditingRule, setIsEditingRule] = useState(false);
   const [ruleEditingId, setRuleEditingId] = useState<string | null>(null);
   const [pointOptions, setPointOptions] = useState<any[]>(FALLBACK_POINTS);
+  const [stationMenuOpen, setStationMenuOpen] = useState(false);
+  const [stationMenuPos, setStationMenuPos] = useState({ top: 0, left: 0, width: 260 });
+  const stationBtnRef = useRef<HTMLButtonElement>(null);
 
   const [ruleFormData, setRuleFormData] = useState({
     name: '',
@@ -285,8 +290,15 @@ export default function DeviceManagementPage({
   };
 
   useEffect(() => {
+    if (embeddedMode === 'central' && !stationIdOverride) {
+      setStationId(null);
+      setDevices([]);
+      setLoading(false);
+      setStationMenuOpen(false);
+      return;
+    }
     loadDevices(stationIdOverride);
-  }, [stationIdOverride]);
+  }, [stationIdOverride, embeddedMode]);
 
   useEffect(() => {
     if (!stationId || loading) return;
@@ -311,14 +323,22 @@ export default function DeviceManagementPage({
   const loadDevices = async (preferredStationId?: string | null) => {
     setLoading(true);
     try {
-      const id = preferredStationId || await stationApi.getFirstStationId();
+      const savedStationId = localStorage.getItem('selected_station_id');
+      const drillStationId = localStorage.getItem(MULTISITE_DRILL_STATION_KEY);
+      const fallbackStationId = embeddedMode === 'central'
+        ? null
+        : preferredStationId || viewingStationId || drillStationId || savedStationId || await stationApi.getFirstStationId();
+      const id = preferredStationId || fallbackStationId;
       setStationId(id);
       if (id && id !== stationIdOverride) {
         onStationIdChange?.(id);
+        localStorage.setItem('selected_station_id', id);
       }
       if (id) {
         const data = await stationApi.getDevices(id);
         setDevices(data);
+      } else {
+        setDevices([]);
       }
     } catch (e) {
       console.error(e);
@@ -522,82 +542,11 @@ export default function DeviceManagementPage({
   };
 
   const online = devices.filter(d => d.status === 'online').length;
-  const selectedStation = stations.find(s => s.id === stationId) || null;
-  const offline = devices.length - online;
+  const requiresStationSelection = embeddedMode === 'central' && !stationId;
 
 
   return (
     <div className="admin-page-container">
-      {embeddedMode === 'central' && roiTab === 0 && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1.3fr repeat(3, minmax(120px, 1fr))',
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ border: '1px solid var(--admin-border)', background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
-                  THIẾT BỊ ĐA TRẠM
-                </div>
-                <div style={{ marginTop: 6, fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>
-                  {selectedStation?.name || 'Chưa chọn trạm'}
-                </div>
-                <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
-                    Mã trạm: <b style={{ color: 'var(--admin-text)' }}>{selectedStation?.code || '---'}</b>
-                  </span>
-                  <span style={{ fontSize: '.62rem', fontWeight: 800, color: '#fff', background: 'rgba(14,165,233,0.22)', border: '1px solid rgba(14,165,233,0.35)', padding: '2px 6px' }}>
-                    CHẾ ĐỘ ĐA TRẠM
-                  </span>
-                </div>
-              </div>
-              <div style={{ minWidth: 180 }}>
-                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>CHUYỂN TRẠM ĐANG QUẢN LÝ</div>
-                <select
-                  value={stationId || ''}
-                  onChange={async e => {
-                    const nextId = e.target.value;
-                    onStationIdChange?.(nextId);
-                    await loadDevices(nextId);
-                  }}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(15,23,42,0.65)',
-                    border: '1px solid var(--admin-accent)',
-                    color: 'var(--admin-text)',
-                    padding: '8px 10px',
-                    fontSize: '.74rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {stations.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {(s.code ? `${s.code} - ` : '') + s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {[
-            { label: 'Tổng thiết bị', value: devices.length, color: 'var(--admin-text)' },
-            { label: 'Đang online', value: online, color: 'var(--admin-success)' },
-            { label: 'Đang offline', value: offline, color: offline > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)' },
-          ].map(card => (
-            <div key={card.label} style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-              <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>{card.label}</div>
-              <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: card.color }}>{card.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* TOOLBAR */}
       {roiTab === 3 ? (
@@ -645,7 +594,61 @@ export default function DeviceManagementPage({
       ) : (
         <div className="page-toolbar-row">
           <div className="page-title-cell">
-            <h2>{embeddedMode === 'central' ? 'THIẾT BỊ ĐA TRẠM' : 'QUẢN LÝ THIẾT BỊ'}</h2>
+            {embeddedMode !== 'central' && <h2>QUẢN LÝ THIẾT BỊ</h2>}
+            {embeddedMode === 'central' && (
+              <div style={{ display: 'inline-block' }}>
+                {stationMenuOpen && (
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
+                )}
+                <button
+                  ref={stationBtnRef}
+                  onClick={() => {
+                    const r = stationBtnRef.current?.getBoundingClientRect();
+                    if (r) setStationMenuPos({ top: r.bottom, left: r.left, width: r.width });
+                    setStationMenuOpen(o => !o);
+                  }}
+                  style={{
+                    width: 260, background: '#0f1729',
+                    border: '1px solid var(--admin-border)',
+                    color: 'var(--admin-text)', padding: '4px 10px',
+                    fontSize: '.72rem', fontWeight: 700, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {stations.find(s => s.id === stationId)?.name || 'Chọn trạm'}
+                  </span>
+                  <span style={{ flexShrink: 0, opacity: 0.5, fontSize: '.65rem' }}>▾</span>
+                </button>
+                {stationMenuOpen && (
+                  <div style={{
+                    position: 'fixed', top: stationMenuPos.top, left: stationMenuPos.left,
+                    width: stationMenuPos.width, zIndex: 9999,
+                    background: '#0f1729', border: '1px solid var(--admin-border)',
+                    maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  }}>
+                    {stations.map(s => (
+                      <div
+                        key={s.id}
+                        onClick={async () => { onStationIdChange?.(s.id); await loadDevices(s.id); setStationMenuOpen(false); }}
+                        style={{
+                          padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
+                          fontWeight: stationId === s.id ? 800 : 500,
+                          color: stationId === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
+                          background: stationId === s.id ? 'rgba(14,165,233,0.12)' : 'transparent',
+                          borderLeft: `2px solid ${stationId === s.id ? 'var(--admin-accent)' : 'transparent'}`,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}
+                        onMouseEnter={e => { if (stationId !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                        onMouseLeave={e => { if (stationId !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                      >
+                        {(s.code ? `${s.code} - ` : '') + s.name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="page-toolbar-group">
             {/* Status Indicators */}
@@ -658,13 +661,17 @@ export default function DeviceManagementPage({
             {/* Action Buttons */}
             <button 
               className="btn-industrial btn-primary" 
+              disabled={requiresStationSelection}
               onClick={() => openDeviceModal()}
+              style={requiresStationSelection ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               + THÊM THIẾT BỊ
             </button>
             <button 
               className="btn-industrial" 
+              disabled={requiresStationSelection}
               onClick={() => setIsScanModalOpen(true)}
+              style={requiresStationSelection ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               QUÉT LAN
             </button>
@@ -689,6 +696,8 @@ export default function DeviceManagementPage({
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>⏳ Đang tải...</td></tr>
+              ) : embeddedMode === 'central' && !stationId ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Chọn một trạm để xem thiết bị.</td></tr>
               ) : devices.length === 0 ? (
                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Chưa có thiết bị nào.</td></tr>
               ) : (

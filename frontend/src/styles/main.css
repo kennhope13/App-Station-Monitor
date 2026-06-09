@@ -15013,12 +15013,12 @@ body.has-critical-banner .panels-grid {
 }
 
 .sb-profile-name {
-  font-size: 0.75rem;
+  font-size: 0.62rem;
   font-weight: 700;
   color: var(--admin-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
   text-align: left;
 }
 

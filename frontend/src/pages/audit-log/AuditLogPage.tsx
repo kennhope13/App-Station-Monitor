@@ -6,14 +6,19 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CentralTitleMenu from '@/components/CentralTitleMenu';
 import { stationApi, Station } from '@/services/StationApiService';
 import { authService } from '@/services/AuthService';
 import { isCentralUser } from '@/utils/centralAccess';
 import { fmtDateTime, fmtTimeRange } from '@/utils/format';
+import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import './AuditLogPage.css';
 
 type TabId = 'all' | 'audit' | 'login' | 'notify' | 'triggers';
+
+interface AuditLogPageProps {
+  embeddedMode?: 'default' | 'central';
+  stationIdOverride?: string | null;
+}
 
 // Cấu trúc chuẩn hóa dùng để hiển thị — gộp từ nhiều nguồn log khác nhau
 interface LogItem {
@@ -27,7 +32,7 @@ interface LogItem {
   raw: any;       // object gốc từ API, dùng khi expand dòng
 }
 
-export default function AuditLogPage() {
+export default function AuditLogPage({ embeddedMode = 'default', stationIdOverride = null }: AuditLogPageProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [timeRange, setTimeRange] = useState('today');
@@ -42,7 +47,7 @@ export default function AuditLogPage() {
   const isCentralMode = isCentralUser(currentUser);
 
   const [stationsList, setStationsList] = useState<Station[]>([]);
-  const [filterStation, setFilterStation] = useState<string>('');
+  const [filterStation, setFilterStation] = useState<string>(stationIdOverride || '');
 
   // Theo dõi dòng nào đang mở rộng để xem raw JSON
   const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
@@ -437,61 +442,59 @@ export default function AuditLogPage() {
 
   return (
     <div className="admin-page-container">
-      <div className="audit-page-header">
-        <div className="audit-page-title">
-          <CentralTitleMenu title="NHẬT KÝ" />
+      <div className="page-toolbar-row">
+        <div className="page-title-cell">
+          {embeddedMode !== 'central' && <h2>NHẬT KÝ</h2>}
         </div>
 
-        <div className="audit-page-controls">
+        <div className="page-toolbar-group">
           {isCentralMode && (
-            <div className="audit-page-control">
-              <span className="audit-page-label">TRẠM:</span>
-              <select
+            <div className="page-toolbar-cell" style={{ height: 28 }}>
+              <span className="page-cell-label">TRẠM:</span>
+              <ToolbarSelect
                 value={filterStation}
-                onChange={e => setFilterStation(e.target.value)}
-                className="audit-page-select"
-              >
-                <option value="">Tất cả ({stationsList.length})</option>
-                {stationsList.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                onChange={setFilterStation}
+                options={[{ value: '', label: `Tất cả (${stationsList.length})` }, ...stationsList.map(s => ({ value: s.id, label: s.name }))]}
+                width={140}
+              />
             </div>
           )}
 
-          <div className="audit-page-control">
-            <span className="audit-page-label">LOẠI:</span>
-            <select
+          <div className="page-toolbar-cell" style={{ height: 28 }}>
+            <span className="page-cell-label">LOẠI:</span>
+            <ToolbarSelect
               value={activeTab}
-              onChange={e => setActiveTab(e.target.value as TabId)}
-              className="audit-page-select"
-            >
-              <option value="all">Tất cả nhật ký</option>
-              <option value="audit">Hành động hệ thống</option>
-              <option value="login">Nhật ký đăng nhập</option>
-              <option value="notify">Thông báo Email/SMS</option>
-              <option value="triggers">Quy tắc kích hoạt</option>
-            </select>
+              onChange={(v: string) => setActiveTab(v as TabId)}
+              options={[
+                { value: 'all', label: 'Tất cả nhật ký' },
+                { value: 'audit', label: 'Hành động hệ thống' },
+                { value: 'login', label: 'Nhật ký đăng nhập' },
+                { value: 'notify', label: 'Thông báo Email/SMS' },
+                { value: 'triggers', label: 'Quy tắc kích hoạt' },
+              ]}
+              width={140}
+            />
           </div>
 
-          <div className="audit-page-control">
-            <span className="audit-page-label">THỜI GIAN:</span>
-            <select
+          <div className="page-toolbar-cell" style={{ height: 28 }}>
+            <span className="page-cell-label">THỜI GIAN:</span>
+            <ToolbarSelect
               value={timeRange}
-              onChange={e => setTimeRange(e.target.value)}
-              className="audit-page-select"
-            >
-              <option value="today">Hôm nay</option>
-              <option value="yesterday">Hôm qua</option>
-              <option value="7d">7 ngày qua</option>
-              <option value="30d">30 ngày qua</option>
-              <option value="all">Tất cả lịch sử</option>
-            </select>
+              onChange={setTimeRange}
+              options={[
+                { value: 'today', label: 'Hôm nay' },
+                { value: 'yesterday', label: 'Hôm qua' },
+                { value: '7d', label: '7 ngày qua' },
+                { value: '30d', label: '30 ngày qua' },
+                { value: 'all', label: 'Tất cả lịch sử' },
+              ]}
+              width={110}
+            />
           </div>
 
           <button 
             className="btn-industrial btn-primary" 
-            style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
+            style={{ height: 28, padding: '0 12px', fontSize: '.72rem', fontWeight: 800 }}
             onClick={loadData}
           >
             ↻ LÀM MỚI
@@ -499,16 +502,12 @@ export default function AuditLogPage() {
         </div>
       </div>
 
-      <div className="admin-card audit-card" style={{ borderRadius: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div className="audit-table-header-sticky">
-          <table className="data-table audit-table" style={{ marginBottom: 0 }}>
-            <thead>
+      <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--admin-layer-1)' }}>
               {renderTableHead()}
             </thead>
-          </table>
-        </div>
-        <div className="audit-table-scroll-body">
-          <table className="data-table audit-table">
             <tbody>
               {renderTableBody()}
             </tbody>

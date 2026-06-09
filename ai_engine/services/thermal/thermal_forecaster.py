@@ -12,9 +12,16 @@ _csv_lock = threading.Lock()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data"
 RECEIVED_DIR = DATA_DIR / "received_data"
-HISTORY_CSV = DATA_DIR / "live_thermal_history.csv"
-PREDICTIONS_CSV = DATA_DIR / "live_predictions.csv"
-PREDICTIONS_HISTORY_CSV = DATA_DIR / "live_predictions_history.csv"
+
+# Helper function to get paths dynamically based on camera/stream ID
+def _get_paths(camera_id: Optional[str] = None):
+    suffix = f"_{camera_id}" if camera_id else ""
+    history_csv = DATA_DIR / f"live_thermal_history{suffix}.csv"
+    predictions_csv = DATA_DIR / f"live_predictions{suffix}.csv"
+    predictions_history_csv = DATA_DIR / f"live_predictions_history{suffix}.csv"
+    return history_csv, predictions_csv, predictions_history_csv
+
+HISTORY_CSV, PREDICTIONS_CSV, PREDICTIONS_HISTORY_CSV = _get_paths()
 CONFIG_FILE = BASE_DIR / "model" / "config.json"
 
 for _d in (DATA_DIR, RECEIVED_DIR): _d.mkdir(parents=True, exist_ok=True)
@@ -64,20 +71,34 @@ def check_and_rotate_csv(file_path: Path, expected_fields: list[str]) -> None:
     except Exception as e:
         logger.error("[Forecaster] Header update failed: %s", e)
 
-def append_history_row(row: dict, targets: list[str]) -> None:
+def append_history_row(row: dict, targets: list[str], camera_id: Optional[str] = None) -> None:
+    history_csv, _, _ = _get_paths(camera_id)
     fields = ["timestamp"] + targets
-    check_and_rotate_csv(HISTORY_CSV, fields)
     
-    # Đọc lại header thực tế sau khi update
-    with open(HISTORY_CSV, "r", encoding="utf-8") as f:
-        actual_fields = f.readline().strip().split(",")
-    
-    exists = HISTORY_CSV.exists()
-    try:
-        with open(HISTORY_CSV, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=actual_fields, extrasaction="ignore")
-            writer.writerow(row)
-    except Exception: pass
+    with _csv_lock:
+        exists = history_csv.exists()
+        if not exists:
+            try:
+                with open(history_csv, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=fields)
+                    writer.writeheader()
+            except Exception as e:
+                logger.error("[Forecaster] Failed to create history CSV: %s", e)
+                return
+        else:
+            check_and_rotate_csv(history_csv, fields)
+        
+        try:
+            with open(history_csv, "r", encoding="utf-8") as f:
+                actual_fields = f.readline().strip().split(",")
+        except Exception:
+            actual_fields = fields
+
+        try:
+            with open(history_csv, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=actual_fields, extrasaction="ignore")
+                writer.writerow(row)
+        except Exception: pass
 
 def _linear_predict(values: list[float], steps_ahead: float) -> float:
     """Hồi quy tuyến tính: 1 step = 5 phút."""
@@ -89,10 +110,11 @@ def _linear_predict(values: list[float], steps_ahead: float) -> float:
     pred = slope * (n - 1 + steps_ahead) + intercept
     return round(max(0.0, min(pred, 500.0)), 1)
 
-def compute_prediction(targets: list[str], window_size: int, horizon: int) -> Optional[dict]:
-    if not HISTORY_CSV.exists(): return None
+def compute_prediction(targets: list[str], window_size: int, horizon: int, camera_id: Optional[str] = None) -> Optional[dict]:
+    history_csv, _, _ = _get_paths(camera_id)
+    if not history_csv.exists(): return None
     try:
-        with open(HISTORY_CSV, "r", encoding="utf-8") as f: rows = list(csv.DictReader(f))
+        with open(history_csv, "r", encoding="utf-8") as f: rows = list(csv.DictReader(f))
     except Exception: return None
     recent = rows[-window_size:] if len(rows) >= 1 else []
     if not recent: return None
@@ -105,15 +127,16 @@ def compute_prediction(targets: list[str], window_size: int, horizon: int) -> Op
         pred[f"{t}_pred"] = _linear_predict(vals, horizon) if vals else None # Dự báo h bước (mỗi bước 5p)
     return pred
 
-def save_prediction(prediction: dict, targets: list[str]) -> dict:
+def save_prediction(prediction: dict, targets: list[str], camera_id: Optional[str] = None) -> dict:
+    _, predictions_csv, _ = _get_paths(camera_id)
     fields = ["issued_at", "input_timestamp", "forecast_timestamp"] + [f"{t}_pred" for t in targets]
     
     with _csv_lock:
         # 1. Đọc dự đoán hiện tại đang lưu
         existing = {}
-        if PREDICTIONS_CSV.exists():
+        if predictions_csv.exists():
             try:
-                with open(PREDICTIONS_CSV, "r", encoding="utf-8") as f:
+                with open(predictions_csv, "r", encoding="utf-8") as f:
                     rows = list(csv.DictReader(f))
                     if rows:
                         existing = rows[-1]
@@ -121,54 +144,62 @@ def save_prediction(prediction: dict, targets: list[str]) -> dict:
             
         # 2. Ghi đè tệp tin với bộ dữ liệu dự đoán mới nhận
         try:
-            with open(PREDICTIONS_CSV, "w", newline="", encoding="utf-8") as f:
+            with open(predictions_csv, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
                 writer.writeheader()
                 writer.writerow(prediction)
         except Exception: pass
     return prediction
 
-def append_prediction_history(prediction: dict, targets: list[str]) -> None:
+def append_prediction_history(prediction: dict, targets: list[str], camera_id: Optional[str] = None) -> None:
+    _, _, predictions_history_csv = _get_paths(camera_id)
     fields = ["issued_at", "input_timestamp", "forecast_timestamp"] + [f"{t}_pred" for t in targets]
     with _csv_lock:
-        check_and_rotate_csv(PREDICTIONS_HISTORY_CSV, fields)
-        exists = PREDICTIONS_HISTORY_CSV.exists()
+        check_and_rotate_csv(predictions_history_csv, fields)
+        exists = predictions_history_csv.exists()
         try:
-            with open(PREDICTIONS_HISTORY_CSV, "a", newline="", encoding="utf-8") as f:
+            with open(predictions_history_csv, "a", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
                 if not exists: writer.writeheader()
                 writer.writerow(prediction)
         except Exception: pass
 
-def process_thermal_payload(payload: dict) -> dict:
+def process_thermal_payload(payload: dict, camera_id: Optional[str] = None) -> dict:
     cfg = _load_config()
     targets, w_size, hor = cfg["targets"], int(cfg["window_size"]), int(cfg["horizon"])
+    
+    # Overwrite targets to use only the points/zones actually present in this camera's payload
+    payload_targets = [str(pt.get("id", "")).replace(":", "_") for pt in payload.get("points", [])]
+    if payload_targets:
+        targets = payload_targets
+        
     save_raw_payload(payload)
     try: row = thermal_json_to_row(payload, targets)
     except Exception as e: 
         logger.error("[Forecaster] Payload conversion failed: %s", e)
         return {"success": False}
-    append_history_row(row, targets)
+    append_history_row(row, targets, camera_id=camera_id)
     
     # Re-enable local AI prediction (linear regression)
     try:
-        prediction = compute_prediction(targets, w_size, hor)
+        prediction = compute_prediction(targets, w_size, hor, camera_id=camera_id)
         if prediction:
-            save_prediction(prediction, targets)
-            append_prediction_history(prediction, targets)
-            logger.info("[Forecaster] Prediction saved for %s", prediction.get("forecast_timestamp"))
+            save_prediction(prediction, targets, camera_id=camera_id)
+            append_prediction_history(prediction, targets, camera_id=camera_id)
+            logger.info("[Forecaster] Prediction saved for %s (camera: %s)", prediction.get("forecast_timestamp"), camera_id)
         else:
-            logger.warning("[Forecaster] No prediction generated (not enough data?)")
+            logger.warning("[Forecaster] No prediction generated (not enough data?) for camera %s", camera_id)
     except Exception as e:
-        logger.error("[Forecaster] Prediction logic failed: %s", e)
+        logger.error("[Forecaster] Prediction logic failed for camera %s: %s", camera_id, e)
     
     return {"success": True, "timestamp": row["timestamp"]}
 
-def load_latest_prediction(targets: list[str]) -> Optional[dict]:
-    if not PREDICTIONS_CSV.exists(): return None
+def load_latest_prediction(targets: list[str], camera_id: Optional[str] = None) -> Optional[dict]:
+    _, predictions_csv, _ = _get_paths(camera_id)
+    if not predictions_csv.exists(): return None
     with _csv_lock:
         try:
-            with open(PREDICTIONS_CSV, "r", encoding="utf-8") as f: rows = list(csv.DictReader(f))
+            with open(predictions_csv, "r", encoding="utf-8") as f: rows = list(csv.DictReader(f))
             if not rows: return None
             last = rows[-1]
             res = {"issued_at": last.get("issued_at"), "input_timestamp": last.get("input_timestamp"), "forecast_timestamp": last.get("forecast_timestamp")}
@@ -188,7 +219,7 @@ def find_matched_prediction(dt: datetime, pred_list: list[dict], max_delta_s: in
         if d < min_d: min_d, best = d, p
     return best
 
-def load_history_for_chart(targets: list[str], window_points: int = 60, horizon: int = 5, date_str: Optional[str] = None) -> list[dict]:
+def load_history_for_chart(targets: list[str], window_points: int = 60, horizon: int = 5, date_str: Optional[str] = None, camera_id: Optional[str] = None) -> list[dict]:
     """Trả về dữ liệu từ mốc thời gian sớm nhất có dữ liệu (tối đa 24h) của ngày được chọn."""
     import math
     def safe_float(val):
@@ -227,11 +258,12 @@ def load_history_for_chart(targets: list[str], window_points: int = 60, horizon:
     else:
         base_dt = target_date.replace(hour=23, minute=59, second=0, microsecond=0)
     
+    history_csv, _, predictions_history_csv = _get_paths(camera_id)
     all_rows = []
-    if HISTORY_CSV.exists():
+    if history_csv.exists():
         with _csv_lock:
             try:
-                with open(HISTORY_CSV, "r", encoding="utf-8") as f: all_rows = list(csv.DictReader(f))
+                with open(history_csv, "r", encoding="utf-8") as f: all_rows = list(csv.DictReader(f))
             except Exception: pass
             
     # 2. Bucketing dữ liệu (dùng Full Key)
@@ -249,10 +281,10 @@ def load_history_for_chart(targets: list[str], window_points: int = 60, horizon:
         except Exception: continue
 
     raw_preds = []
-    if PREDICTIONS_HISTORY_CSV.exists():
+    if predictions_history_csv.exists():
         with _csv_lock:
             try:
-                with open(PREDICTIONS_HISTORY_CSV, "r", encoding="utf-8") as f: raw_preds = list(csv.DictReader(f))
+                with open(predictions_history_csv, "r", encoding="utf-8") as f: raw_preds = list(csv.DictReader(f))
             except Exception: pass
 
     pred_map: dict[str, dict] = {}

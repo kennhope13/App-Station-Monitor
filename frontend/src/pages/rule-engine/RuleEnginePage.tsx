@@ -78,8 +78,7 @@ export default function RuleEnginePage() {
       let activeStationId = savedStationId;
       if (!activeStationId) {
         const stations = await stationApi.getStations();
-        const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
-        activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
+        activeStationId = stations[0]?.id ?? null;
       }
       
       const [rulesData, pts, devs] = await Promise.all([

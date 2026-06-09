@@ -7,6 +7,7 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
+import MultisitePage from '@/pages/multisite/MultisitePage';
 
 // Lazy import — mỗi trang là một chunk riêng, tải khi cần
 const DashboardPage = React.lazy(() => import('@/pages/dashboard/DashboardPage'));
@@ -17,7 +18,6 @@ const AnalyticsLayout = React.lazy(() => import('@/pages/analytics/AnalyticsLayo
 const ReportsPage = React.lazy(() => import('@/pages/reports/ReportsPage'));
 const MaintenancePage = React.lazy(() => import('@/pages/maintenance/MaintenancePage'));
 const AuditLogPage = React.lazy(() => import('@/pages/audit-log/AuditLogPage'));
-const MultisitePage = React.lazy(() => import('@/pages/multisite/MultisitePage'));
 const DeviceManagementPage = React.lazy(() => import('@/pages/device-management/DeviceManagementPage'));
 const ThermalConfigPage = React.lazy(() => import('@/pages/device-management/ThermalConfigPage'));
 const UserManagementPage = React.lazy(() => import('@/pages/user-management/UserManagementPage'));

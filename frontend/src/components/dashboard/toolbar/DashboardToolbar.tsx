@@ -2,14 +2,13 @@
 
 import { Settings } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { authService } from '@/services/AuthService';
-import { isCentralUser } from '@/utils/centralAccess';
 
 interface DashboardToolbarProps {
   stationName: string;
   isEditMode: boolean;
   onToggleEditMode: () => void;
+  isMulti?: boolean;
+  onBackToCentral?: () => void;
   showLabels: boolean;
   onToggleLabels: () => void;
   onFit: () => void;
@@ -21,12 +20,22 @@ interface DashboardToolbarProps {
 }
 
 export default function DashboardToolbar(props: DashboardToolbarProps) {
-  const { stationName, isEditMode, onToggleEditMode, onFit, onRotate, showLabels, onToggleLabels, onColorChange, filters, onFilterChange, unpinnedCount = 0 } = props;
+  const {
+    stationName,
+    isEditMode,
+    onToggleEditMode,
+    isMulti = false,
+    onBackToCentral,
+    onFit,
+    onRotate,
+    showLabels,
+    onToggleLabels,
+    onColorChange,
+    filters,
+    onFilterChange,
+    unpinnedCount = 0
+  } = props;
   const [isOpen, setIsOpen] = useState(false);
-  const navigate = useNavigate();
-
-  const user = authService.getUser();
-  const isMulti = isCentralUser(user);
 
   return (
     <div
@@ -44,9 +53,9 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
     >
       {/* Title & Toggle Row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {isMulti && (
+        {isMulti && onBackToCentral && (
           <button
-            onClick={() => navigate('/multisite')}
+            onClick={onBackToCentral}
             className="btn-industrial btn-sm"
             style={{
               fontSize: '0.65rem',

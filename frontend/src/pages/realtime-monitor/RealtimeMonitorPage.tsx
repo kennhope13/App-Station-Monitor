@@ -5,7 +5,8 @@
 // Panel phải: danh sách sự kiện theo thời gian, lọc theo loại/ngày
 // ============================================================
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
 import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
 import { authService } from '@/services/AuthService';
@@ -61,6 +62,9 @@ export default function RealtimeMonitorPage({
 
   // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
   const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
+  const [stationMenuOpen, setStationMenuOpen] = useState(false);
+  const [stationMenuPos, setStationMenuPos] = useState({ top: 0, left: 0, width: 260 });
+  const stationBtnRef = useRef<HTMLButtonElement>(null);
 
   // Device, Alert and Station stores
   const fetchDevices = useDeviceStore(s => s.fetch);
@@ -72,57 +76,104 @@ export default function RealtimeMonitorPage({
   const alertsByFilter = useAlertStore(s => s.alertsByFilter);
   const alerts = alertsByFilter[ALERT_STATUS.OPEN] ?? [];
 
+  const expandCameraVariants = (cams: CameraDevice[], stationName?: string) => {
+    const initialStatus: Record<string, string> = {};
+    cams.forEach(c => initialStatus[c.id.toLowerCase()] = c.status || 'unknown');
+
+    const expandedCams: CameraDevice[] = [];
+    cams.forEach(c => {
+      const cfg = (c as any).config || {};
+      const withStationMeta = { ...(c as any), stationName };
+      if (c.type === 'camera_dual') {
+        expandedCams.push({
+          ...withStationMeta,
+          id: `${c.id}_optical`,
+          name: `${c.name} (Quang học)`,
+          config: { ...cfg, go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id }
+        } as any);
+        expandedCams.push({
+          ...withStationMeta,
+          id: `${c.id}_thermal`,
+          name: `${c.name} (Nhiệt)`,
+          config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
+        } as any);
+      } else if (c.type === 'camera_thermal') {
+        expandedCams.push({
+          ...withStationMeta,
+          name: c.name.includes('nhiệt') || c.name.includes('Nhiệt') ? c.name : `${c.name} (Nhiệt)`,
+          config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
+        } as any);
+      } else {
+        expandedCams.push({
+          ...withStationMeta,
+          config: cfg
+        } as any);
+      }
+    });
+
+    return { expandedCams, initialStatus };
+  };
+
   // 1. Initial Load: Fetch cameras once on mount
   useEffect(() => {
-    const loadCams = (stationId: string) => {
-      stationApi.getCameras(stationId).then(cams => {
-        const initialStatus: Record<string, string> = {};
-        cams.forEach(c => initialStatus[c.id.toLowerCase()] = c.status || 'unknown');
-        setDeviceStatus(initialStatus);
+    const loadAllStationsCams = async () => {
+      try {
+        const cameraResults = await Promise.all(
+          stations.map(async station => {
+            const cams = await stationApi.getCameras(station.id).catch(() => [] as CameraDevice[]);
+            return { station, cams };
+          })
+        );
 
-        const expandedCams: CameraDevice[] = [];
-        cams.forEach(c => {
-          const cfg = (c as any).config || {};
-          if (c.type === 'camera_dual') {
-            expandedCams.push({
-              ...c,
-              id: `${c.id}_optical`,
-              name: `${c.name} (Quang học)`,
-              config: { ...cfg, go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id }
-            } as any);
-            expandedCams.push({
-              ...c,
-              id: `${c.id}_thermal`,
-              name: `${c.name} (Nhiệt)`,
-              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
-            } as any);
-          } else if (c.type === 'camera_thermal') {
-            expandedCams.push({
-              ...c,
-              name: c.name.includes('nhiệt') || c.name.includes('Nhiệt') ? c.name : `${c.name} (Nhiệt)`,
-              config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
-            });
-          } else {
-            expandedCams.push({
-              ...c,
-              config: cfg
-            });
-          }
+        const mergedStatus: Record<string, string> = {};
+        const mergedCams: CameraDevice[] = [];
+        const thermalIds: string[] = [];
+
+        cameraResults.forEach(({ station, cams }) => {
+          const { expandedCams, initialStatus } = expandCameraVariants(cams, station.name);
+          Object.assign(mergedStatus, initialStatus);
+          mergedCams.push(...expandedCams);
+          thermalIds.push(...cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id));
         });
+
+        setDeviceStatus(mergedStatus);
+        setCameras(mergedCams);
+
+        thermalIds.forEach(cid => {
+          stationApi.getThermalMapping(cid).then(m => {
+            if (m) setVvrCache(prev => ({ ...prev, [cid.toLowerCase()]: m }));
+          }).catch(() => {});
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    const loadCams = async (stationId: string) => {
+      try {
+        const cams = await stationApi.getCameras(stationId);
+        const stationName = stations.find(s => s.id === stationId)?.name;
+        const { expandedCams, initialStatus } = expandCameraVariants(cams, stationName);
+        setDeviceStatus(initialStatus);
         setCameras(expandedCams);
 
-        // Fetch VVR mapping once
         const thermalIds = cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id);
         thermalIds.forEach(cid => {
           stationApi.getThermalMapping(cid).then(m => {
             if (m) setVvrCache(prev => ({ ...prev, [cid.toLowerCase()]: m }));
           }).catch(() => {});
         });
-      }).catch(console.error);
+      } catch (err) {
+        console.error(err);
+      }
     };
 
     const savedStationId = stationIdOverride || localStorage.getItem('selected_station_id');
-    if (savedStationId) {
+    if (embeddedMode === 'central' && !stationIdOverride) {
+      stations.forEach(s => fetchDevices(s.id));
+      fetchAlerts(ALERT_STATUS.OPEN);
+      loadAllStationsCams();
+    } else if (savedStationId) {
       fetchDevices(savedStationId);
       fetchAlerts(ALERT_STATUS.OPEN);
       loadCams(savedStationId);
@@ -150,7 +201,7 @@ export default function RealtimeMonitorPage({
         return next;
       });
     }).catch(console.error);
-  }, [stationIdOverride]); // Re-run when central station context changes
+  }, [stationIdOverride, embeddedMode, stations]); // Re-run when central station context changes
 
   // 2. Periodic ROI/PD Boundary Refresh
   useEffect(() => {
@@ -243,6 +294,54 @@ export default function RealtimeMonitorPage({
   const cellCount = layout === 'l1' ? 1 : layout === 'l4' ? 4 : 9;
   const onlineCount = cameras.filter(c => deviceStatus[c.id.replace(/_(optical|thermal)$/, '')] === 'online').length;
   const displayCams = selectedCamFilter ? cameras.filter(c => c.id === selectedCamFilter) : cameras;
+  const isCentralFleetView = embeddedMode === 'central' && !stationIdOverride;
+  const stationCameraStats = useMemo(() => {
+    const grouped = new Map<string, {
+      stationId: string;
+      stationName: string;
+      total: number; online: number; offline: number;
+      thermal: number; optical: number; pd: number; cctv: number;
+      cameraNames: string[];
+      alertCount: number;
+    }>();
+    const seenBaseIds = new Set<string>();
+
+    cameras.forEach(cam => {
+      const baseId = cam.id.replace(/_(optical|thermal)$/, '').toLowerCase();
+      if (seenBaseIds.has(baseId)) return;
+      seenBaseIds.add(baseId);
+
+      const stationName = ((cam as any).stationName as string | undefined) || 'Không rõ trạm';
+      const stationId = stations.find(s => s.name === stationName)?.id || '';
+      const key = stationName.toLowerCase();
+      const status = deviceStatus[baseId] || 'unknown';
+      const entry = grouped.get(key) || { stationId, stationName, total: 0, online: 0, offline: 0, thermal: 0, optical: 0, pd: 0, cctv: 0, cameraNames: [], alertCount: 0 };
+
+      entry.total += 1;
+      if (status === 'online') entry.online += 1;
+      else entry.offline += 1;
+
+      const t = cam.type || '';
+      if (t === 'camera_thermal') entry.thermal += 1;
+      else if (t === 'camera_pd') entry.pd += 1;
+      else if (t === 'camera_dual') { entry.thermal += 1; entry.optical += 1; }
+      else entry.cctv += 1;
+
+      entry.cameraNames.push(cam.name.replace(/\s+\((Quang học|Nhiệt)\)$/i, ''));
+      grouped.set(key, entry);
+    });
+
+    const result = [...grouped.values()].sort((a, b) => a.stationName.localeCompare(b.stationName, 'vi'));
+    result.forEach(entry => {
+      entry.alertCount = alerts.filter(a => {
+        const dev = devices.find(d => d.id.toLowerCase() === (typeof a.deviceId === 'string' ? a.deviceId.toLowerCase() : ''));
+        if (!dev) return false;
+        const st = stations.find(s => s.id === entry.stationId);
+        return st && (dev as any).stationId === st.id;
+      }).length;
+    });
+    return result;
+  }, [cameras, deviceStatus, stations, alerts, devices]);
 
   /** Render các polygon SVG vùng ROI nhiệt lên overlay của ô camera. */
   const renderOverlayBoundaries = (cam: CameraDevice) => {
@@ -566,6 +665,9 @@ export default function RealtimeMonitorPage({
         labelPos === 'right'  ? 'translate(0, -50%)'    :
         /* top */               'translate(-50%, -100%)';
 
+      const liveDb = aiState.db;
+      const liveHz = aiState.hz;
+
       labels.push(
         <div
           key={`label-pd-${b.id}`}
@@ -580,17 +682,29 @@ export default function RealtimeMonitorPage({
         >
           <div
             style={{
+              background: 'rgba(13, 17, 23, 0.95)',
+              backdropFilter: 'blur(4px)',
+              border: `1px solid ${color}`,
+              borderRadius: 3,
+              padding: '1px 5px',
               fontSize: `${fontSize - 2}px`,
-              fontWeight: 800,
-              color: color,
-              textShadow: '0 1px 3px rgba(0,0,0,1)',
+              color: '#fff',
               whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              boxShadow: `0 2px 6px rgba(0,0,0,0.5), 0 0 6px ${color}33`,
               fontFamily: 'var(--font-mono)',
-              animation: isActive ? 'pulse-subtle 1s infinite' : 'none',
-              padding: '1px 3px'
+              animation: isActive ? 'pulse-subtle 2s infinite' : 'none'
             }}
           >
-            {b.name}
+            <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{b.name}</span>
+            <span style={{ fontWeight: 800, color: color, fontSize: `${fontSize - 3}px`, borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: 4 }}>
+              {liveDb != null ? `${liveDb.toFixed(1)} dB` : '-- dB'}
+            </span>
+            <span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.6)', fontSize: `${fontSize - 4}px`, borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: 4 }}>
+              {liveHz != null ? `${(liveHz / 1000).toFixed(1)} kHz` : '-- kHz'}
+            </span>
           </div>
         </div>
       );
@@ -611,20 +725,20 @@ export default function RealtimeMonitorPage({
       if (poly.length < 3) return null;
 
       const pointsStr = poly.map(([x, y]) => `${x * 100},${y * 100}`).join(' ');
-      
+
       const isActive = aiState.active_boundary === b.name;
-      const currentDb = isActive ? aiState.db : 0;
-      
-      let alarmDb = 45;
+      const liveDb: number | null = aiState.db ?? null;
+
+      let warnDb = 20, alarmDb = 35;
       try {
         const t = JSON.parse(b.thresholds || '{}');
-        alarmDb = t.alarm || 45;
+        warnDb = t.warn || t.warning || 20;
+        alarmDb = t.alarm || 35;
       } catch {}
 
-      const isAlarm = isActive && currentDb >= alarmDb;
-      
-      // Màu sắc rực rỡ và nhạy (Đỏ = Alarm, Vàng = Active/Warning, Xanh = Normal)
-      const color = isAlarm ? '#ef4444' : (isActive ? '#fbbf24' : '#10b981');
+      const isAlarm = liveDb != null && liveDb >= alarmDb;
+      const isWarn  = liveDb != null && liveDb >= warnDb;
+      const color = isAlarm ? '#ef4444' : (isWarn ? '#fbbf24' : '#10b981');
 
       return (
         <g key={b.id}>
@@ -937,81 +1051,86 @@ export default function RealtimeMonitorPage({
     Object.assign(document.createElement('a'), { href: url, download: `snap_${Date.now()}.jpg`, target: '_blank' }).click();
   };
 
-  const selectedStation = stations.find(s => s.id === (stationIdOverride || localStorage.getItem('selected_station_id') || '')) || null;
 
   return (
     <div className="rtm-page">
-      {embeddedMode === 'central' && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1.3fr repeat(2, minmax(120px, 1fr))',
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ border: '1px solid var(--admin-border)', background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
-                  LIVEVIEW ĐA TRẠM
-                </div>
-                <div style={{ marginTop: 6, fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>
-                  {selectedStation?.name || 'Chưa chọn trạm'}
-                </div>
-                <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
-                    Mã trạm: <b style={{ color: 'var(--admin-text)' }}>{selectedStation?.code || '---'}</b>
-                  </span>
-                  <span style={{ fontSize: '.62rem', fontWeight: 800, color: '#fff', background: 'rgba(14,165,233,0.22)', border: '1px solid rgba(14,165,233,0.35)', padding: '2px 6px' }}>
-                    CHẾ ĐỘ ĐA TRẠM
-                  </span>
-                </div>
-              </div>
-              <div style={{ minWidth: 180 }}>
-                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>CHUYỂN TRẠM ĐANG XEM</div>
-                <select
-                  value={stationIdOverride || ''}
-                  onChange={e => onStationIdChange?.(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(15,23,42,0.65)',
-                    border: '1px solid var(--admin-accent)',
-                    color: 'var(--admin-text)',
-                    padding: '8px 10px',
-                    fontSize: '.74rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {stations.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {(s.code ? `${s.code} - ` : '') + s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-          <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-            <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>Camera khả dụng</div>
-            <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: 'var(--admin-text)' }}>{cameras.length}</div>
-          </div>
-          <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-            <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>Camera online</div>
-            <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: onlineCount > 0 ? 'var(--admin-success)' : 'var(--admin-danger)' }}>{onlineCount}</div>
-          </div>
-        </div>
-      )}
 
       {/* ── Toolbar ── */}
       <div className="page-toolbar-row dash-header">
         <div className="page-title-cell">
-          <h2>{embeddedMode === 'central' ? 'LIVEVIEW ĐA TRẠM' : 'GIÁM SÁT CAMERA TRỰC TIẾP'}</h2>
+          {embeddedMode !== 'central' && <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>}
+          {embeddedMode === 'central' && (
+            <div style={{ display: 'inline-block' }}>
+              {stationMenuOpen && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
+              )}
+              <button
+                ref={stationBtnRef}
+                onClick={() => {
+                  const r = stationBtnRef.current?.getBoundingClientRect();
+                  if (r) setStationMenuPos({ top: r.bottom, left: r.left, width: r.width });
+                  setStationMenuOpen(o => !o);
+                }}
+                style={{
+                  width: 260, background: '#0f1729',
+                  border: '1px solid var(--admin-border)',
+                  color: 'var(--admin-text)', padding: '4px 10px',
+                  fontSize: '.72rem', fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {stations.find(s => s.id === stationIdOverride)?.name || 'Tất cả trạm'}
+                </span>
+                <span style={{ flexShrink: 0, opacity: 0.5, fontSize: '.65rem' }}>▾</span>
+              </button>
+              {stationMenuOpen && (
+                <div style={{
+                  position: 'fixed', top: stationMenuPos.top, left: stationMenuPos.left,
+                  width: stationMenuPos.width, zIndex: 9999,
+                  background: '#0f1729', border: '1px solid var(--admin-border)',
+                  maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                }}>
+                  <div
+                    onClick={() => { onStationIdChange?.(''); setStationMenuOpen(false); }}
+                    style={{
+                      padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
+                      fontWeight: !stationIdOverride ? 800 : 500,
+                      color: !stationIdOverride ? 'var(--admin-accent)' : 'var(--admin-text)',
+                      background: !stationIdOverride ? 'rgba(14,165,233,0.12)' : 'transparent',
+                      borderLeft: `2px solid ${!stationIdOverride ? 'var(--admin-accent)' : 'transparent'}`,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}
+                  >
+                    Tất cả trạm
+                  </div>
+                  {stations.map(s => (
+                    <div
+                      key={s.id}
+                      onClick={() => { onStationIdChange?.(s.id); setStationMenuOpen(false); }}
+                      style={{
+                        padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
+                        fontWeight: stationIdOverride === s.id ? 800 : 500,
+                        color: stationIdOverride === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
+                        background: stationIdOverride === s.id ? 'rgba(14,165,233,0.12)' : 'transparent',
+                        borderLeft: `2px solid ${stationIdOverride === s.id ? 'var(--admin-accent)' : 'transparent'}`,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}
+                      onMouseEnter={e => { if (stationIdOverride !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
+                      onMouseLeave={e => { if (stationIdOverride !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                    >
+                      {(s.code ? `${s.code} - ` : '') + s.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="page-toolbar-group">
+          {!isCentralFleetView && (
+            <>
           <button className={`nvr-lb ${layout === 'l1' ? 'active' : ''}`} onClick={() => setLayout('l1')} title="1×1">
             <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="1.5"/></svg>
           </button>
@@ -1030,23 +1149,19 @@ export default function RealtimeMonitorPage({
           </button>
 
           <div className="rtm-sep" />
-          <select 
-            className="nvr-sel" 
-            value={selectedCamFilter} 
-            onChange={e => {
-              setSelectedCamFilter(e.target.value);
-              if (e.target.value) setLayout('l1');
-              else setLayout('l4');
-            }}
-          >
-            <option value="">Tất cả camera</option>
-            {cameras.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <ToolbarSelect
+            value={selectedCamFilter}
+            onChange={v => { setSelectedCamFilter(v); if (v) setLayout('l1'); else setLayout('l4'); }}
+            options={[{ value: '', label: 'Tất cả camera' }, ...cameras.map(c => ({ value: c.id, label: (c as any).stationName ? `${(c as any).stationName} · ${c.name}` : c.name }))]}
+            width={180}
+          />
 
           {expandedCamId && (
             <div className="nvr-back-btn visible" onClick={() => toggleExpand(expandedCamId)}>
               ← Quay về lưới
             </div>
+          )}
+            </>
           )}
         </div>
 
@@ -1060,12 +1175,121 @@ export default function RealtimeMonitorPage({
 
       {/* ── Main Area ── */}
       <div className="rtm-main">
-        {/* Grid */}
-        <div className="nvr-wrap">
-          <div className={`nvr-grid ${layout}`}>
-            {Array.from({ length: cellCount }).map((_, i) => renderCell(displayCams[i], i))}
+        {isCentralFleetView ? (
+          <div style={{ padding: '12px 16px', flex: 1, overflow: 'auto' }}>
+
+            {/* Summary strip */}
+            {(() => {
+              const totalCams = stationCameraStats.reduce((s, x) => s + x.total, 0);
+              const totalOnline = stationCameraStats.reduce((s, x) => s + x.online, 0);
+              const totalOffline = stationCameraStats.reduce((s, x) => s + x.offline, 0);
+              const globalHealth = totalCams > 0 ? Math.round((totalOnline / totalCams) * 100) : 0;
+              const healthColor = globalHealth === 100 ? 'var(--admin-success)' : globalHealth >= 50 ? '#f59e0b' : 'var(--admin-danger)';
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 10, padding: '0 4px', fontSize: '.72rem', color: 'var(--admin-text-muted)' }}>
+                  <span style={{ fontWeight: 800, color: 'var(--admin-text)', fontSize: '.68rem', letterSpacing: 1, textTransform: 'uppercase' }}>Tổng quan</span>
+                  <span style={{ width: 1, height: 14, background: 'var(--admin-border)', display: 'inline-block' }} />
+                  <span><span style={{ color: 'var(--admin-accent)', fontWeight: 800, fontSize: '.9rem' }}>{stations.length}</span> trạm</span>
+                  <span><span style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.9rem' }}>{totalCams}</span> camera</span>
+                  <span style={{ width: 1, height: 14, background: 'var(--admin-border)', display: 'inline-block' }} />
+                  <span><span style={{ color: 'var(--admin-success)', fontWeight: 800, fontSize: '.9rem' }}>{totalOnline}</span> online</span>
+                  <span><span style={{ color: totalOffline > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)', fontWeight: 800, fontSize: '.9rem' }}>{totalOffline}</span> offline</span>
+                  <span style={{ width: 1, height: 14, background: 'var(--admin-border)', display: 'inline-block' }} />
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 60, height: 4, background: 'var(--admin-layer-2)', borderRadius: 2, overflow: 'hidden' }}>
+                      <div style={{ width: `${globalHealth}%`, height: '100%', background: healthColor }} />
+                    </div>
+                    <span style={{ fontWeight: 800, color: healthColor }}>{globalHealth}%</span>
+                  </span>
+                </div>
+              );
+            })()}
+
+            <div className="admin-card" style={{ padding: 0, overflow: 'auto' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 32 }}>#</th>
+                    <th>Trạm</th>
+                    <th style={{ textAlign: 'center' }}>Tổng</th>
+                    <th style={{ textAlign: 'center' }}>Online</th>
+                    <th style={{ textAlign: 'center' }}>Offline</th>
+                    <th style={{ minWidth: 130 }}>Loại camera</th>
+                    <th style={{ minWidth: 140 }}>Sức khỏe</th>
+                    <th style={{ textAlign: 'center' }}>Cảnh báo</th>
+                    <th>Danh sách</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stationCameraStats.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>
+                        Chưa có camera nào trong hệ thống.
+                      </td>
+                    </tr>
+                  ) : (
+                    stationCameraStats.map((stat, idx) => {
+                      const health = stat.total > 0 ? Math.round((stat.online / stat.total) * 100) : 0;
+                      const healthColor = health === 100 ? 'var(--admin-success)' : health >= 50 ? '#f59e0b' : 'var(--admin-danger)';
+                      return (
+                        <tr
+                          key={stat.stationName}
+                          style={{ cursor: stat.stationId ? 'pointer' : 'default' }}
+                          onClick={() => stat.stationId && onStationIdChange?.(stat.stationId)}
+                        >
+                          <td style={{ color: 'var(--admin-text-muted)', fontSize: '.75rem' }}>{idx + 1}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: stat.online > 0 ? 'var(--admin-success)' : 'var(--admin-danger)', flexShrink: 0, boxShadow: stat.online > 0 ? '0 0 6px var(--admin-success)' : 'none' }} />
+                              <b style={{ fontSize: '.82rem' }}>{stat.stationName}</b>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 800 }}>{stat.total}</td>
+                          <td style={{ textAlign: 'center', color: 'var(--admin-success)', fontWeight: 800 }}>{stat.online}</td>
+                          <td style={{ textAlign: 'center', color: stat.offline > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)', fontWeight: 800 }}>{stat.offline}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {stat.thermal > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(239,68,68,.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,.3)' }}>🌡 Nhiệt ×{stat.thermal}</span>}
+                              {stat.optical > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(14,165,233,.15)', color: 'var(--admin-accent)', border: '1px solid rgba(14,165,233,.3)' }}>👁 Quang ×{stat.optical}</span>}
+                              {stat.pd > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(168,85,247,.15)', color: '#a855f7', border: '1px solid rgba(168,85,247,.3)' }}>⚡ PD ×{stat.pd}</span>}
+                              {stat.cctv > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(100,116,139,.15)', color: 'var(--admin-text-muted)', border: '1px solid var(--admin-border)' }}>📷 CCTV ×{stat.cctv}</span>}
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ flex: 1, height: 6, background: 'var(--admin-layer-2)', borderRadius: 3, overflow: 'hidden' }}>
+                                <div style={{ width: `${health}%`, height: '100%', background: healthColor, borderRadius: 3, transition: 'width .4s' }} />
+                              </div>
+                              <span style={{ fontSize: '.72rem', fontWeight: 800, color: healthColor, minWidth: 32, textAlign: 'right' }}>{health}%</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {stat.alertCount > 0
+                              ? <span style={{ color: 'var(--admin-danger)', fontWeight: 800, fontSize: '.8rem' }}>⚠ {stat.alertCount}</span>
+                              : <span style={{ color: 'var(--admin-text-muted)', fontSize: '.75rem' }}>—</span>
+                            }
+                          </td>
+                          <td style={{ fontSize: '.73rem', color: 'var(--admin-text-muted)', maxWidth: 220 }}>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                              {stat.cameraNames.slice(0, 3).join(', ')}
+                              {stat.cameraNames.length > 3 ? ` +${stat.cameraNames.length - 3} khác` : ''}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="nvr-wrap">
+            <div className={`nvr-grid ${layout}`}>
+              {Array.from({ length: cellCount }).map((_, i) => renderCell(displayCams[i], i))}
+            </div>
+          </div>
+        )}
 
         {/* Events Panel — tạm ẩn */}
       </div>

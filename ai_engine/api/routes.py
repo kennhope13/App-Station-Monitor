@@ -1228,6 +1228,21 @@ def generate_prediction_data(ts_now: datetime, targets: list) -> dict:
 from pydantic import BaseModel as _BaseModel
 from typing import List as _List
 
+def get_camera_identifier(stream_id: str = None, camera_ip: str = None, device_id: str = None) -> str:
+    if stream_id:
+        return stream_id
+    if camera_ip:
+        for s_id, a in _thermal_analyzers.items():
+            if a.camera_ip == camera_ip:
+                return s_id
+    if device_id:
+        for s_id, a in _thermal_analyzers.items():
+            if a.device_id == device_id:
+                return s_id
+    if _thermal_analyzers:
+        return list(_thermal_analyzers.keys())[0]
+    return "default"
+
 class _ThermalPoint(_BaseModel):
     id: str
     temperature: float
@@ -1235,6 +1250,9 @@ class _ThermalPoint(_BaseModel):
 class ThermalDataPayload(_BaseModel):
     timestamp: str = ""
     points: _List[_ThermalPoint] = []
+    camera_ip: str = ""
+    stream_id: str = ""
+    device_id: str = ""
 
 @router.post("/api/thermal-data")
 async def receive_thermal_data(body: ThermalDataPayload):
@@ -1251,8 +1269,14 @@ async def receive_thermal_data(body: ThermalDataPayload):
     payload_dict = body.model_dump()
     payload_dict["points"] = [p.model_dump() for p in body.points]
     
+    camera_id = get_camera_identifier(
+        stream_id=body.stream_id,
+        camera_ip=body.camera_ip,
+        device_id=body.device_id
+    )
+
     # 1. Chạy pipeline địa phương
-    result = process_thermal_payload(payload_dict)
+    result = process_thermal_payload(payload_dict, camera_id=camera_id)
     if not result["success"]:
         raise HTTPException(status_code=422, detail=result.get("error", "Validation failed"))
     
@@ -1266,9 +1290,16 @@ async def receive_thermal_data(body: ThermalDataPayload):
         
         # Xác định device_id
         device_id = None
-        if _thermal_analyzers:
-            device_id = list(_thermal_analyzers.values())[0].device_id
+        if body.device_id:
+            device_id = body.device_id
         else:
+            matching = _thermal_analyzers.get(camera_id)
+            if matching:
+                device_id = matching.device_id
+            elif _thermal_analyzers:
+                device_id = list(_thermal_analyzers.values())[0].device_id
+
+        if not device_id:
             try:
                 resp = httpx.get(f"{cfg_settings.backend_url}/api/v1/devices", timeout=2.0)
                 if resp.status_code == 200:
@@ -1331,17 +1362,22 @@ async def trigger_retrain(background_tasks: BackgroundTasks):
 
 @router.get("/api/latest-prediction")
 @router.get("/api/prediction")
-async def get_latest_prediction():
+async def get_latest_prediction(
+    stream_id: str = Query(default=None),
+    camera_ip: str = Query(default=None),
+    device_id: str = Query(default=None)
+):
     """
     Trả về dự báo mới nhất từ Jetson đối tác.
     - Nếu đã có dữ liệu thực (live_predictions.csv): đọc từ CSV.
     - Không có fallback demo để đảm bảo tính xác thực.
     """
-    config  = load_or_create_model_config()
+    camera_id = get_camera_identifier(stream_id=stream_id, camera_ip=camera_ip, device_id=device_id)
+    config  = load_or_create_model_config(stream_id=stream_id, camera_ip=camera_ip, device_id=device_id)
     targets = config.get("targets", ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"])
 
     from services.thermal.thermal_forecaster import load_latest_prediction
-    real_pred = load_latest_prediction(targets)
+    real_pred = load_latest_prediction(targets, camera_id=camera_id)
     if real_pred:
         try:
             from datetime import datetime, timedelta
@@ -1359,20 +1395,28 @@ async def get_latest_prediction():
     return {"success": True, "prediction": None, "source": "none"}
 
 @router.get("/api/prediction/history")
-async def get_prediction_history(points: int = Query(default=48), date: str = Query(default=None)):
+async def get_prediction_history(
+    points: int = Query(default=48),
+    date: str = Query(default=None),
+    stream_id: str = Query(default=None),
+    camera_ip: str = Query(default=None),
+    device_id: str = Query(default=None)
+):
     """
     Trả về chuỗi lịch sử + dự báo cho biểu đồ đường đôi.
     - Chỉ sử dụng dữ liệu thực từ CSV.
     - Không có fallback demo.
     """
-    config      = load_or_create_model_config()
+    camera_id = get_camera_identifier(stream_id=stream_id, camera_ip=camera_ip, device_id=device_id)
+    config      = load_or_create_model_config(stream_id=stream_id, camera_ip=camera_ip, device_id=device_id)
     targets     = config.get("targets", ["ID_1","ID_2","ID_3","ID_4","ID_5","ID_6"])
     window_size = int(config.get("window_size", 5))
     horizon     = int(config.get("horizon", 5))
 
-    from services.thermal.thermal_forecaster import load_history_for_chart, HISTORY_CSV
-    if HISTORY_CSV.exists():
-        history = load_history_for_chart(targets, window_points=points, horizon=horizon, date_str=date)
+    from services.thermal.thermal_forecaster import load_history_for_chart, _get_paths
+    history_csv, _, _ = _get_paths(camera_id)
+    if history_csv.exists():
+        history = load_history_for_chart(targets, window_points=points, horizon=horizon, date_str=date, camera_id=camera_id)
         if history:
             # Chỉ inject các giá trị tức thời vào phần tử "Hiện tại" nếu là ngày hôm nay
             is_today = True
@@ -1386,7 +1430,14 @@ async def get_prediction_history(points: int = Query(default=48), date: str = Qu
             if is_today:
                 # DYNAMIC INJECTION: Lấy nhiệt độ thực tế tức thời từ RAM
                 live_temps = {}
-                for analyzer in _thermal_analyzers.values():
+                # Lấy chỉ analyzer tương ứng với camera này (nếu có)
+                analyzers_to_check = {}
+                if camera_id in _thermal_analyzers:
+                    analyzers_to_check = {camera_id: _thermal_analyzers[camera_id]}
+                else:
+                    analyzers_to_check = _thermal_analyzers
+
+                for analyzer in analyzers_to_check.values():
                     for pt in getattr(analyzer, "points", []):
                         name = pt.label or pt.id
                         temp = analyzer.last_point_temps.get(pt.id)
@@ -1400,7 +1451,7 @@ async def get_prediction_history(points: int = Query(default=48), date: str = Qu
 
                 # Lấy dự báo tức thời mới nhất nếu có sẵn (từ Jetson)
                 from services.thermal.thermal_forecaster import load_latest_prediction
-                latest_pred = load_latest_prediction(targets) or {}
+                latest_pred = load_latest_prediction(targets, camera_id=camera_id) or {}
                 if latest_pred:
                     try:
                         from datetime import datetime, timedelta

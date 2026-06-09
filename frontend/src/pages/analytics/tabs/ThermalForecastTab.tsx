@@ -90,11 +90,11 @@ export default function ThermalForecastTab() {
   const updateStatusAndHistory = useCallback(async (showChartSpinner = true) => {
     try {
       if (showChartSpinner) setChartLoading(true);
-      const ip = selectedCamera?.config?.ip || '';
+      const devId = selectedCamera?.id || '';
       const [statusResp, historyResp, configResp] = await Promise.all([
         fetch(`${AI_ENGINE_URL}/api/training-status`),
-        fetch(`${AI_ENGINE_URL}/api/prediction/history?points=1440&date=${selectedDate}`),
-        fetch(`${AI_ENGINE_URL}/api/config?camera_ip=${ip}`)
+        fetch(`${AI_ENGINE_URL}/api/prediction/history?points=1440&date=${selectedDate}&device_id=${devId}`),
+        fetch(`${AI_ENGINE_URL}/api/config?device_id=${devId}`)
       ]);
       const statusData = await statusResp.json();
       const hData = await historyResp.json();
@@ -153,8 +153,7 @@ export default function ThermalForecastTab() {
         let activeStationId = savedStationId;
         if (!activeStationId) {
           const stations = await stationApi.getStations();
-          const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
-          activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
+          activeStationId = stations[0]?.id ?? null;
         }
 
         if (activeStationId) {

@@ -18,8 +18,6 @@ export class StationService {
   async getFirstStationId(): Promise<string | null> {
     const stations = await this.getStations();
     if (stations.length === 0) return null;
-    const laStation = stations.find(s => s.code === 'TBA-LA01');
-    if (laStation) return laStation.id;
     return stations[0]?.id ?? null;
   }
 
@@ -35,4 +33,3 @@ export class StationService {
 }
 
 export const stationService = new StationService();
-

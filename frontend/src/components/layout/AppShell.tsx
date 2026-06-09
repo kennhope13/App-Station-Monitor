@@ -19,7 +19,7 @@ import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
   LayoutDashboard, Video, AlertTriangle, LineChart, FileText,
   Wrench, FileArchive, Map, Radio, Users, Settings, LogOut,
-  ChevronLeft, ChevronRight, ArrowLeft
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 interface NavSubItem { id: string; path: string; label: string }
@@ -279,14 +279,6 @@ export default function AppShell() {
     };
   }, [fetchAlerts, invalidateAlerts]);
 
-  /** Chuyển mã vai trò (admin/manager/operator) thành nhãn tiếng Việt hiển thị trong sidebar. */
-  const getRoleLabel = (role?: string) => {
-    const r = (role || '').toLowerCase();
-    if (r === 'admin') return isCentralUser ? 'QUẢN TRỊ TỔNG QUAN' : 'QUẢN TRỊ';
-    if (r === 'manager') return 'QUẢN LÝ';
-    if (r === 'operator') return 'VẬN HÀNH';
-    return '';
-  };
   const [time, setTime] = useState(new Date().toLocaleTimeString('vi-VN'));
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -433,30 +425,32 @@ export default function AppShell() {
       {/* ── Full-width header (independent of sidebar) ── */}
       {!isCentralMode && (
         <header className="admin-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0, overflow: 'hidden' }}>
             <img
               alt="StationOS"
               src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
               style={{ width: 34, height: 34, flexShrink: 0 }}
             />
             <span className="header-title-main">
-              HỆ THỐNG GIÁM SÁT 
+              {!isDrillDown && 'HỆ THỐNG GIÁM SÁT'}
               <span className="header-title-badge">
-                TRẠM ĐIỆN
+                {isDrillDown && drillStation ? drillStation.name : 'TRẠM ĐIỆN'}
               </span>
             </span>
-            <span className="version-badge" style={{ 
-              background: 'var(--admin-layer-2)', 
-              color: 'var(--admin-text-muted)',
-              padding: '3px 8px', 
-              borderRadius: '0px', 
-              fontSize: '0.65rem', 
-              fontWeight: 600,
-              border: '1px solid var(--admin-border-light)',
-              marginLeft: '8px'
-            }}>v{__APP_VERSION__}</span>
+            {!isDrillDown && (
+              <span className="version-badge" style={{
+                background: 'var(--admin-layer-2)',
+                color: 'var(--admin-text-muted)',
+                padding: '3px 8px',
+                borderRadius: '0px',
+                fontSize: '0.65rem',
+                fontWeight: 600,
+                border: '1px solid var(--admin-border-light)',
+                marginLeft: '8px'
+              }}>v{__APP_VERSION__}</span>
+            )}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
             <div className="header-clock">{time}</div>
           </div>
         </header>
@@ -576,7 +570,6 @@ export default function AppShell() {
                     {expanded && (
                       <div className="sb-profile-info">
                         <div className="sb-profile-name">{isCentralUser ? 'Quản trị tổng quan' : user.fullname}</div>
-                        {getRoleLabel(user.role) && <div className="sb-profile-role">{getRoleLabel(user.role)}</div>}
                       </div>
                     )}
                     {expanded && (
@@ -606,27 +599,7 @@ export default function AppShell() {
 
         {/* ── Main view ── */}
         <div className="main-view">
-          {/* Banner drill-down: global admin đang xem trạm con từ đa trạm */}
-          {isDrillDown && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '0 14px', height: 30, flexShrink: 0,
-              background: 'rgba(14,165,233,0.1)', borderBottom: '1px solid rgba(14,165,233,0.25)',
-              fontSize: '0.7rem', fontWeight: 700
-            }}>
-              <button
-                onClick={() => { setViewingStation(null); navigate('/multisite'); }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--admin-accent)',
-                  display: 'flex', alignItems: 'center', gap: 4, padding: 0, fontWeight: 800, fontSize: '0.7rem'
-                }}
-              >
-                <ArrowLeft size={13} /> Đa trạm
-              </button>
-              <span style={{ color: 'var(--admin-border)', fontWeight: 400 }}>›</span>
-              <span style={{ color: 'var(--admin-text)' }}>{drillStation?.name ?? 'Trạm con'}</span>
-            </div>
-          )}
+          {/* Main view content */}
           <div className="page-content">
             <Suspense fallback={null}>
               <Outlet />

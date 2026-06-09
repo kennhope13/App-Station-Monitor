@@ -23,9 +23,12 @@ class AiService {
   /**
    * Lấy lịch sử và dự báo nhiệt độ
    */
-  async getPredictionHistory(): Promise<PredictionHistoryPoint[]> {
+  async getPredictionHistory(deviceId?: string): Promise<PredictionHistoryPoint[]> {
     try {
-      const response = await fetch(`${AI_BASE_URL}/api/prediction/history`);
+      const url = deviceId 
+        ? `${AI_BASE_URL}/api/prediction/history?device_id=${deviceId}` 
+        : `${AI_BASE_URL}/api/prediction/history`;
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch prediction history');
       const data = await response.json();
       return data.history || [];

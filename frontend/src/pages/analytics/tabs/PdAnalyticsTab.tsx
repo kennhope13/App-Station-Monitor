@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Chart from 'chart.js/auto';
 import { getCSSColor } from '@/utils/theme-colors';
-import { GO2RTC_URL, API_BASE_URL } from '@/utils/env';
+import { GO2RTC_URL, API_BASE_URL, AI_ENGINE_URL } from '@/utils/env';
 import { authService } from '@/services/AuthService';
 import { stationApi, Device } from '@/services/StationApiService';
 import { createRealtimeHub } from '@/services/realtime.service';
@@ -34,8 +34,7 @@ export default function PdAnalyticsTab() {
         let activeStationId = savedStationId;
         if (!activeStationId) {
           const stations = await stationApi.getStations();
-          const mainStation = stations.find(s => s.code === 'TBA-LA01' || s.name.includes('Long An'));
-          activeStationId = mainStation?.id ?? stations[0]?.id ?? null;
+          activeStationId = stations[0]?.id ?? null;
         }
 
         if (activeStationId) {
@@ -106,7 +105,7 @@ export default function PdAnalyticsTab() {
       try {
         const token = authService.getToken() || '';
         const backend = API_BASE_URL.replace('/api/v1', '');
-        const res = await fetch(`/pd-monitor/${selectedCamera.id}/state?token=${token}&backend=${backend}`);
+        const res = await fetch(`${AI_ENGINE_URL}/pd-monitor/${selectedCamera.id}/state?token=${token}&backend=${backend}`);
         if (res.ok) {
           const data = await res.json();
           setAiStats({
