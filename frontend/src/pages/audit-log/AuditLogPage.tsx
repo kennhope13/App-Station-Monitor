@@ -5,7 +5,6 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { stationApi, Station } from '@/services/StationApiService';
 import { authService } from '@/services/AuthService';
 import { isCentralUser } from '@/utils/centralAccess';
@@ -13,7 +12,7 @@ import { fmtDateTime, fmtTimeRange } from '@/utils/format';
 import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import './AuditLogPage.css';
 
-type TabId = 'all' | 'audit' | 'login' | 'notify' | 'triggers';
+type TabId = 'all' | 'audit' | 'login';
 
 interface AuditLogPageProps {
   embeddedMode?: 'default' | 'central';
@@ -23,7 +22,7 @@ interface AuditLogPageProps {
 // Cấu trúc chuẩn hóa dùng để hiển thị — gộp từ nhiều nguồn log khác nhau
 interface LogItem {
   ts: string;
-  type: string;   // audit | login | notify | trigger
+  type: string;   // audit | login
   action: string;
   info: string;
   who: string;
@@ -33,15 +32,12 @@ interface LogItem {
 }
 
 export default function AuditLogPage({ embeddedMode = 'default', stationIdOverride = null }: AuditLogPageProps) {
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabId>('all');
   const [timeRange, setTimeRange] = useState('today');
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<LogItem[]>([]);       // log đã gộp + chuẩn hóa
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loginLogs, setLoginLogs] = useState<any[]>([]);
-  const [notifyLogs, setNotifyLogs] = useState<any[]>([]);
-  const [triggerLogs, setTriggerLogs] = useState<any[]>([]);
 
   const currentUser = authService.getUser();
   const isCentralMode = isCentralUser(currentUser);
@@ -102,18 +98,14 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
 
     try {
       if (activeTab === 'all') {
-        const [audit, logins, notify, triggers] = await Promise.all([
+        const [audit, logins] = await Promise.all([
           stationApi.getAuditLogs(params),
-          stationApi.getLoginLogs(params),
-          stationApi.getNotifyLogs(params),
-          stationApi.getRuleTriggerLogs(params)
+          stationApi.getLoginLogs(params)
         ]);
 
         const merged: LogItem[] = [
           ...audit.map(l => ({ ts: l.ts, type: 'audit', action: l.action, info: entityLabel(l.entityType ?? null), who: l.fullName || l.username || 'system', stationId: l.stationId, stationName: l.stationName, raw: l })),
-          ...logins.map(l => ({ ts: l.ts, type: 'login', action: 'Auth', info: l.action === 'login' ? 'Đăng nhập thành công' : 'Thất bại/Thoát', who: l.username || 'system', stationId: l.stationId, stationName: l.stationName, raw: l })),
-          ...notify.map(l => ({ ts: l.sentAt, type: 'notify', action: 'Notify', info: `${l.channel}: ${l.status === 'sent' ? 'Gửi thành công' : 'Lỗi'}`, who: l.recipient || 'system', stationId: l.stationId, stationName: l.stationName, raw: l })),
-          ...triggers.map(l => ({ ts: l.triggeredAt, type: 'trigger', action: 'Rule', info: l.ruleName || 'Quy tắc kích hoạt', who: l.deviceName || 'system', stationId: l.stationId, stationName: l.stationName, raw: l }))
+          ...logins.map(l => ({ ts: l.ts, type: 'login', action: 'Auth', info: l.action === 'login' ? 'Đăng nhập thành công' : 'Thất bại/Thoát', who: l.username || 'system', stationId: l.stationId, stationName: l.stationName, raw: l }))
         ].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
 
         setLogs(merged);
@@ -123,12 +115,6 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
       } else if (activeTab === 'login') {
         const data = await stationApi.getLoginLogs(params);
         setLoginLogs(data);
-      } else if (activeTab === 'notify') {
-        const data = await stationApi.getNotifyLogs(params);
-        setNotifyLogs(data);
-      } else {
-        const data = await stationApi.getRuleTriggerLogs(params);
-        setTriggerLogs(data);
       }
     } catch (e) {
       console.error(e);
@@ -177,24 +163,13 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
         </tr>
       );
     }
-    if (activeTab === 'notify') {
-      return (
-        <tr>
-          <th className="col-time">Thời gian</th>
-          {isCentralMode && <th className="col-station">Trạm</th>}
-          <th className="col-type">Kênh</th>
-          <th>Người nhận</th>
-          <th className="col-action">Trạng thái</th>
-        </tr>
-      );
-    }
     return (
       <tr>
         <th className="col-time">Thời gian</th>
         {isCentralMode && <th className="col-station">Trạm</th>}
-        <th>Quy tắc</th>
-        <th>Thiết bị</th>
-        <th className="col-action">Giá trị</th>
+        <th className="col-action">Tên đăng nhập</th>
+        <th>Kết quả</th>
+        <th className="col-ip">Địa chỉ IP</th>
       </tr>
     );
   };
@@ -202,9 +177,7 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
   const getRecordCount = () => {
     if (activeTab === 'all') return logs.length;
     if (activeTab === 'audit') return auditLogs.length;
-    if (activeTab === 'login') return loginLogs.length;
-    if (activeTab === 'notify') return notifyLogs.length;
-    return triggerLogs.length;
+    return loginLogs.length;
   };
 
   const renderAllRows = (items: LogItem[], keyPrefix = 'all') => items.map((m, idx) => {
@@ -322,56 +295,6 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
     </tr>
   ));
 
-  const renderNotifyRows = (items: any[]) => items.map((l, idx) => (
-    <tr key={`${l.stationId || 'unknown'}-${idx}`}>
-      <td className="col-time">{fmtDateTime(l.sentAt)}</td>
-      {isCentralMode && (
-        <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-          {getStationLabel(l.stationName)}
-        </td>
-      )}
-      <td className="col-type">
-        <b>{l.channel.toUpperCase()}</b>
-      </td>
-      <td>{l.recipient}</td>
-      <td className="col-action">{l.status === 'sent' ? 'Gửi thành công' : 'Lỗi'}</td>
-    </tr>
-  ));
-
-  const renderTriggerRows = (items: any[]) => items.map((l, idx) => (
-    <tr key={`${l.stationId || 'unknown'}-${idx}`}>
-      <td className="col-time">{fmtDateTime(l.triggeredAt)}</td>
-      {isCentralMode && (
-        <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-          {getStationLabel(l.stationName)}
-        </td>
-      )}
-      <td>
-        {l.ruleId ? (
-          <a href="#"
-             onClick={e => { e.preventDefault(); navigate(`/rule-engine?ruleId=${l.ruleId}`); }}
-             style={{ color: 'var(--admin-info-text)', textDecoration: 'underline dotted', cursor: 'pointer', fontWeight: 700 }}
-             title="Mở quy tắc trong Rule Engine">
-            {l.ruleName || 'Rule'} <span style={{ opacity: .5 }}>→</span>
-          </a>
-        ) : <b>{l.ruleName || 'Rule'}</b>}
-      </td>
-      <td>
-        {l.deviceId ? (
-          <a href="#"
-             onClick={e => { e.preventDefault(); navigate(`/device-management?deviceId=${l.deviceId}`); }}
-             style={{ color: 'inherit', textDecoration: 'underline dotted', cursor: 'pointer' }}
-             title="Xem thiết bị">
-            {l.deviceName || 'Device'} <span style={{ opacity: .5 }}>→</span>
-          </a>
-        ) : (l.deviceName || 'Device')}
-      </td>
-      <td className="col-action">
-        <b>{l.valueAtTrigger?.toFixed(2) || '—'}</b>
-      </td>
-    </tr>
-  ));
-
   const shouldGroupByStation = embeddedMode === 'central' && isCentralMode && !filterStation;
 
   const groupedStations = useMemo(() => {
@@ -395,9 +318,8 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
     if (activeTab === 'all') return groupItems(logs);
     if (activeTab === 'audit') return groupItems(auditLogs);
     if (activeTab === 'login') return groupItems(loginLogs);
-    if (activeTab === 'notify') return groupItems(notifyLogs);
-    return groupItems(triggerLogs);
-  }, [activeTab, auditLogs, loginLogs, logs, notifyLogs, shouldGroupByStation, triggerLogs]);
+    return groupItems(loginLogs);
+  }, [activeTab, auditLogs, loginLogs, logs, shouldGroupByStation]);
 
   const renderEmptyState = () => {
     const colSpan = activeTab === 'all' || activeTab === 'audit'
@@ -408,8 +330,6 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
     if (activeTab === 'all') message = 'Không có dữ liệu tổng hợp.';
     if (activeTab === 'audit') message = 'Không có nhật ký hành động.';
     if (activeTab === 'login') message = 'Không có nhật ký đăng nhập.';
-    if (activeTab === 'notify') message = 'Không có nhật ký gửi thông báo.';
-    if (activeTab === 'triggers') message = 'Không có nhật ký quy tắc kích hoạt.';
 
     return (
       <tr>
@@ -450,16 +370,7 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
       if (source.length === 0) return renderEmptyState();
       return renderLoginRows(source);
     }
-
-    if (activeTab === 'notify') {
-      const source = items || notifyLogs;
-      if (source.length === 0) return renderEmptyState();
-      return renderNotifyRows(source);
-    }
-
-    const source = items || triggerLogs;
-    if (source.length === 0) return renderEmptyState();
-    return renderTriggerRows(source);
+    return renderEmptyState();
   };
 
   return (
@@ -491,8 +402,6 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
                 { value: 'all', label: 'Tất cả nhật ký' },
                 { value: 'audit', label: 'Hành động hệ thống' },
                 { value: 'login', label: 'Nhật ký đăng nhập' },
-                { value: 'notify', label: 'Thông báo Email/SMS' },
-                { value: 'triggers', label: 'Quy tắc kích hoạt' },
               ]}
               width={140}
             />

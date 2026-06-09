@@ -834,18 +834,76 @@ export default function MultisitePage() {
         </div>
       </div>
 
+      {/* KPI SUB-HEADER GAP - Filling the empty space below toolbar for all tabs */}
+      <div style={{
+        position: 'absolute',
+        top: 40,
+        left: 0,
+        right: 0,
+        height: 34,
+        background: 'var(--admin-bg)',
+        borderBottom: '1px solid var(--admin-border)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        padding: '0 16px',
+        gap: 24
+      }}>
+         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Map size={12} style={{ color: 'var(--admin-text-muted)' }} />
+            <span style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', letterSpacing: '0.05em' }}>TỔNG SỐ TRẠM:</span>
+            <span style={{ fontSize: '.75rem', fontWeight: 900, color: 'var(--admin-text)' }}>{globalStats.totalStations}</span>
+         </div>
+         <div style={{ width: 1, height: 16, background: 'var(--admin-border)' }} />
+         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <AlertTriangle size={12} style={{ color: globalStats.totalAlerts > 0 ? 'var(--admin-danger)' : 'var(--admin-success)' }} />
+            <span style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', letterSpacing: '0.05em' }}>CẢNH BÁO:</span>
+            <span style={{ fontSize: '.75rem', fontWeight: 900, color: globalStats.totalAlerts > 0 ? 'var(--admin-danger)' : 'var(--admin-success)' }}>{globalStats.totalAlerts}</span>
+         </div>
+         <div style={{ width: 1, height: 16, background: 'var(--admin-border)' }} />
+         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Wifi size={12} style={{ color: 'var(--admin-text-muted)' }} />
+            <span style={{ fontSize: '.65rem', fontWeight: 800, color: 'var(--admin-text-muted)', letterSpacing: '0.05em' }}>THIẾT BỊ ONLINE:</span>
+            <span style={{ fontSize: '.75rem', fontWeight: 900, color: 'var(--admin-text)' }}>{globalStats.onlineDevices} / {globalStats.totalDevices}</span>
+         </div>
+         
+         <div style={{ flex: 1 }} />
+         
+         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={12} style={{ position: 'absolute', left: 8, opacity: 0.4 }} />
+            <input 
+              type="text" 
+              placeholder="TÌM TRẠM..." 
+              value={searchQuery} 
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ 
+                background: 'var(--admin-panel)', 
+                border: '1px solid var(--admin-border)', 
+                borderRadius: 2, 
+                padding: '3px 10px 3px 26px', 
+                fontSize: '.65rem', 
+                fontWeight: 800,
+                color: 'var(--admin-text)',
+                width: 180,
+                outline: 'none',
+                textTransform: 'uppercase'
+              }} 
+            />
+         </div>
+      </div>
+
       {activeTab === 'analytics' && (
         <div
           style={{
             position: 'absolute',
-            top: 40,
+            top: 74,
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             overflow: 'auto',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 12
+            padding: 0
           }}
         >
           <Suspense fallback={null}>
@@ -858,14 +916,14 @@ export default function MultisitePage() {
         <div
           style={{
             position: 'absolute',
-            top: 40,
+            top: 74,
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             overflow: 'auto',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 12
+            padding: 0
           }}
         >
           <Suspense fallback={null}>
@@ -884,14 +942,14 @@ export default function MultisitePage() {
         <div
           style={{
             position: 'absolute',
-            top: 40,
+            top: 74,
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             overflow: 'auto',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 12
+            padding: 0
           }}
         >
           <Suspense fallback={null}>
@@ -908,14 +966,14 @@ export default function MultisitePage() {
         <div
           style={{
             position: 'absolute',
-            top: 40,
+            top: 74,
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             overflow: 'auto',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 12
+            padding: 0
           }}
         >
           <Suspense fallback={null}>
@@ -928,14 +986,14 @@ export default function MultisitePage() {
         <div
           style={{
             position: 'absolute',
-            top: 40,
+            top: 74,
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             overflow: 'auto',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 12
+            padding: 0
           }}
         >
           <Suspense fallback={null}>
@@ -948,14 +1006,14 @@ export default function MultisitePage() {
         <div
           style={{
             position: 'absolute',
-            top: 40,
+            top: 74,
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             overflow: 'auto',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 12
+            padding: 0
           }}
         >
           <Suspense fallback={null}>
@@ -969,7 +1027,7 @@ export default function MultisitePage() {
           <div
             className="multisite-page-left-panel"
             style={{
-              position: 'absolute', top: 0, right: 0, bottom: 0,
+              position: 'absolute', top: 74, right: 0, bottom: 0,
               width: showLeftPanel ? 200 : 0,
               zIndex: 1000, pointerEvents: 'none',
               transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -1018,20 +1076,6 @@ export default function MultisitePage() {
               }}
             >
               <div style={{ padding: '0 8px 6px 8px', borderBottom: '1px solid var(--admin-border-light)' }}>
-                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                  <Search size={12} style={{ position: 'absolute', left: 6, color: 'var(--admin-text-muted)' }} />
-                  <input
-                    type="text"
-                    placeholder="Tìm trạm..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    style={{
-                      width: '100%', background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)',
-                      fontSize: '0.65rem', padding: '3px 6px 3px 22px', color: 'var(--admin-text)', outline: 'none'
-                    }}
-                  />
-                </div>
-
                 <div style={{ display: 'flex', gap: 1, marginTop: 4 }}>
                   <button
                     onClick={() => setStatusFilter('all')}
@@ -1152,7 +1196,7 @@ export default function MultisitePage() {
             <div
               className="multisite-page-right-panel"
               style={{
-                position: 'absolute', top: 40, left: 0, bottom: 0,
+                position: 'absolute', top: 74, left: 0, bottom: 0,
                 width: showRightPanel ? 200 : 0,
                 zIndex: 1000, pointerEvents: 'none',
                 transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -1192,7 +1236,7 @@ export default function MultisitePage() {
                 style={{
                   height: 'auto',
                   maxHeight: '100%',
-                  margin: showRightPanel ? '5px 0 10px 5px' : '0',
+                  margin: showRightPanel ? '0 0 0 0' : '0',
                   padding: showRightPanel ? '8px 10px' : '0',
                   borderRadius: 4, pointerEvents: 'all',
                   overflow: 'hidden',

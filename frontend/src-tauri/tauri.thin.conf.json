@@ -29,7 +29,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": "all",
     "category": "Utility",
     "shortDescription": "Hệ thống giám sát trạm điện",
     "longDescription": "Station Monitor — giám sát liên tục, phát hiện sớm, cảnh báo đúng lúc.",

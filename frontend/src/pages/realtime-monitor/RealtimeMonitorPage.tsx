@@ -6,6 +6,7 @@
 // ============================================================
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { Map as MapIcon, AlertTriangle, Activity, Server, CheckCircle, Video, Radio, ShieldCheck, Clock, Layers, TrendingUp, Search } from 'lucide-react';
 import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
 import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
@@ -63,6 +64,7 @@ export default function RealtimeMonitorPage({
   // AI Stream Toggle State (mặc định tắt, dùng WebRTC + SVG overlay)
   const [aiStreamCells, setAiStreamCells] = useState<Record<string, boolean>>({});
   const [stationMenuOpen, setStationMenuOpen] = useState(false);
+  const [stationSearch, setStationSearch] = useState('');
   const [stationMenuPos, setStationMenuPos] = useState({ top: 0, left: 0, width: 260 });
   const stationBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -118,21 +120,23 @@ export default function RealtimeMonitorPage({
   useEffect(() => {
     const loadAllStationsCams = async () => {
       try {
+        console.log(`[RealtimeMonitor] Fetching cameras for ${stations.length} stations:`, stations.map(s => s.name));
         const cameraResults = await Promise.all(
           stations.map(async station => {
             const cams = await stationApi.getCameras(station.id).catch(() => [] as CameraDevice[]);
-            console.log(`[RealtimeMonitor] Station ${station.name} fetched ${cams.length} cameras`);
+            console.log(`[RealtimeMonitor] Station: ${station.name} (id: ${station.id}) fetched ${cams.length} cameras`);
             return { station, cams };
           })
         );
         
-        console.log(`[RealtimeMonitor] Total camera results: ${cameraResults.length}`);
+        console.log(`[RealtimeMonitor] Total camera results count: ${cameraResults.length}`);
 
         const mergedStatus: Record<string, string> = {};
         const mergedCams: CameraDevice[] = [];
         const thermalIds: string[] = [];
 
         cameraResults.forEach(({ station, cams }) => {
+          console.log(`[RealtimeMonitor] Processing station: ${station.name}, found ${cams.length} cameras`);
           const { expandedCams, initialStatus } = expandCameraVariants(cams, station.name);
           Object.assign(mergedStatus, initialStatus);
           mergedCams.push(...expandedCams);
@@ -192,7 +196,6 @@ export default function RealtimeMonitorPage({
         }
       }).catch(() => {});
     }
-
     // Initial latest points
     stationApi.getLatestPoints().then(readings => {
       setRoiReadings(prev => {
@@ -206,7 +209,7 @@ export default function RealtimeMonitorPage({
         return next;
       });
     }).catch(console.error);
-  }, [stationIdOverride, embeddedMode, stations]); // Re-run when central station context changes
+  }, [embeddedMode, stationIdOverride, stations, fetchDevices, fetchAlerts, getFirstStationId, onStationIdChange]);
 
   // 2. Periodic ROI/PD Boundary Refresh
   useEffect(() => {
@@ -308,6 +311,7 @@ export default function RealtimeMonitorPage({
       thermal: number; optical: number; pd: number; cctv: number;
       cameraNames: string[];
       alertCount: number;
+      firstCam?: CameraDevice;
     }>();
     const seenBaseIds = new Set<string>();
 
@@ -332,11 +336,27 @@ export default function RealtimeMonitorPage({
       else if (t === 'camera_dual') { entry.thermal += 1; entry.optical += 1; }
       else entry.cctv += 1;
 
+      if (!entry.firstCam) entry.firstCam = cam;
+
       entry.cameraNames.push(cam.name.replace(/\s+\((Quang học|Nhiệt)\)$/i, ''));
       grouped.set(key, entry);
     });
 
-    const result = [...grouped.values()].sort((a, b) => a.stationName.localeCompare(b.stationName, 'vi'));
+    const result = [...grouped.values()];
+    
+    // Add missing stations
+    stations.forEach(s => {
+        if (!grouped.has(s.name.toLowerCase())) {
+            result.push({
+                stationId: s.id, stationName: s.name,
+                total: 0, online: 0, offline: 0,
+                thermal: 0, optical: 0, pd: 0, cctv: 0,
+                cameraNames: [], alertCount: 0
+            });
+        }
+    });
+
+    result.sort((a, b) => a.stationName.localeCompare(b.stationName, 'vi'));
     result.forEach(entry => {
       entry.alertCount = alerts.filter(a => {
         const dev = devices.find(d => d.id.toLowerCase() === (typeof a.deviceId === 'string' ? a.deviceId.toLowerCase() : ''));
@@ -347,6 +367,22 @@ export default function RealtimeMonitorPage({
     });
     return result;
   }, [cameras, deviceStatus, stations, alerts, devices]);
+
+  const fleetSummary = useMemo(() => {
+    const totalStations = stations.length;
+    const totalCams = stationCameraStats.reduce((acc, s) => acc + s.total, 0);
+    const onlineCams = stationCameraStats.reduce((acc, s) => acc + s.online, 0);
+    const totalAlerts = alerts.length;
+    const avgHealth = totalCams > 0 ? Math.round((onlineCams / totalCams) * 100) : 0;
+    
+    return { totalStations, totalCams, onlineCams, totalAlerts, avgHealth };
+  }, [stationCameraStats, alerts, stations]);
+
+  const filteredStationStats = useMemo(() => {
+    if (!stationSearch) return stationCameraStats;
+    const q = stationSearch.toLowerCase();
+    return stationCameraStats.filter(s => s.stationName.toLowerCase().includes(q));
+  }, [stationCameraStats, stationSearch]);
 
   /** Render các polygon SVG vùng ROI nhiệt lên overlay của ô camera. */
   const renderOverlayBoundaries = (cam: CameraDevice) => {
@@ -1103,7 +1139,7 @@ export default function RealtimeMonitorPage({
                       padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
                       fontWeight: !stationIdOverride ? 800 : 500,
                       color: !stationIdOverride ? 'var(--admin-accent)' : 'var(--admin-text)',
-                      background: !stationIdOverride ? 'rgba(14,165,233,0.12)' : 'transparent',
+                      background: !stationIdOverride ? 'var(--admin-layer-3)' : 'transparent',
                       borderLeft: `2px solid ${!stationIdOverride ? 'var(--admin-accent)' : 'transparent'}`,
                       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                     }}
@@ -1118,7 +1154,7 @@ export default function RealtimeMonitorPage({
                         padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
                         fontWeight: stationIdOverride === s.id ? 800 : 500,
                         color: stationIdOverride === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
-                        background: stationIdOverride === s.id ? 'rgba(14,165,233,0.12)' : 'transparent',
+                        background: stationIdOverride === s.id ? 'var(--admin-layer-3)' : 'transparent',
                         borderLeft: `2px solid ${stationIdOverride === s.id ? 'var(--admin-accent)' : 'transparent'}`,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                       }}
@@ -1171,84 +1207,126 @@ export default function RealtimeMonitorPage({
             </>
           )}
         </div>
-
-        <div className="nvr-stats">
-          <div className="nvr-stat">
-            <span className={`nvr-dot ${onlineCount > 0 ? 'online' : 'offline'}`} />
-            Online: <b style={{ color: onlineCount > 0 ? 'var(--admin-success)' : 'var(--admin-danger)' }}>{onlineCount}/{cameras.length}</b>
-          </div>
-        </div>
       </div>
 
       {/* ── Main Area ── */}
       <div className="rtm-main">
         {isCentralFleetView ? (
-          <div style={{ padding: '12px 16px', flex: 1, overflow: 'auto' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', overflow: 'hidden' }}>
+            
+            {/* System Status Summary Bar */}
+            <div style={{ display: 'flex', gap: 30, padding: '10px 20px', background: 'var(--admin-panel)', borderBottom: '1px solid var(--admin-border)', alignItems: 'center' }}>
+               <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>
+                  HỆ THỐNG: <span style={{ color: 'var(--admin-text)', marginLeft: 6 }}>{fleetSummary.totalStations} TRẠM</span>
+               </div>
+               <div style={{ width: 1, height: 14, background: 'var(--admin-border)' }} />
+               <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>
+                  THIẾT BỊ: <span style={{ color: 'var(--admin-success)', marginLeft: 6 }}>{fleetSummary.onlineCams} ONLINE</span> / {fleetSummary.totalCams} TỔNG
+               </div>
+               <div style={{ width: 1, height: 14, background: 'var(--admin-border)' }} />
+               <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>
+                  SỨC KHỎE: <span style={{ color: fleetSummary.avgHealth > 90 ? 'var(--admin-success)' : 'var(--admin-accent)', marginLeft: 6 }}>{fleetSummary.avgHealth}%</span>
+               </div>
+               
+               <div style={{ flex: 1 }} />
 
-
-            <div className="admin-card" style={{ padding: 0, overflow: 'auto' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 32 }}>#</th>
-                    <th>Trạm</th>
-                    <th style={{ textAlign: 'center' }}>Tổng</th>
-                    <th style={{ textAlign: 'center' }}>Online</th>
-                    <th style={{ textAlign: 'center' }}>Offline</th>
-                    <th style={{ minWidth: 130 }}>Loại camera</th>
-                    <th style={{ minWidth: 140 }}>Sức khỏe</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stationCameraStats.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>
-                        Chưa có camera nào trong hệ thống.
-                      </td>
-                    </tr>
-                  ) : (
-                    stationCameraStats.map((stat, idx) => {
-                      const health = stat.total > 0 ? Math.round((stat.online / stat.total) * 100) : 0;
-                      const healthColor = health === 100 ? 'var(--admin-success)' : health >= 50 ? '#f59e0b' : 'var(--admin-danger)';
-                      return (
-                        <tr
-                          key={stat.stationName}
-                          style={{ cursor: stat.stationId ? 'pointer' : 'default' }}
-                          onClick={() => stat.stationId && onStationIdChange?.(stat.stationId)}
-                        >
-                          <td style={{ color: 'var(--admin-text-muted)', fontSize: '.75rem' }}>{idx + 1}</td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: stat.online > 0 ? 'var(--admin-success)' : 'var(--admin-danger)', flexShrink: 0, boxShadow: stat.online > 0 ? '0 0 6px var(--admin-success)' : 'none' }} />
-                              <b style={{ fontSize: '.82rem' }}>{stat.stationName}</b>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'center', fontWeight: 800 }}>{stat.total}</td>
-                          <td style={{ textAlign: 'center', color: 'var(--admin-success)', fontWeight: 800 }}>{stat.online}</td>
-                          <td style={{ textAlign: 'center', color: stat.offline > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)', fontWeight: 800 }}>{stat.offline}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                              {stat.thermal > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(239,68,68,.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,.3)' }}>🌡 Nhiệt ×{stat.thermal}</span>}
-                              {stat.optical > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(14,165,233,.15)', color: 'var(--admin-accent)', border: '1px solid rgba(14,165,233,.3)' }}>👁 Quang ×{stat.optical}</span>}
-                              {stat.pd > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(168,85,247,.15)', color: '#a855f7', border: '1px solid rgba(168,85,247,.3)' }}>⚡ PD ×{stat.pd}</span>}
-                              {stat.cctv > 0 && <span style={{ fontSize: '.65rem', padding: '1px 6px', background: 'rgba(100,116,139,.15)', color: 'var(--admin-text-muted)', border: '1px solid var(--admin-border)' }}>📷 CCTV ×{stat.cctv}</span>}
-                            </div>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{ flex: 1, height: 6, background: 'var(--admin-layer-2)', borderRadius: 3, overflow: 'hidden' }}>
-                                <div style={{ width: `${health}%`, height: '100%', background: healthColor, borderRadius: 3, transition: 'width .4s' }} />
-                              </div>
-                              <span style={{ fontSize: '.72rem', fontWeight: 800, color: healthColor, minWidth: 32, textAlign: 'right' }}>{health}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+               <div style={{ position: 'relative' }}>
+                  <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                  <input 
+                    type="text" 
+                    placeholder="TÌM KIẾM TRẠM..." 
+                    value={stationSearch} 
+                    onChange={e => setStationSearch(e.target.value)}
+                    style={{ 
+                      background: 'rgba(0,0,0,0.2)', 
+                      border: '1px solid var(--admin-border)', 
+                      borderRadius: 2, 
+                      padding: '4px 10px 4px 26px', 
+                      fontSize: '.65rem', 
+                      fontWeight: 800,
+                      color: 'var(--admin-text)',
+                      width: 180,
+                      textTransform: 'uppercase'
+                    }} 
+                  />
+               </div>
             </div>
+
+            {/* Station Mosaic Grid */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
+                  {filteredStationStats.map(stat => {
+                     const cam = stat.firstCam;
+                     const health = stat.total > 0 ? Math.round((stat.online / stat.total) * 100) : 0;
+                     const healthColor = health === 100 ? 'var(--admin-success)' : health >= 50 ? 'var(--admin-accent)' : 'var(--admin-danger)';
+                     
+                     return (
+                        <div 
+                          key={stat.stationId} 
+                          className="admin-card" 
+                          style={{ 
+                            padding: 0, display: 'flex', flexDirection: 'column', 
+                            border: '1px solid var(--admin-border)', overflow: 'hidden',
+                            transition: 'border-color 0.2s',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => stat.stationId && onStationIdChange?.(stat.stationId)}
+                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--admin-accent)'}
+                          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--admin-border)'}
+                        >
+                           {/* Station Header */}
+                           <div style={{ padding: '8px 12px', background: 'var(--admin-layer-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--admin-border)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: stat.online > 0 ? 'var(--admin-success)' : 'var(--admin-danger)', boxShadow: stat.online > 0 ? '0 0 5px var(--admin-success)' : 'none' }} />
+                                 <b style={{ fontSize: '.75rem', color: 'var(--admin-text)', letterSpacing: '0.05em' }}>{stat.stationName.toUpperCase()}</b>
+                              </div>
+                              {stat.alertCount > 0 && (
+                                 <div style={{ background: 'var(--admin-danger)', color: '#fff', fontSize: '.6rem', fontWeight: 900, padding: '1px 6px', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <AlertTriangle size={10} /> {stat.alertCount}
+                                 </div>
+                              )}
+                           </div>
+
+                           {/* Preview Section */}
+                           <div style={{ aspectRatio: '16/9', background: '#000', position: 'relative', overflow: 'hidden' }}>
+                              {cam ? (
+                                 <iframe 
+                                    src={`/camera-stream.html?src=${encodeURIComponent(cam.config.go2rtc_id || cam.config.go2rtc_optical || '')}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`}
+                                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                                    title={cam.name}
+                                 />
+                              ) : (
+                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'rgba(255,255,255,0.15)', gap: 8 }}>
+                                    <Video size={32} />
+                                    <div style={{ fontSize: '.6rem', fontWeight: 900, letterSpacing: '0.2em' }}>NO SIGNAL</div>
+                                 </div>
+                              )}
+                              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.5) 0%, transparent 40%)', pointerEvents: 'none' }} />
+                              <div style={{ position: 'absolute', bottom: 8, left: 10, right: 10, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
+                                 <span style={{ fontSize: '.65rem', color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>{cam?.name || '---'}</span>
+                                 <span style={{ fontSize: '.6rem', color: 'rgba(255,255,255,0.5)', fontWeight: 800 }}>LIVE</span>
+                              </div>
+                           </div>
+
+                           {/* Station Footer Stats */}
+                           <div style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--admin-panel)' }}>
+                              <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
+                                 ONLINE: <span style={{ color: 'var(--admin-text)' }}>{stat.online}</span> / {stat.total}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                 <div style={{ width: 60, height: 4, background: 'var(--admin-layer-3)', borderRadius: 2, overflow: 'hidden' }}>
+                                    <div style={{ width: `${health}%`, height: '100%', background: healthColor, borderRadius: 2, transition: 'width 0.5s' }} />
+                                 </div>
+                                 <span style={{ fontSize: '.65rem', fontWeight: 800, color: healthColor, minWidth: 28, textAlign: 'right' }}>{health}%</span>
+                              </div>
+                           </div>
+                        </div>
+                     );
+                  })}
+               </div>
+            </div>
+
+
           </div>
         ) : (
           <div className="nvr-wrap">
