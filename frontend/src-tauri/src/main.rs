@@ -6,13 +6,13 @@ mod config;
 
 /// Lấy server URL đã lưu (gọi từ frontend JS)
 #[tauri::command]
-fn get_server_url() -> Option<String> {
+async fn get_server_url() -> Option<String> {
     config::read_server_url()
 }
 
 /// Lưu server URL và điều hướng WebView tới đó
 #[tauri::command]
-fn connect_to_server(app: tauri::AppHandle, url: String) -> Result<(), String> {
+async fn connect_to_server(app: tauri::AppHandle, url: String) -> Result<(), String> {
     // Chuẩn hoá URL
     let normalized = if url.starts_with("http://") || url.starts_with("https://") {
         url.clone()
@@ -37,7 +37,7 @@ fn connect_to_server(app: tauri::AppHandle, url: String) -> Result<(), String> {
 
 /// Xoá config (quay về màn hình setup)
 #[tauri::command]
-fn disconnect(app: tauri::AppHandle) -> Result<(), String> {
+async fn disconnect(app: tauri::AppHandle) -> Result<(), String> {
     config::clear_config()?;
     // Quay về trang setup
     if let Some(window) = app.get_webview_window("main") {
@@ -49,7 +49,7 @@ fn disconnect(app: tauri::AppHandle) -> Result<(), String> {
 
 /// Mở một URL bằng trình duyệt mặc định của hệ thống
 #[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
+async fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("cmd")
@@ -76,7 +76,7 @@ fn open_url(url: String) -> Result<(), String> {
 
 /// Cài đặt Tailscale từ file setup đóng gói sẵn
 #[tauri::command]
-fn install_tailscale(app: tauri::AppHandle) -> Result<(), String> {
+async fn install_tailscale(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::path::BaseDirectory;
 
     let installer_path = app
