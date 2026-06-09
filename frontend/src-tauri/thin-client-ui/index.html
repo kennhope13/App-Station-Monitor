@@ -318,9 +318,14 @@
       </div>
 
       <!-- Hint -->
-      <div class="hint">
-        Nhập địa chỉ IP của máy chủ trạm điện.<br/>
-        App sẽ nhớ địa chỉ này cho lần sau.
+      <div class="hint" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05)">
+        <div style="margin-bottom: 8px;">Nhập địa chỉ IP của máy chủ trạm điện. App sẽ nhớ cho lần sau.</div>
+        <div style="margin-top: 8px; font-size: 11px; background: rgba(59,130,246,0.08); padding: 8px 12px; border-radius: 8px; border: 1px dashed rgba(59,130,246,0.2); text-align: left;">
+          <span style="color: var(--text-muted);">Kết nối từ xa hoặc khác dải mạng?</span><br/>
+          <a href="#" onclick="openTailscale()" style="color: #60a5fa; font-weight: 600; text-decoration: underline; display: inline-block; margin-top: 4px;">
+            Tải Tailscale VPN tại đây để thông mạng
+          </a>
+        </div>
       </div>
     </div>
   </div>
@@ -419,6 +424,14 @@
       } catch (err) {
         showStatus('error', `Lỗi: ${err}`);
         setIdle();
+      }
+    }
+
+    async function openTailscale() {
+      try {
+        await invoke('open_url', { url: 'https://tailscale.com/download' });
+      } catch (err) {
+        alert('Không thể mở trình duyệt: ' + err);
       }
     }
 

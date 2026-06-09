@@ -379,16 +379,11 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
               </div>
 
               {/* PHÂN QUYỀN TRẠM BIẾN ÁP */}
-              {(() => {
-                // Restricted admin: luôn hiển thị checkbox trạm (chỉ trạm của mình)
+              {!isRestrictedAdmin && (() => {
                 // Global admin + operator: hiển thị khi role=operator
                 // Global admin + manager/admin: ẩn (mặc định tất cả trạm)
-                const showStationPicker = isRestrictedAdmin
-                  ? (formData.role === 'operator' || formData.role === 'manager' || formData.role === 'admin')
-                  : formData.role === 'operator';
-                const visibleStations = isRestrictedAdmin
-                  ? stationsList.filter(s => myStationIds.includes(s.id))
-                  : stationsList;
+                const showStationPicker = formData.role === 'operator';
+                const visibleStations = stationsList;
 
                 return (
                   <div className="form-group" style={{ marginTop: 12 }}>
@@ -399,7 +394,7 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
                       )}
                     </label>
 
-                    {showStationPicker ? (
+                    {showStationPicker && (
                       <div style={{
                         maxHeight: 120, overflowY: 'auto', border: '1px solid var(--admin-border)',
                         padding: 8, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6,
@@ -427,13 +422,6 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
                             );
                           })
                         )}
-                      </div>
-                    ) : (
-                      <div style={{
-                        fontSize: 11, color: 'var(--admin-text-muted)', border: '1px dashed var(--admin-border)',
-                        padding: '8px 10px', marginTop: 4, background: 'rgba(255,255,255,0.02)'
-                      }}>
-                        Tài khoản <b>{formData.role === 'admin' ? 'Quản trị viên' : 'Quản lý'}</b> mặc định được cấp quyền truy cập toàn bộ trạm biến áp trong hệ thống.
                       </div>
                     )}
                   </div>

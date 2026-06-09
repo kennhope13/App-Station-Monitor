@@ -72,6 +72,8 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
     return type ? (map[type] ?? type) : '—';
   };
 
+  const getStationLabel = (stationName?: string | null) => stationName || 'Trung tâm đa trạm';
+
   // Format chuỗi JSON từ oldValue/newValue để hiển thị dễ đọc
   const prettyFormat = (raw: string | null): string => {
     if (!raw) return '(trống)';
@@ -205,7 +207,220 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
     return triggerLogs.length;
   };
 
-  const renderTableBody = () => {
+  const renderAllRows = (items: LogItem[], keyPrefix = 'all') => items.map((m, idx) => {
+    const rowId = `${keyPrefix}-${idx}`;
+    const hasDetail = m.type === 'audit';
+    const isExpanded = !!expandedIds[rowId];
+
+    return (
+      <React.Fragment key={rowId}>
+        <tr>
+          <td className="col-time" style={{ color: 'var(--admin-text-muted)', fontFamily: 'monospace' }}>
+            {fmtDateTime(m.ts)}
+          </td>
+          <td className="col-type">
+            <span className={`tag-all tag-${m.type}`}>{m.type.toUpperCase()}</span>
+          </td>
+          {isCentralMode && (
+            <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+              {getStationLabel(m.stationName)}
+            </td>
+          )}
+          <td style={{ fontWeight: 600 }}>
+            {m.info} <small style={{ color: 'var(--admin-text-muted)', fontWeight: 'normal' }}>({m.action})</small>
+          </td>
+          <td className="col-who">{m.who || 'system'}</td>
+          <td className="col-view" style={{ textAlign: 'center' }}>
+            {hasDetail ? (
+              <button className="expanding-btn" onClick={() => toggleExpand(rowId)}>
+                {isExpanded ? '▲' : '▼'}
+              </button>
+            ) : '—'}
+          </td>
+        </tr>
+        {hasDetail && isExpanded && (
+          <tr className="audit-detail-row">
+            <td colSpan={isCentralMode ? 6 : 5} style={{ padding: 16 }}>
+              <div className="log-diff-box">
+                <div className="diff-item">
+                  <b>CŨ</b>
+                  <div className="diff-content">{prettyFormat(m.raw.oldValue)}</div>
+                </div>
+                <div className="diff-item">
+                  <b>MỚI</b>
+                  <div className="diff-content">{prettyFormat(m.raw.newValue)}</div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    );
+  });
+
+  const renderAuditRows = (items: any[], keyPrefix = 'audit') => items.map((l, idx) => {
+    const rowId = `${keyPrefix}-${idx}`;
+    const isExpanded = !!expandedIds[rowId];
+    return (
+      <React.Fragment key={rowId}>
+        <tr>
+          <td className="col-time" style={{ color: 'var(--admin-text-muted)' }}>
+            {fmtDateTime(l.ts)}
+          </td>
+          <td className="col-action">
+            <b>{l.action.toUpperCase()}</b>
+          </td>
+          {isCentralMode && (
+            <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+              {getStationLabel(l.stationName)}
+            </td>
+          )}
+          <td>
+            {entityLabel(l.entityType)}{' '}
+            <small style={{ color: 'var(--admin-text-muted)', fontSize: '0.7rem' }}>{l.entityId?.slice(0, 8) || ''}</small>
+          </td>
+          <td className="col-who">{l.fullName || l.username || 'system'}</td>
+          <td className="col-view" style={{ textAlign: 'center' }}>
+            <button className="expanding-btn" onClick={() => toggleExpand(rowId)}>
+              {isExpanded ? '▲' : '▼'}
+            </button>
+          </td>
+        </tr>
+        {isExpanded && (
+          <tr className="audit-detail-row">
+            <td colSpan={isCentralMode ? 6 : 5} style={{ padding: 16 }}>
+              <div className="log-diff-box">
+                <div className="diff-item">
+                  <b>CŨ</b>
+                  <div className="diff-content">{prettyFormat(l.oldValue)}</div>
+                </div>
+                <div className="diff-item">
+                  <b>MỚI</b>
+                  <div className="diff-content">{prettyFormat(l.newValue)}</div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </React.Fragment>
+    );
+  });
+
+  const renderLoginRows = (items: any[]) => items.map((l, idx) => (
+    <tr key={`${l.stationId || 'unknown'}-${idx}`}>
+      <td className="col-time">{fmtDateTime(l.ts)}</td>
+      {isCentralMode && (
+        <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+          {getStationLabel(l.stationName)}
+        </td>
+      )}
+      <td className="col-action">
+        <b>{l.username}</b>
+      </td>
+      <td>{l.action === 'login' ? 'Đăng nhập' : 'Thất bại / Thoát'}</td>
+      <td className="col-ip">{l.ipAddress || 'internal'}</td>
+    </tr>
+  ));
+
+  const renderNotifyRows = (items: any[]) => items.map((l, idx) => (
+    <tr key={`${l.stationId || 'unknown'}-${idx}`}>
+      <td className="col-time">{fmtDateTime(l.sentAt)}</td>
+      {isCentralMode && (
+        <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+          {getStationLabel(l.stationName)}
+        </td>
+      )}
+      <td className="col-type">
+        <b>{l.channel.toUpperCase()}</b>
+      </td>
+      <td>{l.recipient}</td>
+      <td className="col-action">{l.status === 'sent' ? 'Gửi thành công' : 'Lỗi'}</td>
+    </tr>
+  ));
+
+  const renderTriggerRows = (items: any[]) => items.map((l, idx) => (
+    <tr key={`${l.stationId || 'unknown'}-${idx}`}>
+      <td className="col-time">{fmtDateTime(l.triggeredAt)}</td>
+      {isCentralMode && (
+        <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
+          {getStationLabel(l.stationName)}
+        </td>
+      )}
+      <td>
+        {l.ruleId ? (
+          <a href="#"
+             onClick={e => { e.preventDefault(); navigate(`/rule-engine?ruleId=${l.ruleId}`); }}
+             style={{ color: 'var(--admin-info-text)', textDecoration: 'underline dotted', cursor: 'pointer', fontWeight: 700 }}
+             title="Mở quy tắc trong Rule Engine">
+            {l.ruleName || 'Rule'} <span style={{ opacity: .5 }}>→</span>
+          </a>
+        ) : <b>{l.ruleName || 'Rule'}</b>}
+      </td>
+      <td>
+        {l.deviceId ? (
+          <a href="#"
+             onClick={e => { e.preventDefault(); navigate(`/device-management?deviceId=${l.deviceId}`); }}
+             style={{ color: 'inherit', textDecoration: 'underline dotted', cursor: 'pointer' }}
+             title="Xem thiết bị">
+            {l.deviceName || 'Device'} <span style={{ opacity: .5 }}>→</span>
+          </a>
+        ) : (l.deviceName || 'Device')}
+      </td>
+      <td className="col-action">
+        <b>{l.valueAtTrigger?.toFixed(2) || '—'}</b>
+      </td>
+    </tr>
+  ));
+
+  const shouldGroupByStation = embeddedMode === 'central' && isCentralMode && !filterStation;
+
+  const groupedStations = useMemo(() => {
+    if (!shouldGroupByStation) return [];
+
+    function groupItems<T extends { stationId?: string; stationName?: string }>(items: T[]) {
+      const grouped = new Map<string, { id: string; name: string; items: T[] }>();
+      items.forEach((item, index) => {
+        const id = item.stationId || `unknown-${index}`;
+        const name = getStationLabel(item.stationName);
+        const current = grouped.get(id);
+        if (current) {
+          current.items.push(item);
+          return;
+        }
+        grouped.set(id, { id, name, items: [item] });
+      });
+      return Array.from(grouped.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+    }
+
+    if (activeTab === 'all') return groupItems(logs);
+    if (activeTab === 'audit') return groupItems(auditLogs);
+    if (activeTab === 'login') return groupItems(loginLogs);
+    if (activeTab === 'notify') return groupItems(notifyLogs);
+    return groupItems(triggerLogs);
+  }, [activeTab, auditLogs, loginLogs, logs, notifyLogs, shouldGroupByStation, triggerLogs]);
+
+  const renderEmptyState = () => {
+    const colSpan = activeTab === 'all' || activeTab === 'audit'
+      ? (isCentralMode ? 6 : 5)
+      : (isCentralMode ? 5 : 4);
+
+    let message = 'Không có dữ liệu.';
+    if (activeTab === 'all') message = 'Không có dữ liệu tổng hợp.';
+    if (activeTab === 'audit') message = 'Không có nhật ký hành động.';
+    if (activeTab === 'login') message = 'Không có nhật ký đăng nhập.';
+    if (activeTab === 'notify') message = 'Không có nhật ký gửi thông báo.';
+    if (activeTab === 'triggers') message = 'Không có nhật ký quy tắc kích hoạt.';
+
+    return (
+      <tr>
+        <td colSpan={colSpan} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
+          {message}
+        </td>
+      </tr>
+    );
+  };
+
+  const renderTableBody = (groupItems?: any[], groupKey?: string) => {
     if (loading) {
       return (
         <tr>
@@ -216,228 +431,35 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
       );
     }
 
-    if (activeTab === 'all') {
-      if (logs.length === 0) {
-        return (
-          <tr>
-            <td colSpan={isCentralMode ? 6 : 5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
-              Không có dữ liệu tổng hợp.
-            </td>
-          </tr>
-        );
-      }
+    const items = groupItems;
 
-      return logs.map((m, idx) => {
-        const rowId = `all-${idx}`;
-        const hasDetail = m.type === 'audit';
-        const isExpanded = !!expandedIds[rowId];
-        
-        return (
-          <React.Fragment key={rowId}>
-            <tr>
-              <td className="col-time" style={{ color: 'var(--admin-text-muted)', fontFamily: 'monospace' }}>
-                {fmtDateTime(m.ts)}
-              </td>
-              <td className="col-type">
-                <span className={`tag-all tag-${m.type}`}>{m.type.toUpperCase()}</span>
-              </td>
-              {isCentralMode && (
-                <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-                  {m.stationName || '—'}
-                </td>
-              )}
-              <td style={{ fontWeight: 600 }}>
-                {m.info} <small style={{ color: 'var(--admin-text-muted)', fontWeight: 'normal' }}>({m.action})</small>
-              </td>
-              <td className="col-who">{m.who || 'system'}</td>
-              <td className="col-view" style={{ textAlign: 'center' }}>
-                {hasDetail ? (
-                  <button className="expanding-btn" onClick={() => toggleExpand(rowId)}>
-                    {isExpanded ? '▲' : '▼'}
-                  </button>
-                ) : '—'}
-              </td>
-            </tr>
-            {hasDetail && isExpanded && (
-              <tr className="audit-detail-row">
-                <td colSpan={isCentralMode ? 6 : 5} style={{ padding: 16 }}>
-                  <div className="log-diff-box">
-                    <div className="diff-item">
-                      <b>CŨ</b>
-                      <div className="diff-content">{prettyFormat(m.raw.oldValue)}</div>
-                    </div>
-                    <div className="diff-item">
-                      <b>MỚI</b>
-                      <div className="diff-content">{prettyFormat(m.raw.newValue)}</div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </React.Fragment>
-        );
-      });
+    if (activeTab === 'all') {
+      const source = items || logs;
+      if (source.length === 0) return renderEmptyState();
+      return renderAllRows(source, groupKey || 'all');
     }
 
     if (activeTab === 'audit') {
-      if (auditLogs.length === 0) {
-        return (
-          <tr>
-            <td colSpan={isCentralMode ? 6 : 5} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
-              Không có nhật ký hành động.
-            </td>
-          </tr>
-        );
-      }
-
-      return auditLogs.map((l, idx) => {
-        const rowId = `audit-${idx}`;
-        const isExpanded = !!expandedIds[rowId];
-        return (
-          <React.Fragment key={rowId}>
-            <tr>
-              <td className="col-time" style={{ color: 'var(--admin-text-muted)' }}>
-                {fmtDateTime(l.ts)}
-              </td>
-              <td className="col-action">
-                <b>{l.action.toUpperCase()}</b>
-              </td>
-              {isCentralMode && (
-                <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-                  {l.stationName || '—'}
-                </td>
-              )}
-              <td>
-                {entityLabel(l.entityType)}{' '}
-                <small style={{ color: 'var(--admin-text-muted)', fontSize: '0.7rem' }}>{l.entityId?.slice(0, 8) || ''}</small>
-              </td>
-              <td className="col-who">{l.fullName || l.username || 'system'}</td>
-              <td className="col-view" style={{ textAlign: 'center' }}>
-                <button className="expanding-btn" onClick={() => toggleExpand(rowId)}>
-                  {isExpanded ? '▲' : '▼'}
-                </button>
-              </td>
-            </tr>
-            {isExpanded && (
-              <tr className="audit-detail-row">
-                <td colSpan={isCentralMode ? 6 : 5} style={{ padding: 16 }}>
-                  <div className="log-diff-box">
-                    <div className="diff-item">
-                      <b>CŨ</b>
-                      <div className="diff-content">{prettyFormat(l.oldValue)}</div>
-                    </div>
-                    <div className="diff-item">
-                      <b>MỚI</b>
-                      <div className="diff-content">{prettyFormat(l.newValue)}</div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </React.Fragment>
-        );
-      });
+      const source = items || auditLogs;
+      if (source.length === 0) return renderEmptyState();
+      return renderAuditRows(source, groupKey || 'audit');
     }
 
     if (activeTab === 'login') {
-      if (loginLogs.length === 0) {
-        return (
-          <tr>
-            <td colSpan={isCentralMode ? 5 : 4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
-              Không có nhật ký đăng nhập.
-            </td>
-          </tr>
-        );
-      }
-
-      return loginLogs.map((l, idx) => (
-        <tr key={idx}>
-          <td className="col-time">{fmtDateTime(l.ts)}</td>
-          {isCentralMode && (
-            <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-              {l.stationName || '—'}
-            </td>
-          )}
-          <td className="col-action">
-            <b>{l.username}</b>
-          </td>
-          <td>{l.action === 'login' ? 'Đăng nhập' : 'Thất bại / Thoát'}</td>
-          <td className="col-ip">{l.ipAddress || 'internal'}</td>
-        </tr>
-      ));
+      const source = items || loginLogs;
+      if (source.length === 0) return renderEmptyState();
+      return renderLoginRows(source);
     }
 
     if (activeTab === 'notify') {
-      if (notifyLogs.length === 0) {
-        return (
-          <tr>
-            <td colSpan={isCentralMode ? 5 : 4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
-              Không có nhật ký gửi thông báo.
-            </td>
-          </tr>
-        );
-      }
-
-      return notifyLogs.map((l, idx) => (
-        <tr key={idx}>
-          <td className="col-time">{fmtDateTime(l.sentAt)}</td>
-          {isCentralMode && (
-            <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-              {l.stationName || '—'}
-            </td>
-          )}
-          <td className="col-type">
-            <b>{l.channel.toUpperCase()}</b>
-          </td>
-          <td>{l.recipient}</td>
-          <td className="col-action">{l.status === 'sent' ? 'Gửi thành công' : 'Lỗi'}</td>
-        </tr>
-      ));
+      const source = items || notifyLogs;
+      if (source.length === 0) return renderEmptyState();
+      return renderNotifyRows(source);
     }
 
-    if (triggerLogs.length === 0) {
-      return (
-        <tr>
-          <td colSpan={isCentralMode ? 5 : 4} style={{ textAlign: 'center', padding: 60, color: 'var(--admin-text-muted)', fontStyle: 'italic' }}>
-            Không có nhật ký quy tắc kích hoạt.
-          </td>
-        </tr>
-      );
-    }
-
-    return triggerLogs.map((l, idx) => (
-      <tr key={idx}>
-        <td className="col-time">{fmtDateTime(l.triggeredAt)}</td>
-        {isCentralMode && (
-          <td className="col-station" style={{ color: 'var(--admin-text-muted)', fontWeight: 500 }}>
-            {l.stationName || '—'}
-          </td>
-        )}
-        <td>
-          {l.ruleId ? (
-            <a href="#"
-               onClick={e => { e.preventDefault(); navigate(`/rule-engine?ruleId=${l.ruleId}`); }}
-               style={{ color: 'var(--admin-info-text)', textDecoration: 'underline dotted', cursor: 'pointer', fontWeight: 700 }}
-               title="Mở quy tắc trong Rule Engine">
-              {l.ruleName || 'Rule'} <span style={{ opacity: .5 }}>→</span>
-            </a>
-          ) : <b>{l.ruleName || 'Rule'}</b>}
-        </td>
-        <td>
-          {l.deviceId ? (
-            <a href="#"
-               onClick={e => { e.preventDefault(); navigate(`/device-management?deviceId=${l.deviceId}`); }}
-               style={{ color: 'inherit', textDecoration: 'underline dotted', cursor: 'pointer' }}
-               title="Xem thiết bị">
-              {l.deviceName || 'Device'} <span style={{ opacity: .5 }}>→</span>
-            </a>
-          ) : (l.deviceName || 'Device')}
-        </td>
-        <td className="col-action">
-          <b>{l.valueAtTrigger?.toFixed(2) || '—'}</b>
-        </td>
-      </tr>
-    ));
+    const source = items || triggerLogs;
+    if (source.length === 0) return renderEmptyState();
+    return renderTriggerRows(source);
   };
 
   return (
@@ -503,15 +525,51 @@ export default function AuditLogPage({ embeddedMode = 'default', stationIdOverri
       </div>
 
       <div className="admin-card" style={{ padding: 0, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--admin-layer-1)' }}>
-              {renderTableHead()}
-            </thead>
-            <tbody>
-              {renderTableBody()}
-            </tbody>
-          </table>
+        <div style={{ flex: 1, overflowY: 'auto', padding: shouldGroupByStation ? 12 : 0 }}>
+          {shouldGroupByStation ? (
+            groupedStations.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {groupedStations.map(group => (
+                  <div key={group.id} className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 14px',
+                      background: 'var(--admin-layer-1)',
+                      borderBottom: '1px solid var(--admin-border-subtle)'
+                    }}>
+                      <strong style={{ fontSize: '.84rem', letterSpacing: '.04em' }}>{group.name}</strong>
+                      <span style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{group.items.length} bản ghi</span>
+                    </div>
+                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'var(--admin-layer-1)' }}>
+                        {renderTableHead()}
+                      </thead>
+                      <tbody>
+                        {renderTableBody(group.items, `station-${group.id}-${activeTab}`)}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <tbody>
+                  {renderTableBody()}
+                </tbody>
+              </table>
+            )
+          ) : (
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--admin-layer-1)' }}>
+                {renderTableHead()}
+              </thead>
+              <tbody>
+                {renderTableBody()}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 

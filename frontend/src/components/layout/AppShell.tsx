@@ -13,7 +13,7 @@ import type { AlertItem, SensorPoint } from '@/types/api.types';
 import { setTheme as setGlobalTheme } from '@/utils/theme-manager';
 import { showToast } from '@/utils/toast';
 import { playAlertSound } from '@/utils/sound-utils';
-import { isCentralUser as isCentralUserAccount } from '@/utils/centralAccess';
+import { isCentralUser as isCentralUserAccount, MULTISITE_RETURN_TAB_KEY } from '@/utils/centralAccess';
 import { createRealtimeHub } from '@/services/realtime.service';
 import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
@@ -428,7 +428,12 @@ export default function AppShell() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: 0, overflow: 'hidden' }}>
             {isDrillDown && (
               <button
-                onClick={() => { setViewingStation(null); navigate('/multisite'); }}
+                onClick={() => {
+                  const returnTab = localStorage.getItem(MULTISITE_RETURN_TAB_KEY);
+                  setViewingStation(null);
+                  navigate(returnTab ? `/multisite?tab=${encodeURIComponent(returnTab)}` : '/multisite');
+                  localStorage.removeItem(MULTISITE_RETURN_TAB_KEY);
+                }}
                 style={{
                   height: 28,
                   padding: '0 10px',

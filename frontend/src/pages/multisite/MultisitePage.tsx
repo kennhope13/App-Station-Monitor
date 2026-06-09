@@ -88,6 +88,7 @@ export default function MultisitePage() {
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [activeTab, setActiveTab] = useState<MultisiteTab>('overview');
   const [devicePanelAction, setDevicePanelAction] = useState<'new' | null>(null);
+  const showEmbeddedBackButton = activeTab !== 'overview' && !!selectedStationId;
 
   const activateTab = (
     tab: MultisiteTab,
@@ -105,6 +106,16 @@ export default function MultisitePage() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTab = params.get('tab');
+    if (requestedTab && requestedTab in MULTISITE_TAB_TITLES) {
+      setActiveTab(requestedTab as MultisiteTab);
+      params.delete('tab');
+      navigate(`${location.pathname}${params.toString() ? `?${params.toString()}` : ''}`, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate]);
+
+  useEffect(() => {
     if (activeTab === 'overview') {
       setMapHostKey(k => k + 1);
     }
@@ -118,6 +129,7 @@ export default function MultisitePage() {
   const [newStationLng, setNewStationLng] = useState('');
   const [newStationAddress, setNewStationAddress] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const stations = useStationStore(s => s.stations);
   const fetchStations = useStationStore(s => s.fetch);
@@ -608,6 +620,32 @@ export default function MultisitePage() {
             src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImdyYWQiIHgxPSIwJSIgeTE9IjAlIiB4Mj0iMTAwJSIgeTI9IjEwMCUiPjxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiM0NGZmODgiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMDI4NGM3IiAvPjwvbGluZWFyR3JhZGllbnQ+PGZpbHRlciBpZD0iZ2xvdyI+PGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMyIgcmVzdWx0PSJjb2xvcmVkQmx1ciIvPjxmZU1lcmdlPjxmZU1lcmdlTm9kZSBpbj0iY29sb3JlZEJsdXIiLz48ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiLz48L2ZlTWVyZ2U+PC9maWx0ZXI+PC9kZWZzPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjQ1IiBmaWxsPSJub25lIiBzdHJva2U9InVybCgjZ3JhZCkiIHN0cm9rZS13aWR0aD0iNiIgZmlsdGVyPSJ1cmwoI2dsb3cpIi8+PHBhdGggZD0iTTUwIDE1IEw4MCAzNSBMODAgNjUgTDUwIDg1IEwyMCA2NSBMMjAgMzUgWiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNSIvPjxwYXRoIGQ9Ik01NSAyNSBMMzUgNTUgTDUwIDU1IEw0NSA3NSBMNjUgNDUgTDUwIDQ1IFoiIGZpbGw9IiM0NGZmODgiIGZpbHRlcj0idXJsKCNnbG93KSIvPjwvc3ZnPg=="
             style={{ width: 28, height: 28, flexShrink: 0 }}
           />
+
+          {showEmbeddedBackButton && (
+            <button
+              onClick={() => setSelectedStationId(null)}
+              style={{
+                height: 28,
+                padding: '0 10px',
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                border: '1px solid var(--admin-border)',
+                background: 'linear-gradient(180deg, rgba(15,23,42,0.92), rgba(15,23,42,0.72))',
+                color: 'var(--admin-accent)',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+              }}
+            >
+              <span style={{ fontSize: '0.8rem', lineHeight: 1 }}>←</span>
+              <span>Trở về</span>
+            </button>
+          )}
           
           <span style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--admin-accent)', letterSpacing: 0.5, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
             {selectedView ? selectedView.station.name : MULTISITE_TAB_TITLES[activeTab]}
@@ -789,7 +827,7 @@ export default function MultisitePage() {
               <Users size={11} /> NGƯỜI DÙNG
             </button>
             <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--admin-border)' }} />
-            <button onClick={() => { authService.logout(); navigate('/login'); window.location.reload(); }} className="btn-industrial" style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4, height: 24, fontSize: '0.65rem', color: 'var(--admin-danger)', borderColor: 'transparent' }}>
+            <button onClick={() => setShowLogoutConfirm(true)} className="btn-industrial" style={{ padding: '0 8px', display: 'flex', alignItems: 'center', gap: 4, height: 24, fontSize: '0.65rem', color: 'var(--admin-danger)', borderColor: 'transparent' }}>
               <LogOut size={11} />
             </button>
           </div>
@@ -1433,6 +1471,25 @@ export default function MultisitePage() {
               >
                 {isSaving ? 'Đang lưu...' : 'Lưu lại'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout confirm */}
+      {showLogoutConfirm && (
+        <div className="modal-overlay active" onClick={() => setShowLogoutConfirm(false)}>
+          <div className="modal-content" style={{ width: 360, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-body" style={{ padding: '32px 24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--admin-danger)' }}>ĐĂNG XUẤT</span>
+              </div>
+              <h3 style={{ margin: '0 0 8px', fontSize: '1rem' }}>Xác nhận đăng xuất</h3>
+              <p style={{ margin: '0 0 24px', opacity: 0.6, fontSize: '.9rem' }}>Bạn có chắc chắn muốn đăng xuất khỏi hệ thống?</p>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                <button onClick={() => setShowLogoutConfirm(false)} className="btn-industrial" style={{ minWidth: 100 }}>Hủy</button>
+                <button onClick={() => { authService.logout(); navigate('/login'); window.location.reload(); }} className="btn-industrial btn-danger" style={{ minWidth: 100 }}>Đăng xuất</button>
+              </div>
             </div>
           </div>
         </div>

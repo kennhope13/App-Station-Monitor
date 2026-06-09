@@ -121,9 +121,12 @@ export default function RealtimeMonitorPage({
         const cameraResults = await Promise.all(
           stations.map(async station => {
             const cams = await stationApi.getCameras(station.id).catch(() => [] as CameraDevice[]);
+            console.log(`[RealtimeMonitor] Station ${station.name} fetched ${cams.length} cameras`);
             return { station, cams };
           })
         );
+        
+        console.log(`[RealtimeMonitor] Total camera results: ${cameraResults.length}`);
 
         const mergedStatus: Record<string, string> = {};
         const mergedCams: CameraDevice[] = [];
@@ -135,6 +138,8 @@ export default function RealtimeMonitorPage({
           mergedCams.push(...expandedCams);
           thermalIds.push(...cams.filter(c => c.type === 'camera_thermal' || c.type === 'camera_dual').map(c => c.id));
         });
+
+        console.log(`[RealtimeMonitor] Final merged camera count: ${mergedCams.length}`);
 
         setDeviceStatus(mergedStatus);
         setCameras(mergedCams);
@@ -1061,27 +1066,6 @@ export default function RealtimeMonitorPage({
           {embeddedMode !== 'central' && <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>}
           {embeddedMode === 'central' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {!isCentralFleetView && (
-                <button
-                  className="btn-industrial"
-                  onClick={() => {
-                    setExpandedCamId(null);
-                    setSelectedCamFilter('');
-                    onStationIdChange?.('');
-                  }}
-                  style={{
-                    height: 28,
-                    padding: '0 10px',
-                    fontSize: '.68rem',
-                    fontWeight: 800,
-                    color: 'var(--admin-accent)',
-                    borderColor: 'var(--admin-accent)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  ← Trở về
-                </button>
-              )}
               <div style={{ display: 'inline-block' }}>
               {stationMenuOpen && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
@@ -1201,32 +1185,6 @@ export default function RealtimeMonitorPage({
         {isCentralFleetView ? (
           <div style={{ padding: '12px 16px', flex: 1, overflow: 'auto' }}>
 
-            {/* Summary strip */}
-            {(() => {
-              const totalCams = stationCameraStats.reduce((s, x) => s + x.total, 0);
-              const totalOnline = stationCameraStats.reduce((s, x) => s + x.online, 0);
-              const totalOffline = stationCameraStats.reduce((s, x) => s + x.offline, 0);
-              const globalHealth = totalCams > 0 ? Math.round((totalOnline / totalCams) * 100) : 0;
-              const healthColor = globalHealth === 100 ? 'var(--admin-success)' : globalHealth >= 50 ? '#f59e0b' : 'var(--admin-danger)';
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 10, padding: '0 4px', fontSize: '.72rem', color: 'var(--admin-text-muted)' }}>
-                  <span style={{ fontWeight: 800, color: 'var(--admin-text)', fontSize: '.68rem', letterSpacing: 1, textTransform: 'uppercase' }}>Tổng quan</span>
-                  <span style={{ width: 1, height: 14, background: 'var(--admin-border)', display: 'inline-block' }} />
-                  <span><span style={{ color: 'var(--admin-accent)', fontWeight: 800, fontSize: '.9rem' }}>{stations.length}</span> trạm</span>
-                  <span><span style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.9rem' }}>{totalCams}</span> camera</span>
-                  <span style={{ width: 1, height: 14, background: 'var(--admin-border)', display: 'inline-block' }} />
-                  <span><span style={{ color: 'var(--admin-success)', fontWeight: 800, fontSize: '.9rem' }}>{totalOnline}</span> online</span>
-                  <span><span style={{ color: totalOffline > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)', fontWeight: 800, fontSize: '.9rem' }}>{totalOffline}</span> offline</span>
-                  <span style={{ width: 1, height: 14, background: 'var(--admin-border)', display: 'inline-block' }} />
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <div style={{ width: 60, height: 4, background: 'var(--admin-layer-2)', borderRadius: 2, overflow: 'hidden' }}>
-                      <div style={{ width: `${globalHealth}%`, height: '100%', background: healthColor }} />
-                    </div>
-                    <span style={{ fontWeight: 800, color: healthColor }}>{globalHealth}%</span>
-                  </span>
-                </div>
-              );
-            })()}
 
             <div className="admin-card" style={{ padding: 0, overflow: 'auto' }}>
               <table className="data-table">
@@ -1239,14 +1197,12 @@ export default function RealtimeMonitorPage({
                     <th style={{ textAlign: 'center' }}>Offline</th>
                     <th style={{ minWidth: 130 }}>Loại camera</th>
                     <th style={{ minWidth: 140 }}>Sức khỏe</th>
-                    <th style={{ textAlign: 'center' }}>Cảnh báo</th>
-                    <th>Danh sách</th>
                   </tr>
                 </thead>
                 <tbody>
                   {stationCameraStats.length === 0 ? (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>
+                      <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--admin-text-muted)' }}>
                         Chưa có camera nào trong hệ thống.
                       </td>
                     </tr>
@@ -1285,18 +1241,6 @@ export default function RealtimeMonitorPage({
                               </div>
                               <span style={{ fontSize: '.72rem', fontWeight: 800, color: healthColor, minWidth: 32, textAlign: 'right' }}>{health}%</span>
                             </div>
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            {stat.alertCount > 0
-                              ? <span style={{ color: 'var(--admin-danger)', fontWeight: 800, fontSize: '.8rem' }}>⚠ {stat.alertCount}</span>
-                              : <span style={{ color: 'var(--admin-text-muted)', fontSize: '.75rem' }}>—</span>
-                            }
-                          </td>
-                          <td style={{ fontSize: '.73rem', color: 'var(--admin-text-muted)', maxWidth: 220 }}>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                              {stat.cameraNames.slice(0, 3).join(', ')}
-                              {stat.cameraNames.length > 3 ? ` +${stat.cameraNames.length - 3} khác` : ''}
-                            </span>
                           </td>
                         </tr>
                       );

@@ -10,6 +10,7 @@ import {
   type Station,
 } from '@/services/StationApiService';
 import { useStationStore } from '@/store';
+import { MULTISITE_RETURN_TAB_KEY } from '@/utils/centralAccess';
 
 type CentralTab = 'overview' | 'thermal' | 'pd' | 'health';
 
@@ -195,6 +196,7 @@ export default function CentralAnalyticsLayout() {
   }, [alerts]);
 
   const drillIntoStation = (stationId: string) => {
+    localStorage.setItem(MULTISITE_RETURN_TAB_KEY, 'analytics');
     setViewingStation(stationId);
     navigate('/analytics?scope=station');
   };
