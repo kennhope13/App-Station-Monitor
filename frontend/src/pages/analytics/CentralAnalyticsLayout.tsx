@@ -51,15 +51,19 @@ const getPdClass = (count: number) => {
   return { label: 'Ổn định', color: '#10b981' };
 };
 
-function MetricCard({ label, value, sub, icon }: { label: string; value: string | number; sub: string; icon: React.ReactNode }) {
+function MetricCard({ label, value, sub, icon, accentColor }: { label: string; value: string | number; sub: string; icon: React.ReactNode; accentColor?: string }) {
   return (
-    <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--admin-text-muted)', fontSize: '.72rem', fontWeight: 700 }}>
-        <span>{label}</span>
-        <span>{icon}</span>
+    <div className="admin-card" style={{ padding: 16, borderLeft: accentColor ? `4px solid ${accentColor}` : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: accentColor ? `${accentColor}1A` : 'var(--admin-layer-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: accentColor || 'var(--admin-text-muted)' }}>
+          {icon}
+        </div>
+        <div>
+          <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--admin-text)', marginTop: 2, lineHeight: 1.1 }}>{value}</div>
+        </div>
       </div>
-      <div style={{ marginTop: 10, fontSize: '1.65rem', fontWeight: 800, color: 'var(--admin-text)' }}>{value}</div>
-      <div style={{ marginTop: 6, fontSize: '.72rem', color: 'var(--admin-text-muted)' }}>{sub}</div>
+      <div style={{ marginTop: 12, fontSize: '.7rem', color: 'var(--admin-text-muted)', fontWeight: 600 }}>{sub}</div>
     </div>
   );
 }
@@ -202,85 +206,96 @@ export default function CentralAnalyticsLayout() {
   };
 
   const renderOverview = () => (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-        <MetricCard label="Trạm đang theo dõi" value={fleetSummary.totalStations} sub={`${fleetSummary.totalDevices} thiết bị`} icon={<Activity size={16} />} />
-        <MetricCard label="Thiết bị trực tuyến" value={`${fleetSummary.totalOnline}/${fleetSummary.totalDevices}`} sub="Toàn mạng lưới" icon={<Wifi size={16} />} />
-        <MetricCard label="Cảnh báo chưa đóng" value={fleetSummary.totalAlerts} sub="Open và acked" icon={<AlertTriangle size={16} />} />
-        <MetricCard label="Điểm sức khỏe TB" value={fleetSummary.avgHealth != null ? fleetSummary.avgHealth.toFixed(1) : 'N/A'} sub={getHealthClass(fleetSummary.avgHealth).label} icon={<Radio size={16} />} />
+    <div style={{ display: 'grid', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+        <MetricCard label="Trạm đang theo dõi" value={fleetSummary.totalStations} sub={`${fleetSummary.totalDevices} thiết bị`} icon={<Activity size={20} />} accentColor="var(--admin-accent)" />
+        <MetricCard label="Thiết bị trực tuyến" value={`${fleetSummary.totalOnline}/${fleetSummary.totalDevices}`} sub="Toàn mạng lưới" icon={<Wifi size={20} />} accentColor="var(--admin-success)" />
+        <MetricCard label="Cảnh báo chưa đóng" value={fleetSummary.totalAlerts} sub="Open và acked" icon={<AlertTriangle size={20} />} accentColor="var(--admin-danger)" />
+        <MetricCard label="Điểm sức khỏe TB" value={fleetSummary.avgHealth != null ? fleetSummary.avgHealth.toFixed(1) : 'N/A'} sub={getHealthClass(fleetSummary.avgHealth).label} icon={<Radio size={20} />} accentColor="#f59e0b" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 16 }}>
-        <section style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)' }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.78rem', color: 'var(--admin-text)' }}>
-            Xếp hạng rủi ro
+      <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1fr', gap: 24 }}>
+        <section className="admin-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.75rem', color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Activity size={14} /> BẢNG XẾP HẠNG RỦI RO
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto', flex: 1 }}>
+            <table className="data-table" style={{ width: '100%', margin: 0 }}>
               <thead>
-                <tr style={{ background: 'var(--admin-layer-2)', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>
-                  <th style={{ textAlign: 'left', padding: '10px 12px' }}>Trạm</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px' }}>Sức khỏe</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px' }}>Hotspot</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px' }}>PD</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px' }}>Cảnh báo</th>
-                  <th style={{ textAlign: 'left', padding: '10px 12px' }} />
+                <tr>
+                  <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                  <th>Trạm</th>
+                  <th style={{ textAlign: 'center' }}>Sức khỏe</th>
+                  <th style={{ textAlign: 'center' }}>Hotspot</th>
+                  <th style={{ textAlign: 'center' }}>PD</th>
+                  <th style={{ textAlign: 'center' }}>Cảnh báo</th>
                 </tr>
               </thead>
               <tbody>
-                {rankedStations.map(item => (
-                  <tr key={item.station.id} style={{ borderTop: '1px solid var(--admin-border)' }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ color: 'var(--admin-text)', fontWeight: 700 }}>{item.station.name}</div>
-                      <div style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{item.station.code}</div>
+                {rankedStations.map((item, idx) => (
+                  <tr key={item.station.id} onClick={() => drillIntoStation(item.station.id)} style={{ cursor: 'pointer' }}>
+                    <td style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>{idx + 1}</td>
+                    <td>
+                      <div style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.75rem' }}>{item.station.name}</div>
+                      <div style={{ color: 'var(--admin-text-muted)', fontSize: '.65rem' }}>{item.station.code || 'NO-CODE'}</div>
                     </td>
-                    <td style={{ padding: '12px', color: getHealthClass(item.avgHealth).color }}>
-                      {item.avgHealth != null ? `${item.avgHealth.toFixed(1)} / 100` : 'N/A'}
+                    <td style={{ textAlign: 'center', color: getHealthClass(item.avgHealth).color, fontWeight: 800 }}>
+                      {item.avgHealth != null ? `${item.avgHealth.toFixed(1)}` : 'N/A'}
                     </td>
-                    <td style={{ padding: '12px', color: getThermalClass(item.hottestPoint?.value ?? null).color }}>
-                      {item.hottestPoint ? `${item.hottestPoint.value.toFixed(1)}°C` : 'Không có'}
+                    <td style={{ textAlign: 'center', color: getThermalClass(item.hottestPoint?.value ?? null).color, fontWeight: 800 }}>
+                      {item.hottestPoint ? `${item.hottestPoint.value.toFixed(1)}°C` : '—'}
                     </td>
-                    <td style={{ padding: '12px', color: getPdClass(item.warningPdPoints).color }}>{item.warningPdPoints}</td>
-                    <td style={{ padding: '12px', color: 'var(--admin-text)' }}>{item.openAlerts}</td>
-                    <td style={{ padding: '12px' }}>
-                      <button className="btn-industrial btn-sm" onClick={() => drillIntoStation(item.station.id)} style={{ fontSize: '.68rem', padding: '4px 8px' }}>
-                        Vào trạm
-                      </button>
+                    <td style={{ textAlign: 'center', color: getPdClass(item.warningPdPoints).color, fontWeight: 800 }}>
+                      {item.warningPdPoints > 0 ? item.warningPdPoints : '—'}
+                    </td>
+                    <td style={{ textAlign: 'center', color: item.openAlerts > 0 ? 'var(--admin-danger)' : 'var(--admin-text-muted)', fontWeight: 800 }}>
+                      {item.openAlerts > 0 ? item.openAlerts : '0'}
                     </td>
                   </tr>
                 ))}
+                {rankedStations.length === 0 && (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>Không có dữ liệu trạm</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </section>
 
-        <section style={{ display: 'grid', gap: 16 }}>
-          <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)', fontWeight: 800, fontSize: '.78rem' }}>
-              <Thermometer size={15} /> Điểm nóng cao nhất toàn hệ thống
+        <section style={{ display: 'grid', gap: 24 }}>
+          <div className="admin-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text-muted)', fontWeight: 800, fontSize: '.7rem', letterSpacing: '0.05em' }}>
+              <Thermometer size={14} /> ĐIỂM NÓNG NHẤT HỆ THỐNG
             </div>
-            <div style={{ marginTop: 12, fontSize: '1.7rem', fontWeight: 900, color: 'var(--admin-text)' }}>
+            <div style={{ marginTop: 16, fontSize: '2.5rem', fontWeight: 900, color: 'var(--admin-danger)' }}>
               {fleetSummary.hottest ? `${fleetSummary.hottest.value.toFixed(1)}°C` : 'N/A'}
             </div>
-            <div style={{ marginTop: 8, color: 'var(--admin-text-muted)', fontSize: '.74rem' }}>
-              {fleetSummary.hottest ? `${fleetSummary.hottest.stationName} · ${fleetSummary.hottest.label}` : 'Chưa có dữ liệu nhiệt'}
+            <div style={{ marginTop: 8, color: 'var(--admin-text)', fontSize: '.8rem', fontWeight: 700 }}>
+              {fleetSummary.hottest ? fleetSummary.hottest.stationName : 'Chưa có dữ liệu nhiệt'}
+            </div>
+            <div style={{ color: 'var(--admin-text-muted)', fontSize: '.7rem', marginTop: 2 }}>
+              {fleetSummary.hottest ? fleetSummary.hottest.label : '---'}
             </div>
             {fleetSummary.hottest && (
-              <button className="btn-industrial btn-sm" style={{ marginTop: 12, fontSize: '.68rem', padding: '4px 8px' }} onClick={() => drillIntoStation(fleetSummary.hottest!.stationId)}>
-                Đi tới trạm nóng nhất
+              <button className="btn-industrial" style={{ marginTop: 20, padding: '8px 12px', fontSize: '.7rem', fontWeight: 800, width: 'fit-content' }} onClick={() => drillIntoStation(fleetSummary.hottest!.stationId)}>
+                KIỂM TRA NGAY
               </button>
             )}
           </div>
 
-          <div style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text)', fontWeight: 800, fontSize: '.78rem' }}>
-              <Zap size={15} /> Dấu hiệu PD toàn mạng
+          <div className="admin-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--admin-text-muted)', fontWeight: 800, fontSize: '.7rem', letterSpacing: '0.05em' }}>
+              <Zap size={14} /> DẤU HIỆU PD MẠNG LƯỚI
             </div>
-            <div style={{ marginTop: 12, fontSize: '1.7rem', fontWeight: 900, color: 'var(--admin-text)' }}>
+            <div style={{ marginTop: 16, fontSize: '2.5rem', fontWeight: 900, color: fleetSummary.totalPdWarnings > 0 ? '#f59e0b' : 'var(--admin-success)' }}>
               {fleetSummary.totalPdWarnings}
             </div>
-            <div style={{ marginTop: 8, color: getPdClass(fleetSummary.totalPdWarnings).color, fontSize: '.74rem', fontWeight: 700 }}>
-              {getPdClass(fleetSummary.totalPdWarnings).label}
+            <div style={{ marginTop: 8, color: 'var(--admin-text)', fontSize: '.8rem', fontWeight: 700 }}>
+              {fleetSummary.totalPdWarnings > 0 ? 'Phát hiện tín hiệu bất thường' : 'Hệ thống điện ổn định'}
+            </div>
+             <div style={{ color: 'var(--admin-text-muted)', fontSize: '.7rem', marginTop: 2 }}>
+              Cần phân tích phổ âm thanh chuyên sâu
             </div>
           </div>
         </section>
@@ -289,152 +304,217 @@ export default function CentralAnalyticsLayout() {
   );
 
   const renderThermal = () => (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
         <MetricCard
           label="Hotspot cao nhất"
           value={fleetSummary.hottest ? `${fleetSummary.hottest.value.toFixed(1)}°C` : 'N/A'}
           sub={fleetSummary.hottest ? fleetSummary.hottest.stationName : 'Chưa có dữ liệu'}
-          icon={<Thermometer size={16} />}
+          icon={<Thermometer size={20} />}
+          accentColor="var(--admin-danger)"
         />
         <MetricCard
           label="Trạm có dữ liệu nhiệt"
           value={thermalRanking.length}
           sub={`${stations.length - thermalRanking.length} trạm chưa có nhiệt`}
-          icon={<Activity size={16} />}
+          icon={<Activity size={20} />}
+          accentColor="var(--admin-accent)"
         />
       </div>
 
-      <section style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)' }}>
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.78rem', color: 'var(--admin-text)' }}>
-          Phân tích nhiệt liên trạm
+      <section className="admin-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.75rem', color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Thermometer size={14} /> BẢNG XẾP HẠNG NHIỆT ĐỘ LIÊN TRẠM
         </div>
-        <div style={{ display: 'grid', gap: 10, padding: 14 }}>
-          {thermalRanking.map(item => {
-            const thermalInfo = getThermalClass(item.hottestPoint?.value ?? null);
-            return (
-              <div key={item.station.id} style={{ border: '1px solid var(--admin-border)', padding: 12, display: 'grid', gridTemplateColumns: '1.3fr 0.7fr 0.7fr auto', gap: 12, alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: 'var(--admin-text)', fontWeight: 700 }}>{item.station.name}</div>
-                  <div style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{item.hottestPoint?.label || 'Không rõ điểm đo'}</div>
-                </div>
-                <div style={{ color: thermalInfo.color, fontWeight: 800 }}>{item.hottestPoint ? `${item.hottestPoint.value.toFixed(1)}°C` : 'N/A'}</div>
-                <div style={{ color: thermalInfo.color, fontSize: '.74rem', fontWeight: 700 }}>{thermalInfo.label}</div>
-                <button className="btn-industrial btn-sm" onClick={() => drillIntoStation(item.station.id)} style={{ fontSize: '.68rem', padding: '4px 8px' }}>
-                  Xem chi tiết
-                </button>
-              </div>
-            );
-          })}
-          {thermalRanking.length === 0 && (
-            <div style={{ color: 'var(--admin-text-muted)' }}>Chưa có dữ liệu nhiệt.</div>
-          )}
+        <div style={{ overflowX: 'auto', flex: 1 }}>
+          <table className="data-table" style={{ width: '100%', margin: 0 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                <th>Trạm</th>
+                <th>Điểm đo nóng nhất</th>
+                <th style={{ textAlign: 'center' }}>Nhiệt độ</th>
+                <th style={{ textAlign: 'center' }}>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              {thermalRanking.map((item, idx) => {
+                const thermalInfo = getThermalClass(item.hottestPoint?.value ?? null);
+                return (
+                  <tr key={item.station.id} onClick={() => drillIntoStation(item.station.id)} style={{ cursor: 'pointer' }}>
+                    <td style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>{idx + 1}</td>
+                    <td>
+                      <div style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.75rem' }}>{item.station.name}</div>
+                      <div style={{ color: 'var(--admin-text-muted)', fontSize: '.65rem' }}>{item.station.code || 'NO-CODE'}</div>
+                    </td>
+                    <td style={{ color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>
+                      {item.hottestPoint?.label || 'Không rõ'}
+                    </td>
+                    <td style={{ textAlign: 'center', color: thermalInfo.color, fontWeight: 900, fontSize: '1.1rem' }}>
+                      {item.hottestPoint ? `${item.hottestPoint.value.toFixed(1)}°C` : 'N/A'}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ 
+                        background: thermalInfo.color === 'var(--admin-danger)' ? 'rgba(239,68,68,0.1)' : thermalInfo.color === '#f59e0b' ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
+                        color: thermalInfo.color, padding: '2px 8px', borderRadius: 4, fontSize: '.65rem', fontWeight: 800 
+                      }}>
+                        {thermalInfo.label.toUpperCase()}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {thermalRanking.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>Chưa có dữ liệu nhiệt.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
   );
 
   const renderPd = () => (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
         <MetricCard
           label="Điểm PD đáng chú ý"
           value={fleetSummary.totalPdWarnings}
           sub={getPdClass(fleetSummary.totalPdWarnings).label}
-          icon={<Zap size={16} />}
+          icon={<Zap size={20} />}
+          accentColor={fleetSummary.totalPdWarnings > 0 ? '#f59e0b' : 'var(--admin-success)'}
         />
         <MetricCard
           label="Trạm có PD"
           value={pdRanking.filter(item => item.warningPdPoints > 0).length}
           sub={`${pdRanking.filter(item => item.warningPdPoints === 0).length} trạm ổn định`}
-          icon={<Radio size={16} />}
+          icon={<Radio size={20} />}
+          accentColor={pdRanking.filter(item => item.warningPdPoints > 0).length > 0 ? '#f59e0b' : 'var(--admin-success)'}
         />
       </div>
 
-      <section style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)' }}>
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.78rem', color: 'var(--admin-text)' }}>
-          Phân tích phóng điện liên trạm
+      <section className="admin-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.75rem', color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Zap size={14} /> BẢNG XẾP HẠNG PHÓNG ĐIỆN LIÊN TRẠM
         </div>
-        <div style={{ display: 'grid', gap: 10, padding: 14 }}>
-          {pdRanking.map(item => {
-            const pdInfo = getPdClass(item.warningPdPoints);
-            return (
-              <div key={item.station.id} style={{ border: '1px solid var(--admin-border)', padding: 12, display: 'grid', gridTemplateColumns: '1.3fr 0.7fr 0.9fr auto', gap: 12, alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: 'var(--admin-text)', fontWeight: 700 }}>{item.station.name}</div>
-                  <div style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{item.station.code}</div>
-                </div>
-                <div style={{ color: pdInfo.color, fontWeight: 800 }}>{item.warningPdPoints}</div>
-                <div style={{ color: pdInfo.color, fontSize: '.74rem', fontWeight: 700 }}>{pdInfo.label}</div>
-                <button className="btn-industrial btn-sm" onClick={() => drillIntoStation(item.station.id)} style={{ fontSize: '.68rem', padding: '4px 8px' }}>
-                  Xem chi tiết
-                </button>
-              </div>
-            );
-          })}
+        <div style={{ overflowX: 'auto', flex: 1 }}>
+          <table className="data-table" style={{ width: '100%', margin: 0 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                <th>Trạm</th>
+                <th style={{ textAlign: 'center' }}>Số điểm cảnh báo PD</th>
+                <th style={{ textAlign: 'center' }}>Đánh giá rủi ro</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pdRanking.map((item, idx) => {
+                const pdInfo = getPdClass(item.warningPdPoints);
+                return (
+                  <tr key={item.station.id} onClick={() => drillIntoStation(item.station.id)} style={{ cursor: 'pointer' }}>
+                    <td style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>{idx + 1}</td>
+                    <td>
+                      <div style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.75rem' }}>{item.station.name}</div>
+                      <div style={{ color: 'var(--admin-text-muted)', fontSize: '.65rem' }}>{item.station.code || 'NO-CODE'}</div>
+                    </td>
+                    <td style={{ textAlign: 'center', color: pdInfo.color, fontWeight: 900, fontSize: '1.1rem' }}>
+                      {item.warningPdPoints}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ 
+                        background: pdInfo.color === 'var(--admin-danger)' ? 'rgba(239,68,68,0.1)' : pdInfo.color === '#f59e0b' ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
+                        color: pdInfo.color, padding: '2px 8px', borderRadius: 4, fontSize: '.65rem', fontWeight: 800 
+                      }}>
+                        {pdInfo.label.toUpperCase()}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {pdRanking.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>Chưa có dữ liệu phóng điện.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
     </div>
   );
 
   const renderHealth = () => (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
         <MetricCard
           label="Sức khỏe trung bình"
           value={fleetSummary.avgHealth != null ? fleetSummary.avgHealth.toFixed(1) : 'N/A'}
           sub={getHealthClass(fleetSummary.avgHealth).label}
-          icon={<Radio size={16} />}
+          icon={<Radio size={20} />}
+          accentColor={getHealthClass(fleetSummary.avgHealth).color}
         />
         <MetricCard
           label="Trạm cần theo dõi"
           value={healthRanking.filter(item => (item.avgHealth ?? 100) < 75).length}
           sub="Điểm sức khỏe dưới 75"
-          icon={<AlertTriangle size={16} />}
+          icon={<AlertTriangle size={20} />}
+          accentColor={healthRanking.filter(item => (item.avgHealth ?? 100) < 75).length > 0 ? '#f59e0b' : 'var(--admin-success)'}
         />
       </div>
 
-      <section style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)' }}>
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.78rem', color: 'var(--admin-text)' }}>
-          Phân tích sức khỏe thiết bị theo trạm
+      <section className="admin-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.75rem', color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Radio size={14} /> TÌNH TRẠNG KẾT NỐI THIẾT BỊ LIÊN TRẠM
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto', flex: 1 }}>
+          <table className="data-table" style={{ width: '100%', margin: 0 }}>
             <thead>
-              <tr style={{ background: 'var(--admin-layer-2)', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>
-                <th style={{ textAlign: 'left', padding: '10px 12px' }}>Trạm</th>
-                <th style={{ textAlign: 'left', padding: '10px 12px' }}>Điểm TB</th>
-                <th style={{ textAlign: 'left', padding: '10px 12px' }}>Thiết bị online</th>
-                <th style={{ textAlign: 'left', padding: '10px 12px' }}>Thiết bị chấm điểm</th>
-                <th style={{ textAlign: 'left', padding: '10px 12px' }} />
+              <tr>
+                <th style={{ width: 40, textAlign: 'center' }}>#</th>
+                <th>Trạm</th>
+                <th style={{ textAlign: 'center' }}>Sức khỏe thiết bị (ĐTB)</th>
+                <th style={{ textAlign: 'center' }}>Thiết bị Online</th>
+                <th style={{ textAlign: 'center' }}>Tổng thiết bị giám sát</th>
               </tr>
             </thead>
             <tbody>
-              {healthRanking.map(item => {
+              {healthRanking.map((item, idx) => {
                 const healthInfo = getHealthClass(item.avgHealth);
                 return (
-                  <tr key={item.station.id} style={{ borderTop: '1px solid var(--admin-border)' }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ color: 'var(--admin-text)', fontWeight: 700 }}>{item.station.name}</div>
-                      <div style={{ color: 'var(--admin-text-muted)', fontSize: '.72rem' }}>{item.station.code}</div>
+                  <tr key={item.station.id} onClick={() => drillIntoStation(item.station.id)} style={{ cursor: 'pointer' }}>
+                    <td style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>{idx + 1}</td>
+                    <td>
+                      <div style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.75rem' }}>{item.station.name}</div>
+                      <div style={{ color: 'var(--admin-text-muted)', fontSize: '.65rem' }}>{item.station.code || 'NO-CODE'}</div>
                     </td>
-                    <td style={{ padding: '12px', color: healthInfo.color, fontWeight: 800 }}>
-                      {item.avgHealth != null ? `${item.avgHealth.toFixed(1)} / 100` : 'N/A'}
+                    <td style={{ textAlign: 'center' }}>
+                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                          <span style={{ color: healthInfo.color, fontWeight: 900, fontSize: '1.1rem', minWidth: 40 }}>
+                            {item.avgHealth != null ? `${item.avgHealth.toFixed(1)}` : 'N/A'}
+                          </span>
+                          {item.avgHealth != null && (
+                            <div style={{ width: 60, height: 4, background: 'var(--admin-layer-2)', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ width: `${item.avgHealth}%`, height: '100%', background: healthInfo.color }} />
+                            </div>
+                          )}
+                       </div>
                     </td>
-                    <td style={{ padding: '12px', color: 'var(--admin-text)' }}>
-                      {item.onlineDevices}/{item.devices.length}
+                    <td style={{ textAlign: 'center', color: item.onlineDevices === item.devices.length && item.devices.length > 0 ? 'var(--admin-success)' : 'var(--admin-text)', fontWeight: 800 }}>
+                      {item.onlineDevices} / {item.devices.length}
                     </td>
-                    <td style={{ padding: '12px', color: 'var(--admin-text)' }}>
-                      {item.healthScores.length}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <button className="btn-industrial btn-sm" onClick={() => drillIntoStation(item.station.id)} style={{ fontSize: '.68rem', padding: '4px 8px' }}>
-                        Xem chi tiết
-                      </button>
+                    <td style={{ textAlign: 'center', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
+                      {item.healthScores.length} thiết bị
                     </td>
                   </tr>
                 );
               })}
+              {healthRanking.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>Chưa có dữ liệu.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -443,28 +523,37 @@ export default function CentralAnalyticsLayout() {
   );
 
   const renderRecentAlerts = () => (
-    <section style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)' }}>
-      <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.78rem', color: 'var(--admin-text)' }}>
-        Cảnh báo mới nhất toàn hệ thống
+    <section className="admin-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)', fontWeight: 800, fontSize: '.75rem', color: 'var(--admin-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <AlertTriangle size={14} /> CẢNH BÁO MỚI NHẤT TOÀN HỆ THỐNG
       </div>
       <div style={{ display: 'grid' }}>
         {recentAlerts.map(alert => (
-          <div key={alert.id} style={{ padding: '10px 14px', borderTop: '1px solid var(--admin-border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ color: 'var(--admin-text)', fontWeight: 700, fontSize: '.73rem' }}>
-                {alert.stationName || 'Không rõ trạm'}
+          <div key={alert.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--admin-border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                 <span style={{ 
+                    padding: '2px 8px', borderRadius: 4, fontSize: '.65rem', fontWeight: 900,
+                    background: alert.level === 'alarm' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                    color: alert.level === 'alarm' ? 'var(--admin-danger)' : '#f59e0b'
+                 }}>
+                    {alert.level.toUpperCase()}
+                 </span>
+                 <span style={{ color: 'var(--admin-text)', fontWeight: 800, fontSize: '.75rem' }}>
+                   {alert.stationName || 'Không rõ trạm'}
+                 </span>
               </div>
-              <div style={{ color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>
+              <div style={{ color: 'var(--admin-text-muted)', fontSize: '.7rem', fontWeight: 700 }}>
                 {new Date(alert.triggeredAt).toLocaleString('vi-VN')}
               </div>
             </div>
-            <div style={{ marginTop: 4, color: 'var(--admin-text-muted)', fontSize: '.74rem' }}>
+            <div style={{ marginTop: 8, color: 'var(--admin-text-muted)', fontSize: '.75rem', fontWeight: 600 }}>
               {alert.message}
             </div>
           </div>
         ))}
         {recentAlerts.length === 0 && (
-          <div style={{ padding: 14, color: 'var(--admin-text-muted)' }}>Không có cảnh báo gần đây.</div>
+          <div style={{ padding: 30, textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '.7rem' }}>Hệ thống không có cảnh báo nào gần đây.</div>
         )}
       </div>
     </section>
@@ -478,42 +567,56 @@ export default function CentralAnalyticsLayout() {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--admin-border)' }}>
-        {tabs.map(t => (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', height: '100%', overflow: 'hidden' }}>
+      
+      {/* Analytics Sub-Nav (Mosaic Style) */}
+      <div style={{ display: 'flex', gap: 4, padding: '10px 20px', background: 'var(--admin-panel)', borderBottom: '1px solid var(--admin-border)', alignItems: 'center', overflowX: 'auto' }}>
+        {[
+          { id: 'overview', label: 'TỔNG QUAN', icon: <Activity size={12} /> },
+          { id: 'thermal', label: 'BẢN ĐỒ NHIỆT', icon: <Thermometer size={12} /> },
+          { id: 'pd', label: 'PHÓNG ĐIỆN', icon: <Zap size={12} /> },
+          { id: 'health', label: 'SỨC KHỎE THIẾT BỊ', icon: <Radio size={12} /> }
+        ].map(t => (
           <button
-            key={t.key}
-            onClick={() => setActiveTab(t.key)}
+            key={t.id}
+            className="btn-industrial"
+            onClick={() => setActiveTab(t.id as CentralTab)}
             style={{
-              padding: '7px 18px',
-              border: 'none',
-              borderBottom: activeTab === t.key ? '2px solid var(--admin-accent)' : '2px solid transparent',
-              background: 'transparent',
-              color: activeTab === t.key ? 'var(--admin-accent)' : 'var(--admin-text-muted)',
-              fontSize: '0.7rem',
-              fontWeight: 800,
-              cursor: 'pointer',
-              letterSpacing: 1,
-              marginBottom: -1,
-              transition: 'color 0.15s'
+              padding: '6px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: '0.65rem',
+              fontWeight: 900,
+              letterSpacing: '0.05em',
+              background: activeTab === t.id ? 'var(--admin-accent)' : 'var(--admin-layer-2)',
+              color: activeTab === t.id ? '#000' : 'var(--admin-text)',
+              borderColor: activeTab === t.id ? 'var(--admin-accent)' : 'var(--admin-border)',
+              borderBottom: activeTab === t.id ? 'none' : '1px solid var(--admin-border)'
             }}
           >
-            {t.label}
+            {t.icon} {t.label}
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <div style={{ padding: 24, color: 'var(--admin-text-muted)', fontSize: '0.8rem' }}>Đang tổng hợp dữ liệu phân tích...</div>
-      ) : (
-        <div style={{ display: 'grid', gap: 16 }}>
-          {activeTab === 'overview' && renderOverview()}
-          {activeTab === 'thermal' && renderThermal()}
-          {activeTab === 'pd' && renderPd()}
-          {activeTab === 'health' && renderHealth()}
-          {renderRecentAlerts()}
-        </div>
-      )}
+      {/* Main Content Area */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.05em' }}>
+            <Activity size={32} style={{ opacity: 0.2, marginBottom: 16 }} />
+            <div>ĐANG TỔNG HỢP DỮ LIỆU PHÂN TÍCH...</div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 24 }}>
+            {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'thermal' && renderThermal()}
+            {activeTab === 'pd' && renderPd()}
+            {activeTab === 'health' && renderHealth()}
+            {renderRecentAlerts()}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

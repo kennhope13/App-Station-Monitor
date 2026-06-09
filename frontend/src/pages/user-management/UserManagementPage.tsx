@@ -16,7 +16,6 @@ interface UserManagementPageProps {
 export default function UserManagementPage({ embeddedMode = 'default' }: UserManagementPageProps) {
   const currentUser = authService.getUser();
   const isRestrictedAdmin = currentUser?.station_ids && currentUser.station_ids.length > 0;
-  const myStationIds: string[] = currentUser?.station_ids ?? [];
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [stationsList, setStationsList] = useState<Station[]>([]);
@@ -178,135 +177,152 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
   }, [filteredUsers]);
 
   return (
-    <div className="admin-page-container">
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', height: '100%', overflow: 'hidden' }}>
+      
       {embeddedMode === 'central' && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '1.3fr repeat(3, minmax(120px, 1fr))',
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ border: '1px solid var(--admin-border)', background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
-                  NGƯỜI DÙNG
+        <div style={{ padding: '20px 20px 0 20px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1.3fr repeat(3, minmax(120px, 1fr))',
+              gap: 16,
+            }}
+          >
+            <div className="admin-card" style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))', padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: '.65rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--admin-accent)' }}>
+                    QUẢN LÝ TÀI KHOẢN NGƯỜI DÙNG
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: '1.2rem', fontWeight: 800, color: 'var(--admin-text)' }}>
+                    {filterStationId ? (stationsList.find(s => s.id === filterStationId)?.name || 'Không rõ trạm') : 'Toàn mạng lưới'}
+                  </div>
+                  <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
+                      Phạm vi: <b style={{ color: 'var(--admin-text)' }}>{filterStationId ? 'Theo trạm' : 'Tất cả trạm'}</b>
+                    </span>
+                  </div>
                 </div>
-                <div style={{ marginTop: 6, fontSize: '1rem', fontWeight: 800, color: 'var(--admin-text)' }}>
-                  {filterStationId ? (stationsList.find(s => s.id === filterStationId)?.name || 'Không rõ trạm') : 'Toàn mạng lưới'}
+                <div style={{ minWidth: 220 }}>
+                  <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>LỌC NGƯỜI DÙNG THEO TRẠM</div>
+                  <select
+                    value={filterStationId}
+                    onChange={e => setFilterStationId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      background: 'rgba(15,23,42,0.65)',
+                      border: '1px solid var(--admin-accent)',
+                      color: 'var(--admin-text)',
+                      padding: '8px 10px',
+                      fontSize: '.74rem',
+                      fontWeight: 700,
+                      outline: 'none',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="">Tất cả các trạm</option>
+                    {stationsList.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {(s.code ? `${s.code} - ` : '') + s.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div style={{ marginTop: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '.68rem', color: 'var(--admin-text-muted)' }}>
-                    Phạm vi: <b style={{ color: 'var(--admin-text)' }}>{filterStationId ? 'Theo trạm' : 'Tất cả trạm'}</b>
-                  </span>
-                </div>
-              </div>
-              <div style={{ minWidth: 220 }}>
-                <div style={{ fontSize: '.62rem', fontWeight: 800, color: 'var(--admin-text-muted)', marginBottom: 6 }}>LỌC NGƯỜI DÙNG THEO TRẠM</div>
-                <select
-                  value={filterStationId}
-                  onChange={e => setFilterStationId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(15,23,42,0.65)',
-                    border: '1px solid var(--admin-accent)',
-                    color: 'var(--admin-text)',
-                    padding: '8px 10px',
-                    fontSize: '.74rem',
-                    fontWeight: 700,
-                    outline: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <option value="">Tất cả các trạm</option>
-                  {stationsList.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {(s.code ? `${s.code} - ` : '') + s.name}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
-          </div>
 
-          {[
-            { label: 'Tổng tài khoản', value: scopedSummary.total, color: 'var(--admin-text)' },
-            { label: 'Đang hoạt động', value: scopedSummary.active, color: 'var(--admin-success)' },
-            { label: 'Tài khoản admin', value: scopedSummary.admins, color: 'var(--admin-accent)' },
-          ].map(card => (
-            <div key={card.label} style={{ border: '1px solid var(--admin-border)', background: 'var(--admin-panel)', padding: 14 }}>
-              <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)' }}>{card.label}</div>
-              <div style={{ marginTop: 10, fontSize: '1.5rem', fontWeight: 900, color: card.color }}>{card.value}</div>
-            </div>
-          ))}
+            {[
+              { label: 'Tổng tài khoản', value: scopedSummary.total, color: 'var(--admin-text)' },
+              { label: 'Đang hoạt động', value: scopedSummary.active, color: 'var(--admin-success)' },
+              { label: 'Tài khoản admin', value: scopedSummary.admins, color: 'var(--admin-accent)' },
+            ].map(card => (
+              <div key={card.label} className="admin-card" style={{ padding: 16 }}>
+                <div style={{ fontSize: '.68rem', fontWeight: 800, color: 'var(--admin-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{card.label}</div>
+                <div style={{ marginTop: 10, fontSize: '1.8rem', fontWeight: 900, color: card.color }}>{card.value}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="page-toolbar-row">
-        <div className="page-title-cell">
-          {embeddedMode !== 'central' && <h2>NGƯỜI DÙNG</h2>}
+      <div style={{ padding: '0 20px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="page-toolbar-row" style={{ marginTop: embeddedMode === 'central' ? 16 : 0, marginBottom: 16 }}>
+          <div className="page-title-cell">
+            {embeddedMode !== 'central' && <h2>NGƯỜI DÙNG</h2>}
+          </div>
+          <div className="page-toolbar-group">
+            <button 
+              className="btn-industrial btn-primary" 
+              style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
+              onClick={openAddModal}
+            >
+              + THÊM TÀI KHOẢN
+            </button>
+          </div>
         </div>
-        <div className="page-toolbar-group">
-          <button 
-            className="btn-industrial btn-primary" 
-            style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
-            onClick={openAddModal}
-          >
-            + THÊM TÀI KHOẢN
-          </button>
-        </div>
-      </div>
-      
-      <div className="admin-card" style={{ padding: 0, overflow: 'auto', flexShrink: 0 }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Họ tên & Phân quyền trạm</th>
-              <th>Tên đăng nhập</th>
-              <th>Email</th>
-              <th>Vai trò</th>
-              <th>Trạng thái</th>
-              <th>Hành động</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 32 }}>⏳ Đang tải...</td></tr>
-            ) : filteredUsers.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 32 }}>
-                {filterStationId ? 'Không có người dùng nào thuộc trạm đã chọn' : 'Chưa có người dùng nào'}
-              </td></tr>
-            ) : (
-              filteredUsers.map(u => {
-                const roleColor = u.role === 'admin' ? 'var(--admin-danger)' : u.role === 'manager' ? 'var(--admin-warning)' : 'var(--admin-success)';
-                const roleLabel = u.role === 'admin' ? 'ADMIN' : u.role === 'manager' ? 'MANAGER' : 'OPERATOR';
-                return (
-                  <tr key={u.id}>
-                    <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <b>{u.fullName || '—'}</b>
-                        <span style={{ fontSize: 10, color: 'var(--admin-text-muted)', marginTop: 2 }}>
-                          📍 {getAssignedStationsText(u)}
-                        </span>
-                      </div>
-                    </td>
-                    <td><code>{u.username}</code></td>
-                    <td>{u.email || '—'}</td>
-                    <td><span className="tag" style={{ background: `${roleColor}20`, color: roleColor }}>{roleLabel}</span></td>
-                    <td>{u.isActive ? <span className="tag tag-success">Hoạt động</span> : <span className="tag tag-danger">Vô hiệu</span>}</td>
-                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button className="btn-industrial btn-sm" onClick={() => openEditModal(u)} title="Sửa thông tin">Sửa</button>
-                      <button className="btn-industrial btn-sm" onClick={() => openPwModal(u.id)} title="Đổi mật khẩu">Đổi MK</button>
-                      {u.isActive && <button className="btn-industrial btn-sm btn-danger" onClick={() => deactivateUser(u)} title="Vô hiệu hóa">Vô hiệu</button>}
-                    </td>
+        
+        <div className="admin-card" style={{ padding: 0, overflow: 'auto', flex: 1 }}>
+          <table className="data-table">
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+              <tr>
+                <th>Họ tên & Phân quyền trạm</th>
+                <th>Tên đăng nhập</th>
+                <th>Email</th>
+                <th>Vai trò</th>
+                <th style={{ textAlign: 'center' }}>Trạng thái</th>
+                <th style={{ textAlign: 'center' }}>Hành động</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 40 }}>⏳ Đang tải...</td></tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--admin-text-muted)', padding: 40 }}>
+                  {filterStationId ? 'Không có người dùng nào thuộc trạm đã chọn' : 'Chưa có người dùng nào'}
+                </td></tr>
+              ) : (
+                filteredUsers.map(u => {
+                  const roleColor = u.role === 'admin' ? 'var(--admin-danger)' : u.role === 'manager' ? '#f59e0b' : 'var(--admin-success)';
+                  const roleLabel = u.role === 'admin' ? 'ADMIN' : u.role === 'manager' ? 'MANAGER' : 'OPERATOR';
+                  return (
+                    <tr key={u.id}>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <b style={{ fontSize: '.75rem' }}>{u.fullName || '—'}</b>
+                          <span style={{ fontSize: '.6rem', color: 'var(--admin-text-muted)', marginTop: 4 }}>
+                            📍 {getAssignedStationsText(u)}
+                          </span>
+                        </div>
+                      </td>
+                      <td><code style={{ background: 'var(--admin-layer-2)', padding: '2px 6px', borderRadius: 4, fontSize: '.7rem' }}>{u.username}</code></td>
+                      <td style={{ fontSize: '.75rem' }}>{u.email || '—'}</td>
+                      <td>
+                        <span style={{ 
+                           background: roleColor === 'var(--admin-danger)' ? 'rgba(239,68,68,0.1)' : roleColor === '#f59e0b' ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)',
+                           color: roleColor, padding: '2px 8px', borderRadius: 4, fontSize: '.65rem', fontWeight: 800 
+                        }}>{roleLabel}</span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                         {u.isActive ? (
+                            <span style={{ fontSize: '.65rem', background: 'rgba(16,185,129,0.1)', color: 'var(--admin-success)', padding: '2px 8px', borderRadius: 4, fontWeight: 800 }}>HOẠT ĐỘNG</span>
+                         ) : (
+                            <span style={{ fontSize: '.65rem', background: 'rgba(239,68,68,0.1)', color: 'var(--admin-danger)', padding: '2px 8px', borderRadius: 4, fontWeight: 800 }}>VÔ HIỆU</span>
+                         )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                          <button className="btn-industrial btn-sm" onClick={() => openEditModal(u)} title="Sửa thông tin" style={{ fontSize: '.65rem' }}>Sửa</button>
+                          <button className="btn-industrial btn-sm" onClick={() => openPwModal(u.id)} title="Đổi mật khẩu">Đổi MK</button>
+                          {u.isActive && <button className="btn-industrial btn-sm btn-danger" onClick={() => deactivateUser(u)} title="Vô hiệu hóa">Vô hiệu</button>}
+                        </div>
+                      </td>
                   </tr>
                 );
               })
             )}
           </tbody>
         </table>
+      </div>
       </div>
 
       <div className="admin-card" style={{ padding: 20, marginTop: 16 }}>
