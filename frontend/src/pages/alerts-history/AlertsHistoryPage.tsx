@@ -64,7 +64,7 @@ export default function AlertsHistoryPage() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
-  const [timeRange, setTimeRange] = useState('7d');
+  const [timeRange, setTimeRange] = useState('all');
   const [sortBy, setSortBy] = useState<SortCol>('time');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
@@ -91,19 +91,13 @@ export default function AlertsHistoryPage() {
   // Modal chọn khoảng ngày tùy chỉnh
   const [dateModalOpen, setDateModalOpen] = useState(false);
 
-  // Khoảng thời gian mặc định: 7 ngày gần nhất
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split('T')[0];
-  });
-  const [endDate, setEndDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
-  });
+  // Khoảng thời gian mặc định: Tất cả lịch sử
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Giá trị tạm trong modal (chưa áp dụng cho đến khi bấm Xác nhận)
-  const [tempStartDate, setTempStartDate] = useState(startDate);
-  const [tempEndDate, setTempEndDate] = useState(endDate);
+  const [tempStartDate, setTempStartDate] = useState('');
+  const [tempEndDate, setTempEndDate] = useState('');
 
   // Load devices list on mount (qua store — chia sẻ với các page khác)
   useEffect(() => {
@@ -131,8 +125,8 @@ export default function AlertsHistoryPage() {
       setEndDate('');
       return;
     }
-    setStartDate(start.toISOString().split('T')[0]);
-    setEndDate(now.toISOString().split('T')[0]);
+    setStartDate(start.toISOString().split('T')[0] ?? '');
+    setEndDate(now.toISOString().split('T')[0] ?? '');
   }, [timeRange]);
 
   // Sync temp dates when main dates are set

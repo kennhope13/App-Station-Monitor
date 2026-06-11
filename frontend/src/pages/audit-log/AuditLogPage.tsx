@@ -33,7 +33,7 @@ interface LogItem {
 
 export default function AuditLogPage({ embeddedMode = 'default', stationIdOverride = null }: AuditLogPageProps) {
   const [activeTab, setActiveTab] = useState<TabId>('all');
-  const [timeRange, setTimeRange] = useState('today');
+  const [timeRange, setTimeRange] = useState('all');
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<LogItem[]>([]);       // log đã gộp + chuẩn hóa
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
