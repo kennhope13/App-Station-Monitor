@@ -4,9 +4,11 @@
 // Tất cả trang trừ /login đều yêu cầu đăng nhập (ProtectedRoute)
 // ============================================================
 
-import React, { Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
+import { useAuthStore } from '@/store/authStore';
+import type { User, UserRole } from '@/types/api.types';
 
 // Lazy import — mỗi trang là một chunk riêng, tải khi cần
 const DashboardPage = React.lazy(() => import('@/pages/dashboard/DashboardPage'));
@@ -77,9 +79,60 @@ const ScreenLoader = () => {
   );
 };
 
+function SsoAutoLogin() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const setSession = useAuthStore(s => s.setSession);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token');
+
+    if (token) {
+      try {
+        // Decode JWT payload
+        const base64url = token.split('.')[1] ?? '';
+        const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
+        const jsonBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+        const payload = JSON.parse(new TextDecoder('utf-8').decode(jsonBytes));
+
+        const user: User = {
+          user_id: payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? '',
+          username: payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] ?? 'sso_user',
+          fullname: payload['fullName'] ?? 'SSO User',
+          email: '',
+          role: (payload['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ?? 'operator') as UserRole,
+          active: true,
+          created_at: new Date().toISOString(),
+          is_restricted: payload['isRestricted'] === 'true' || !!payload['stationIds'],
+          station_ids: payload['stationIds'] ? payload['stationIds'].split(',') : undefined
+        };
+
+        // Lưu thông tin phiên đăng nhập
+        setSession(user, token);
+        localStorage.setItem('station_token', token);
+
+        // Xóa tham số token khỏi URL để bảo mật
+        params.delete('token');
+        const searchStr = params.toString();
+        const cleanUrl = location.pathname + (searchStr ? `?${searchStr}` : '') + location.hash;
+        
+        // Cập nhật URL và giữ nguyên trang hiện tại
+        window.history.replaceState({}, document.title, cleanUrl);
+        navigate(cleanUrl, { replace: true });
+      } catch (error) {
+        console.error('Lỗi giải mã token SSO:', error);
+      }
+    }
+  }, [location, setSession, navigate]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <SsoAutoLogin />
       {/* Suspense hiển thị fallback trong khi chunk JS đang tải */}
       <Suspense fallback={<ScreenLoader />}>
         <Routes>
