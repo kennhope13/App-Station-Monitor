@@ -49,7 +49,6 @@ const CHILD_NAV: NavItem[] = [
 
 const CHILD_ADMIN_NAV: NavItem[] = [
   { id: 'device-management', path: '/device-management', icon: <Radio size={19} strokeWidth={1.5} />, label: 'Thiết bị', roles: ['admin'] },
-  { id: 'rule-engine', path: '/rule-engine', icon: <AlertTriangle size={19} strokeWidth={1.5} />, label: 'Cài đặt cảnh báo', roles: ['admin'] },
   { id: 'user-management', path: '/user-management', icon: <Users size={19} strokeWidth={1.5} />, label: 'Người dùng', roles: ['admin'] },
   { id: 'settings', path: '/settings', icon: <Settings size={19} strokeWidth={1.5} />, label: 'Cài đặt', roles: ['admin'] },
 ];

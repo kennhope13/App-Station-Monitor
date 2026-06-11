@@ -137,6 +137,7 @@ class StationApiService {
   generateReport = analyticsService.generateReport.bind(analyticsService);
   getReports = analyticsService.getReports.bind(analyticsService);
   downloadReport = analyticsService.downloadReport.bind(analyticsService);
+  getDownloadUrl = analyticsService.getDownloadUrl.bind(analyticsService);
   deleteReport = analyticsService.deleteReport.bind(analyticsService);
   getMaintenance = analyticsService.getMaintenance.bind(analyticsService);
   createMaintenance = analyticsService.createMaintenance.bind(analyticsService);

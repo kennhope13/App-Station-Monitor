@@ -21,25 +21,11 @@ import './RealtimeMonitorPage.css';
 
 type Layout = 'l1' | 'l4' | 'l9';
 
-interface RealtimeMonitorPageProps {
-  embeddedMode?: 'default' | 'central';
-  stationIdOverride?: string | null;
-  onStationIdChange?: (stationId: string) => void;
-}
-
-
-
-
-
 /**
  * Trang giám sát camera trực tiếp — hiển thị lưới stream WebRTC với overlay nhiệt/PD,
  * bảng sự kiện AI theo thời gian thực và đồng hồ trạng thái thiết bị.
  */
-export default function RealtimeMonitorPage({
-  embeddedMode = 'default',
-  stationIdOverride = null,
-  onStationIdChange,
-}: RealtimeMonitorPageProps) {
+export default function RealtimeMonitorPage() {
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [layout, setLayout] = useState<Layout>('l4');
   const [selectedCamFilter, setSelectedCamFilter] = useState('');
@@ -177,19 +163,15 @@ export default function RealtimeMonitorPage({
       }
     };
 
-    const savedStationId = stationIdOverride || localStorage.getItem('selected_station_id');
-    if (embeddedMode === 'central' && !stationIdOverride) {
-      stations.forEach(s => fetchDevices(s.id));
-      fetchAlerts(ALERT_STATUS.OPEN);
-      loadAllStationsCams();
-    } else if (savedStationId) {
+    const savedStationId = localStorage.getItem('selected_station_id');
+    if (savedStationId) {
       fetchDevices(savedStationId);
       fetchAlerts(ALERT_STATUS.OPEN);
       loadCams(savedStationId);
     } else {
       getFirstStationId().then((id: string | null) => {
         if (id) {
-          onStationIdChange?.(id);
+          localStorage.setItem('selected_station_id', id);
           fetchDevices(id);
           fetchAlerts(ALERT_STATUS.OPEN);
           loadCams(id);
@@ -209,7 +191,7 @@ export default function RealtimeMonitorPage({
         return next;
       });
     }).catch(console.error);
-  }, [embeddedMode, stationIdOverride, stations, fetchDevices, fetchAlerts, getFirstStationId, onStationIdChange]);
+  }, [stations, fetchDevices, fetchAlerts, getFirstStationId]);
 
   // 2. Periodic ROI/PD Boundary Refresh
   useEffect(() => {
@@ -301,7 +283,7 @@ export default function RealtimeMonitorPage({
   // Helpers
   const cellCount = layout === 'l1' ? 1 : layout === 'l4' ? 4 : 9;
   const displayCams = selectedCamFilter ? cameras.filter(c => c.id === selectedCamFilter) : cameras;
-  const isCentralFleetView = embeddedMode === 'central' && !stationIdOverride;
+  const isCentralFleetView = false;
   const stationCameraStats = useMemo(() => {
     const grouped = new Map<string, {
       stationId: string;
@@ -1098,76 +1080,7 @@ export default function RealtimeMonitorPage({
       {/* ── Toolbar ── */}
       <div className="page-toolbar-row dash-header">
         <div className="page-title-cell">
-          {embeddedMode !== 'central' && <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>}
-          {embeddedMode === 'central' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ display: 'inline-block' }}>
-              {stationMenuOpen && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
-              )}
-              <button
-                ref={stationBtnRef}
-                onClick={() => {
-                  const r = stationBtnRef.current?.getBoundingClientRect();
-                  if (r) setStationMenuPos({ top: r.bottom, left: r.left, width: r.width });
-                  setStationMenuOpen(o => !o);
-                }}
-                style={{
-                  width: 260, background: '#0f1729',
-                  border: '1px solid var(--admin-border)',
-                  color: 'var(--admin-text)', padding: '4px 10px',
-                  fontSize: '.72rem', fontWeight: 700, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
-                }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {stations.find(s => s.id === stationIdOverride)?.name || 'Tất cả trạm'}
-                </span>
-                <span style={{ flexShrink: 0, opacity: 0.5, fontSize: '.65rem' }}>▾</span>
-              </button>
-              {stationMenuOpen && (
-                <div style={{
-                  position: 'fixed', top: stationMenuPos.top, left: stationMenuPos.left,
-                  width: stationMenuPos.width, zIndex: 9999,
-                  background: '#0f1729', border: '1px solid var(--admin-border)',
-                  maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                }}>
-                  <div
-                    onClick={() => { onStationIdChange?.(''); setStationMenuOpen(false); }}
-                    style={{
-                      padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
-                      fontWeight: !stationIdOverride ? 800 : 500,
-                      color: !stationIdOverride ? 'var(--admin-accent)' : 'var(--admin-text)',
-                      background: !stationIdOverride ? 'var(--admin-layer-3)' : 'transparent',
-                      borderLeft: `2px solid ${!stationIdOverride ? 'var(--admin-accent)' : 'transparent'}`,
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}
-                  >
-                    Tất cả trạm
-                  </div>
-                  {stations.map(s => (
-                    <div
-                      key={s.id}
-                      onClick={() => { onStationIdChange?.(s.id); setStationMenuOpen(false); }}
-                      style={{
-                        padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
-                        fontWeight: stationIdOverride === s.id ? 800 : 500,
-                        color: stationIdOverride === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
-                        background: stationIdOverride === s.id ? 'var(--admin-layer-3)' : 'transparent',
-                        borderLeft: `2px solid ${stationIdOverride === s.id ? 'var(--admin-accent)' : 'transparent'}`,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}
-                      onMouseEnter={e => { if (stationIdOverride !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
-                      onMouseLeave={e => { if (stationIdOverride !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-                    >
-                      {(s.code ? `${s.code} - ` : '') + s.name}
-                    </div>
-                  ))}
-                </div>
-              )}
-              </div>
-            </div>
-          )}
+          <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>
         </div>
 
         <div className="page-toolbar-group">
@@ -1210,130 +1123,11 @@ export default function RealtimeMonitorPage({
 
       {/* ── Main Area ── */}
       <div className="rtm-main">
-        {isCentralFleetView ? (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', overflow: 'hidden' }}>
-            
-            {/* System Status Summary Bar */}
-            <div style={{ display: 'flex', gap: 30, padding: '10px 20px', background: 'var(--admin-panel)', borderBottom: '1px solid var(--admin-border)', alignItems: 'center' }}>
-               <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>
-                  HỆ THỐNG: <span style={{ color: 'var(--admin-text)', marginLeft: 6 }}>{fleetSummary.totalStations} TRẠM</span>
-               </div>
-               <div style={{ width: 1, height: 14, background: 'var(--admin-border)' }} />
-               <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>
-                  THIẾT BỊ: <span style={{ color: 'var(--admin-success)', marginLeft: 6 }}>{fleetSummary.onlineCams} ONLINE</span> / {fleetSummary.totalCams} TỔNG
-               </div>
-               <div style={{ width: 1, height: 14, background: 'var(--admin-border)' }} />
-               <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>
-                  SỨC KHỎE: <span style={{ color: fleetSummary.avgHealth > 90 ? 'var(--admin-success)' : 'var(--admin-accent)', marginLeft: 6 }}>{fleetSummary.avgHealth}%</span>
-               </div>
-               
-               <div style={{ flex: 1 }} />
-
-               <div style={{ position: 'relative' }}>
-                  <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
-                  <input 
-                    type="text" 
-                    placeholder="TÌM KIẾM TRẠM..." 
-                    value={stationSearch} 
-                    onChange={e => setStationSearch(e.target.value)}
-                    style={{ 
-                      background: 'rgba(0,0,0,0.2)', 
-                      border: '1px solid var(--admin-border)', 
-                      borderRadius: 2, 
-                      padding: '4px 10px 4px 26px', 
-                      fontSize: '.65rem', 
-                      fontWeight: 800,
-                      color: 'var(--admin-text)',
-                      width: 180,
-                      textTransform: 'uppercase'
-                    }} 
-                  />
-               </div>
-            </div>
-
-            {/* Station Mosaic Grid */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20 }}>
-                  {filteredStationStats.map(stat => {
-                     const cam = stat.firstCam;
-                     const health = stat.total > 0 ? Math.round((stat.online / stat.total) * 100) : 0;
-                     const healthColor = health === 100 ? 'var(--admin-success)' : health >= 50 ? 'var(--admin-accent)' : 'var(--admin-danger)';
-                     
-                     return (
-                        <div 
-                          key={stat.stationId} 
-                          className="admin-card" 
-                          style={{ 
-                            padding: 0, display: 'flex', flexDirection: 'column', 
-                            border: '1px solid var(--admin-border)', overflow: 'hidden',
-                            transition: 'border-color 0.2s',
-                            cursor: 'pointer'
-                          }}
-                          onClick={() => stat.stationId && onStationIdChange?.(stat.stationId)}
-                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--admin-accent)'}
-                          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--admin-border)'}
-                        >
-                           {/* Station Header */}
-                           <div style={{ padding: '8px 12px', background: 'var(--admin-layer-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--admin-border)' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                 <div style={{ width: 6, height: 6, borderRadius: '50%', background: stat.online > 0 ? 'var(--admin-success)' : 'var(--admin-danger)', boxShadow: stat.online > 0 ? '0 0 5px var(--admin-success)' : 'none' }} />
-                                 <b style={{ fontSize: '.75rem', color: 'var(--admin-text)', letterSpacing: '0.05em' }}>{stat.stationName.toUpperCase()}</b>
-                              </div>
-                              {stat.alertCount > 0 && (
-                                 <div style={{ background: 'var(--admin-danger)', color: '#fff', fontSize: '.6rem', fontWeight: 900, padding: '1px 6px', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <AlertTriangle size={10} /> {stat.alertCount}
-                                 </div>
-                              )}
-                           </div>
-
-                           {/* Preview Section */}
-                           <div style={{ aspectRatio: '16/9', background: '#000', position: 'relative', overflow: 'hidden' }}>
-                              {cam ? (
-                                 <iframe 
-                                    src={`/camera-stream.html?src=${encodeURIComponent(cam.config.go2rtc_id || cam.config.go2rtc_optical || '')}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`}
-                                    style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
-                                    title={cam.name}
-                                 />
-                              ) : (
-                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'rgba(255,255,255,0.15)', gap: 8 }}>
-                                    <Video size={32} />
-                                    <div style={{ fontSize: '.6rem', fontWeight: 900, letterSpacing: '0.2em' }}>NO SIGNAL</div>
-                                 </div>
-                              )}
-                              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.5) 0%, transparent 40%)', pointerEvents: 'none' }} />
-                              <div style={{ position: 'absolute', bottom: 8, left: 10, right: 10, display: 'flex', justifyContent: 'space-between', pointerEvents: 'none' }}>
-                                 <span style={{ fontSize: '.65rem', color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>{cam?.name || '---'}</span>
-                                 <span style={{ fontSize: '.6rem', color: 'rgba(255,255,255,0.5)', fontWeight: 800 }}>LIVE</span>
-                              </div>
-                           </div>
-
-                           {/* Station Footer Stats */}
-                           <div style={{ padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--admin-panel)' }}>
-                              <div style={{ fontSize: '.65rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
-                                 ONLINE: <span style={{ color: 'var(--admin-text)' }}>{stat.online}</span> / {stat.total}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                 <div style={{ width: 60, height: 4, background: 'var(--admin-layer-3)', borderRadius: 2, overflow: 'hidden' }}>
-                                    <div style={{ width: `${health}%`, height: '100%', background: healthColor, borderRadius: 2, transition: 'width 0.5s' }} />
-                                 </div>
-                                 <span style={{ fontSize: '.65rem', fontWeight: 800, color: healthColor, minWidth: 28, textAlign: 'right' }}>{health}%</span>
-                              </div>
-                           </div>
-                        </div>
-                     );
-                  })}
-               </div>
-            </div>
-
-
-          </div>
-        ) : (
           <div className="nvr-wrap">
             <div className={`nvr-grid ${layout}`}>
               {Array.from({ length: cellCount }).map((_, i) => renderCell(displayCams[i], i))}
             </div>
           </div>
-        )}
 
         {/* Events Panel — tạm ẩn */}
       </div>

@@ -368,7 +368,117 @@ async def thermal_query_temps(body: ThermalQueryBody):
     import numpy as np
     data = await _read_matrix_cached(body.camera_ip, body.username, body.password)
     if data is None:
-        return {"temps": [], "rois": [], "mapping": None, "error": "camera_unreachable"}
+        # Fallback to rulesTemperatureInfo if raw matrix is not available (e.g. Hikvision camera 152)
+        try:
+            client = await _get_thermal_client(body.camera_ip)
+            mapping_rules = {}
+            for ch in [2, 1]:
+                url_list = f"http://{body.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/realTimeList"
+                resp_list = await client.get(url_list, auth=httpx.DigestAuth(body.username, body.password))
+                if resp_list.status_code == 200:
+                    import xml.etree.ElementTree as ET
+                    root = ET.fromstring(resp_list.content)
+                    for r in root.iter():
+                        tag_local = r.tag.split("}")[-1]
+                        if tag_local == "ThermometryRegion":
+                            rid = None
+                            name_val = None
+                            rtype = None
+                            coords = []
+                            for child in r:
+                                child_tag = child.tag.split("}")[-1]
+                                if child_tag == "id":
+                                    try: rid = int(child.text)
+                                    except Exception: pass
+                                elif child_tag == "name":
+                                    name_val = child.text
+                                elif child_tag == "type":
+                                    rtype = child.text
+                                elif child_tag == "Point":
+                                    for cc in child.findall(".//CalibratingCoordinates"):
+                                        px_elem = cc.find("positionX")
+                                        py_elem = cc.find("positionY")
+                                        if px_elem is not None and py_elem is not None:
+                                            coords.append((float(px_elem.text)/1000.0, float(py_elem.text)/1000.0))
+                                elif child_tag == "Region":
+                                    for rc in child.findall(".//RegionCoordinates"):
+                                        px_elem = rc.find("positionX")
+                                        py_elem = rc.find("positionY")
+                                        if px_elem is not None and py_elem is not None:
+                                            coords.append((float(px_elem.text)/1000.0, float(py_elem.text)/1000.0))
+                            if rid is not None:
+                                mapping_rules[rid] = {
+                                    "id": rid,
+                                    "name": name_val,
+                                    "type": rtype,
+                                    "coords": coords
+                                }
+                    break
+
+            rules_temp = {}
+            for ch in [2, 1]:
+                url_temp = f"http://{body.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/1/rulesTemperatureInfo?format=json"
+                resp_temp = await client.get(url_temp, auth=httpx.DigestAuth(body.username, body.password))
+                if resp_temp.status_code == 200:
+                    temp_data = resp_temp.json()
+                    rules_info = temp_data.get("ThermometryRulesTemperatureInfoList", {}).get("ThermometryRulesTemperatureInfo", [])
+                    for rule in rules_info:
+                        rid = rule.get("id")
+                        max_t = rule.get("maxTemperature")
+                        min_t = rule.get("minTemperature")
+                        avg_t = rule.get("averageTemperature")
+                        if rid is not None and max_t is not None:
+                            rules_temp[rid] = {
+                                "max": float(max_t),
+                                "min": float(min_t) if min_t is not None else float(max_t),
+                                "avg": float(avg_t) if avg_t is not None else float(max_t),
+                            }
+                    break
+
+            temps = []
+            for pt in body.points:
+                matched_val = None
+                best_dist = 999.0
+                for rid, rule_info in mapping_rules.items():
+                    if rule_info["coords"]:
+                        rx, ry = rule_info["coords"][0]
+                        dist = (pt.x - rx)**2 + (pt.y - ry)**2
+                        if dist < best_dist and dist < 0.05:
+                            best_dist = dist
+                            if rid in rules_temp:
+                                matched_val = rules_temp[rid]["max"]
+                temps.append({"id": pt.id, "temp": matched_val})
+
+            rois = []
+            for roi in body.rois:
+                roi_cx = (roi.x1 + roi.x2) / 2.0
+                roi_cy = (roi.y1 + roi.y2) / 2.0
+                matched_val = None
+                best_dist = 999.0
+                for rid, rule_info in mapping_rules.items():
+                    if rule_info["type"] == "region" and rule_info["coords"]:
+                        rx = sum(c[0] for c in rule_info["coords"]) / len(rule_info["coords"])
+                        ry = sum(c[1] for c in rule_info["coords"]) / len(rule_info["coords"])
+                        dist = (roi_cx - rx)**2 + (roi_cy - ry)**2
+                        if dist < best_dist and dist < 0.05:
+                            best_dist = dist
+                            if rid in rules_temp:
+                                matched_val = rules_temp[rid]
+                if matched_val:
+                    rois.append({
+                        "id": roi.id,
+                        "max": matched_val["max"],
+                        "min": matched_val["min"],
+                        "avg": matched_val["avg"]
+                    })
+                else:
+                    rois.append({"id": roi.id, "max": None, "min": None, "avg": None})
+
+            return {"temps": temps, "rois": rois, "mapping": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0}}
+
+        except Exception as e:
+            logger.error("[Routes] Fallback query-temps error: %s", e)
+            return {"temps": [], "rois": [], "mapping": None, "error": "camera_unreachable"}
 
     matrix: np.ndarray = data["matrix"]
     w, h = data["w"], data["h"]
@@ -1228,6 +1338,147 @@ def generate_prediction_data(ts_now: datetime, targets: list) -> dict:
 from pydantic import BaseModel as _BaseModel
 from typing import List as _List
 
+async def ensure_thermal_analyzer_started(device_id: str):
+    """
+    Đảm bảo camera nhiệt có ID này đã được khởi tạo và chạy.
+    Nếu chưa, load thông tin và ROI từ Backend rồi khởi động ThermalAnalyzer.
+    """
+    # 1. Kiểm tra xem đã chạy chưa
+    for analyzer in list(_thermal_analyzers.values()):
+        if analyzer.device_id == device_id:
+            return
+
+    # 2. Chưa chạy -> Fetch cấu hình từ backend
+    import httpx
+    from config import get_settings
+    cfg = get_settings()
+    
+    logger.info("[Routes] Dynamic startup: Thermal analyzer not found for device %s. Loading from backend...", device_id)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{cfg.backend_url}/api/v1/devices/{device_id}")
+            if resp.status_code != 200:
+                logger.warning("[Routes] Dynamic startup: Device %s not found in backend (HTTP %d)", device_id, resp.status_code)
+                return
+            
+            d = resp.json()
+            dev_type = d.get("type", "")
+            if dev_type not in ("camera_dual", "camera_thermal"):
+                logger.debug("[Routes] Dynamic startup: Device %s is not a thermal camera (type: %s)", device_id, dev_type)
+                return
+
+            cfg_raw = d.get("config") or {}
+            if isinstance(cfg_raw, str):
+                import json
+                cfg_raw = json.loads(cfg_raw)
+
+            ip = cfg_raw.get("ip")
+            if not ip:
+                logger.warning("[Routes] Dynamic startup: Thermal camera %s has no IP configured", device_id)
+                return
+
+            password = cfg_raw.get("password", "")
+            username = cfg_raw.get("username", "admin")
+            if password == "***" or not password:
+                try:
+                    r_cred = await client.get(f"{cfg.backend_url}/api/v1/devices/{device_id}/credentials")
+                    if r_cred.status_code == 200:
+                        cred = r_cred.json()
+                        password = cred.get("password", "")
+                        username = cred.get("username", username)
+                except Exception as ex:
+                    logger.warning("[Routes] Dynamic startup: Cannot fetch credentials for %s: %s", device_id, ex)
+
+            stream_id = cfg_raw.get("go2rtc_id")
+            if not stream_id:
+                stream_id = cfg_raw.get("go2rtc_thermal")
+            if not stream_id:
+                logger.warning("[Routes] Dynamic startup: Thermal camera %s has no go2rtc_id or go2rtc_thermal configured", device_id)
+                return
+
+            # Fetch ROI points
+            from services.thermal.thermal_analyzer import ThermalAnalyzer, ThermalPoint, ThermalZone
+            points = []
+            zones = []
+            
+            try:
+                roi_resp = await client.get(f"{cfg.backend_url}/api/v1/devices/{device_id}/roi-points")
+                if roi_resp.status_code == 200:
+                    for r in roi_resp.json():
+                        tx = r.get("tx")
+                        ty = r.get("ty")
+                        ox = r.get("ox")
+                        oy = r.get("oy")
+                        
+                        if tx is None or ty is None:
+                            if ox is not None and oy is not None:
+                                focal_opt = cfg_raw.get("focal_length_optical")
+                                focal_th = cfg_raw.get("focal_length_thermal")
+                                if focal_opt is not None and focal_th is not None and float(focal_opt) == float(focal_th) and float(focal_opt) > 0:
+                                    vvr_x = 0.0
+                                    vvr_y = 0.0
+                                    vvr_w = 1.0
+                                    vvr_h = 1.0
+                                else:
+                                    vvr_raw = cfg_raw.get("visible_valid_rect", {})
+                                    vvr_x = float(vvr_raw.get("x", 0.20))
+                                    vvr_y = float(vvr_raw.get("y", 0.084))
+                                    vvr_w = float(vvr_raw.get("width", 0.63))
+                                    vvr_h = float(vvr_raw.get("height", 0.841))
+                                tx = (ox - vvr_x) / vvr_w
+                                ty = (oy - vvr_y) / vvr_h
+                            else:
+                                tx, ty = 0.5, 0.5
+                                
+                        tx = max(0.0, min(1.0, float(tx)))
+                        ty = max(0.0, min(1.0, float(ty)))
+
+                        points.append(ThermalPoint(
+                            id=r.get("pointId") or f"P{r.get('sortOrder') or len(points)+1}",
+                            x=tx, y=ty,
+                            pre_alarm=float(r.get("preAlarmThreshold") or 0.0),
+                            alarm=float(r.get("alarmThreshold") or 0.0),
+                            label=r.get("name", ""),
+                        ))
+            except Exception as ex:
+                logger.warning("[Routes] Dynamic startup: Failed to fetch ROI points for device %s: %s", device_id, ex)
+
+            # Fetch ROI zones (boundaries)
+            try:
+                bound_resp = await client.get(f"{cfg.backend_url}/api/v1/devices/{device_id}/boundaries?type=roi")
+                if bound_resp.status_code == 200:
+                    for b in bound_resp.json():
+                        try:
+                            import json
+                            poly = json.loads(b["polygon"])
+                            thresholds = json.loads(b.get("thresholds") or "{}")
+                            zones.append(ThermalZone(
+                                id=str(b["id"]),
+                                polygon=poly,
+                                pre_alarm=thresholds.get("warning") or thresholds.get("preAlarm") or 0.0,
+                                alarm=thresholds.get("alarm") or 0.0,
+                                label=b["name"]
+                            ))
+                        except Exception as json_err:
+                            logger.warning("[Routes] Dynamic startup: Failed to parse boundary for device %s: %s", device_id, json_err)
+            except Exception as ex:
+                logger.warning("[Routes] Dynamic startup: Failed to fetch boundaries for device %s: %s", device_id, ex)
+
+            analyzer = ThermalAnalyzer(
+                device_id=device_id,
+                camera_ip=ip,
+                username=username,
+                password=password,
+                stream_id=stream_id,
+                points=points,
+                zones=zones
+            )
+            analyzer.start()
+            _thermal_analyzers[stream_id] = analyzer
+            logger.info("[Routes] Dynamic startup: Successfully initialized and started ThermalAnalyzer for %s (%d points, %d zones)", stream_id, len(points), len(zones))
+    except Exception as ex:
+        logger.error("[Routes] Dynamic startup failed for device %s: %s", device_id, ex)
+
 def get_camera_identifier(stream_id: str = None, camera_ip: str = None, device_id: str = None) -> str:
     if stream_id:
         return stream_id
@@ -1256,6 +1507,8 @@ class ThermalDataPayload(_BaseModel):
 
 @router.post("/api/thermal-data")
 async def receive_thermal_data(body: ThermalDataPayload):
+    if body.device_id:
+        await ensure_thermal_analyzer_started(body.device_id)
     """
     Nhận dữ liệu nhiệt độ từ camera (Jetson hoặc server đẩy dữ liệu).
     Pipeline:
@@ -1337,6 +1590,8 @@ async def receive_thermal_data(body: ThermalDataPayload):
 # Endpoints cho AI Forecast & Config
 @router.get("/api/config")
 async def get_model_config(stream_id: str = None, camera_ip: str = None, device_id: str = None):
+    if device_id:
+        await ensure_thermal_analyzer_started(device_id)
     config = load_or_create_model_config(stream_id=stream_id, camera_ip=camera_ip, device_id=device_id)
     return config
 
@@ -1367,6 +1622,8 @@ async def get_latest_prediction(
     camera_ip: str = Query(default=None),
     device_id: str = Query(default=None)
 ):
+    if device_id:
+        await ensure_thermal_analyzer_started(device_id)
     """
     Trả về dự báo mới nhất từ Jetson đối tác.
     - Nếu đã có dữ liệu thực (live_predictions.csv): đọc từ CSV.
@@ -1402,6 +1659,8 @@ async def get_prediction_history(
     camera_ip: str = Query(default=None),
     device_id: str = Query(default=None)
 ):
+    if device_id:
+        await ensure_thermal_analyzer_started(device_id)
     """
     Trả về chuỗi lịch sử + dự báo cho biểu đồ đường đôi.
     - Chỉ sử dụng dữ liệu thực từ CSV.

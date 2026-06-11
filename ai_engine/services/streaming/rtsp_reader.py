@@ -2,11 +2,18 @@
 rtsp_reader.py — Đọc frame từ RTSP stream (go2rtc hoặc trực tiếp từ camera)
 Chạy trong thread riêng, expose frame mới nhất qua latest_frame
 """
+import os
 import threading
 import time
 import cv2
 import numpy as np
 import logging
+
+# Cấu hình OpenCV FFMPEG: ép buộc sử dụng giao thức TCP ổn định, giảm trễ (max_delay), tắt buffer (nobuffer) và đặt thời gian chờ kết nối là 5 giây (5.000.000 microseconds)
+# Việc này tránh cảnh báo Stream timeout 30 giây mặc định gây đứng luồng và tối ưu độ trễ truyền hình ảnh
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+    "rtsp_transport;tcp|max_delay;500000|fflags;nobuffer|stimeout;5000000"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +67,7 @@ class RtspReader:
         """Vòng lặp nội bộ: mở kết nối RTSP, đọc frame liên tục và tự kết nối lại khi lỗi."""
         while self._running:
             try:
-                self._cap = cv2.VideoCapture(self.stream_url)
+                self._cap = cv2.VideoCapture(self.stream_url, cv2.CAP_FFMPEG)
                 self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # buffer nhỏ = latency thấp
 
                 if not self._cap.isOpened():
@@ -79,6 +86,8 @@ class RtspReader:
             except Exception as ex:
                 logger.error("[RTSP] Error %s: %s", self.stream_id, ex)
             finally:
+                with self._lock:
+                    self._frame = None
                 if self._cap:
                     self._cap.release()
                     self._cap = None

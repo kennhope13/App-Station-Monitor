@@ -129,14 +129,15 @@ public static class DependencyInjection
                     IssuerSigningKeys = signingKeys
                 };
                 
-                // SignalR cần đọc token từ query string
+                // SignalR và download endpoint cần đọc token từ query string
                 options.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = ctx =>
                     {
                         var token = ctx.Request.Query["access_token"];
-                        if (!string.IsNullOrEmpty(token) &&
-                            ctx.HttpContext.Request.Path.StartsWithSegments("/ws"))
+                        if (!string.IsNullOrEmpty(token) && (
+                            ctx.HttpContext.Request.Path.StartsWithSegments("/ws") ||
+                            ctx.HttpContext.Request.Path.StartsWithSegments("/api/v1/reports")))
                             ctx.Token = token;
                         return Task.CompletedTask;
                     }

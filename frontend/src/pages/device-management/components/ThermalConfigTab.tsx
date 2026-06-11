@@ -49,6 +49,61 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
   const containerRef = useRef<HTMLDivElement>(null);
   const cursorTimer = useRef<any>(null);
 
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
+  const [overlayOpacity, setOverlayOpacity] = useState<number>(0);
+
+  // Trạng thái nhấn kéo di chuyển (Pan)
+  const isPanningRef = useRef<boolean>(false);
+  const [isPanning, setIsPanning] = useState<boolean>(false);
+  const panStartXRef = useRef<number>(0);
+  const panStartYRef = useRef<number>(0);
+  const panScrollLeftRef = useRef<number>(0);
+  const panScrollTopRef = useRef<number>(0);
+  const panDraggedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const wrap = containerRef.current;
+    if (!wrap) return;
+
+    const handleWheelRaw = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const contentX = (mouseX + wrap.scrollLeft) / (zoomLevel / 100);
+      const contentY = (mouseY + wrap.scrollTop) / (zoomLevel / 100);
+
+      const zoomStep = 10;
+      const oldZoom = zoomLevel;
+      let newZoom = oldZoom;
+      if (e.deltaY < 0) {
+        if (oldZoom < 300) {
+          newZoom = oldZoom + zoomStep;
+        }
+      } else {
+        if (oldZoom > 100) {
+          newZoom = oldZoom - zoomStep;
+        }
+      }
+
+      if (newZoom !== oldZoom) {
+        setZoomLevel(newZoom);
+        const zoomFactor = newZoom / oldZoom;
+        
+        requestAnimationFrame(() => {
+          wrap.scrollLeft = contentX * zoomFactor - mouseX;
+          wrap.scrollTop = contentY * zoomFactor - mouseY;
+        });
+      }
+    };
+
+    wrap.addEventListener('wheel', handleWheelRaw, { passive: false });
+    return () => {
+      wrap.removeEventListener('wheel', handleWheelRaw);
+    };
+  }, [zoomLevel]);
+
   const opSrc = dev.config?.go2rtc_optical || `cam_${(dev.config?.ip||'').replace(/\./g,'_')}_optical`;
   const thSrc = dev.config?.go2rtc_thermal || dev.config?.go2rtc_id || `cam_${(dev.config?.ip||'').replace(/\./g,'_')}_thermal`;
 
@@ -166,8 +221,27 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
 
   const onDown = (e:React.MouseEvent) => {
     if(e.button!==0) return;
+
+    const isDrawingRect = drawMode === 'rect' || (drawMode === 'none' && form.open && form.isNew && form.type === 'roi');
+    const isDrawingPoint = drawMode === 'point';
+    const isEditingMarker = dragMkRef.current !== null;
+
+    if (!isDrawingRect && !isDrawingPoint && !isEditingMarker) {
+      // Bắt đầu di chuyển (Pan)
+      isPanningRef.current = true;
+      setIsPanning(true);
+      panDraggedRef.current = false;
+      panStartXRef.current = e.clientX;
+      panStartYRef.current = e.clientY;
+      if (containerRef.current) {
+        panScrollLeftRef.current = containerRef.current.scrollLeft;
+        panScrollTopRef.current = containerRef.current.scrollTop;
+      }
+      return;
+    }
+
     e.preventDefault();
-    if(drawMode === 'rect' || (drawMode === 'none' && form.open && form.isNew && form.type === 'roi')) {
+    if(isDrawingRect) {
       const [nx,ny] = getPos(e);
       setDragRoi({ sx:nx, sy:ny, ex:nx, ey:ny });
     }
@@ -175,6 +249,18 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
 
   const onMove = (e:React.MouseEvent) => {
     const [nx,ny] = getPos(e);
+
+    if (isPanningRef.current && containerRef.current) {
+      const dx = e.clientX - panStartXRef.current;
+      const dy = e.clientY - panStartYRef.current;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        panDraggedRef.current = true;
+      }
+      containerRef.current.scrollLeft = panScrollLeftRef.current - dx;
+      containerRef.current.scrollTop = panScrollTopRef.current - dy;
+      return;
+    }
+
     if(drawMode === 'point') setHoverPos({nx,ny});
     else if(hoverPos) setHoverPos(null);
     if(dragRoi)   setDragRoi(p => p?{...p,ex:nx,ey:ny}:null);
@@ -195,7 +281,7 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
     }
     
     // Live Cursor query
-    if(viewMode==='th' && !dragMkRef.current && !dragRoi) {
+    if(viewMode==='th' && !dragMkRef.current && !dragRoi && !isPanningRef.current) {
       if(cursorTimer.current) clearTimeout(cursorTimer.current);
       cursorTimer.current = setTimeout(async () => {
         try {
@@ -256,6 +342,12 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
   };
 
   const onUp = (e:React.MouseEvent) => {
+    if (isPanningRef.current) {
+      isPanningRef.current = false;
+      setIsPanning(false);
+      return;
+    }
+
     if(dragMkRef.current) {
       if (dragMkRef.current !== '__new_marker__') {
         const m = markers.find(x=>x.id===dragMkRef.current);
@@ -396,150 +488,201 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
             </button>
           </div>
 
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--admin-text-muted)' }}>
+            <span>💡 Cuộn chuột để phóng to/thu nhỏ, nhấn giữ kéo để di chuyển</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', background: 'var(--admin-layer-2)', padding: '2px 8px', border: '1px solid var(--admin-border)' }}>Zoom: {zoomLevel}%</span>
+          </div>
+
         </div>
 
         {/* video-container */}
-        <div style={{ flex:1, position:'relative', background:'#000', overflow:'hidden' }} ref={containerRef}>
-          {viewMode === 'op' && (
-            <>
-              <iframe src={`/camera-stream.html?src=${encodeURIComponent(opSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none', zIndex:1 }} />
-              {/* Overlay boundaries */}
+        <div style={{ flex:1, position:'relative', background:'#000', overflow:'auto' }} ref={containerRef}>
+          <div style={{
+            position:'relative',
+            width:`${zoomLevel}%`,
+            aspectRatio:'16/9',
+            transformOrigin:'top left'
+          }}>
+            {/* Base stream */}
+            {viewMode === 'op' && opSrc && (
+              <iframe 
+                src={`/camera-stream.html?src=${encodeURIComponent(opSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} 
+                style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none', zIndex:1 }} 
+              />
+            )}
+            {viewMode === 'th' && thSrc && (
+              <iframe 
+                src={`/camera-stream.html?src=${encodeURIComponent(thSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} 
+                style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none', zIndex:1 }} 
+              />
+            )}
+
+            {/* Overlay stream (blended) */}
+            {viewMode === 'op' && thSrc && overlayOpacity > 0 && (
+              <iframe 
+                src={`/camera-stream.html?src=${encodeURIComponent(thSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} 
+                style={{ 
+                  position:'absolute', 
+                  inset:0, 
+                  width:'100%', 
+                  height:'100%', 
+                  border:'none', 
+                  pointerEvents:'none', 
+                  zIndex:2, 
+                  opacity: overlayOpacity / 100 
+                }} 
+              />
+            )}
+            {viewMode === 'th' && opSrc && overlayOpacity > 0 && (
+              <iframe 
+                src={`/camera-stream.html?src=${encodeURIComponent(opSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} 
+                style={{ 
+                  position:'absolute', 
+                  inset:0, 
+                  width:'100%', 
+                  height:'100%', 
+                  border:'none', 
+                  pointerEvents:'none', 
+                  zIndex:2, 
+                  opacity: overlayOpacity / 100 
+                }} 
+              />
+            )}
+
+            {/* Overlay boundaries */}
+            {viewMode === 'op' && (
               <div style={{ position:'absolute', left:pct(vvr.x), top:pct(vvr.y), width:pct(vvr.width), height:pct(vvr.height), border:'1px dashed rgba(255,255,255,0.3)', pointerEvents:'none', zIndex:5 }}>
                 <div style={{ position:'absolute', top:-20, left:0, color:'#fff', fontSize:10, opacity:0.5 }}>Khung nhiệt (VVR)</div>
               </div>
-            </>
-          )}
+            )}
 
-          {viewMode === 'th' && (
-            <iframe src={`/camera-stream.html?src=${encodeURIComponent(thSrc)}&mode=webrtc&go2rtc=${encodeURIComponent(GO2RTC_URL)}`} style={{ position:'absolute', inset:0, width:'100%', height:'100%', border:'none', pointerEvents:'none', zIndex:1 }} />
-          )}
-
-          {/* Interactive Overlay */}
-          <div style={{ position:'absolute', inset:0, zIndex:10, cursor: drawMode!=='none'?'crosshair':'default' }}
-               onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
-               onMouseLeave={()=>setHoverPos(null)}
-               onContextMenu={e => e.preventDefault()}>
-            
-            {/* Draw Rois */}
-            {rois.map(r => {
-              const nx1 = viewMode==='th' ? r.tx1 : t2o(r.tx1, r.ty1, vvr).ox;
-              const ny1 = viewMode==='th' ? r.ty1 : t2o(r.tx1, r.ty1, vvr).oy;
-              const nx2 = viewMode==='th' ? r.tx2 : t2o(r.tx2, r.ty2, vvr).ox;
-              const ny2 = viewMode==='th' ? r.ty2 : t2o(r.tx2, r.ty2, vvr).oy;
-              const c = clr(r.maxTemp, r.preAlarm, r.alarm);
-              const lp = r.labelPos || 'top';
-              const fs = r.fontSize || 11;
-              const bw = r.borderWidth || 0.5;
-              const labelStyle: React.CSSProperties =
-                lp === 'bottom' ? { top:'calc(100% + 3px)', left:0 } :
-                lp === 'left'   ? { top:'50%', right:'calc(100% + 3px)', transform:'translateY(-50%)' } :
-                lp === 'right'  ? { top:'50%', left:'calc(100% + 3px)', transform:'translateY(-50%)' } :
-                                  { bottom:'calc(100% + 3px)', left:0 };
-              return (
-                <div key={r.id} style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:`${bw}px solid ${c}`, background:c+'10' }}>
-                  <div style={{ position:'absolute', ...labelStyle, background:'rgba(0,0,0,0.72)', padding:'1px 5px', borderRadius: 0, color:'#fff', fontSize:fs, fontFamily:'monospace', whiteSpace:'nowrap' }}>
-                    <b>{r.name.replace(/Vùng\s*/g, 'V')}</b> <span style={{color:c}}>{r.maxTemp?.toFixed(1)??'--'}°C</span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Draw Markers */}
-            {markers.map(m => {
-              const { ox: dynOx, oy: dynOy } = t2o(m.tx, m.ty, vvr);
-              const nx = viewMode==='th' ? m.tx : dynOx;
-              const ny = viewMode==='th' ? m.ty : dynOy;
-              const c = clr(m.temp, m.preAlarm, m.alarm);
-              const armLen = m.markerSize || 28;
-              const labelOffset = Math.round(armLen / 2) + 5;
+            {/* Interactive Overlay */}
+            <div style={{ position:'absolute', inset:0, zIndex:10, cursor: drawMode !== 'none' ? 'crosshair' : (isPanning ? 'grabbing' : 'grab') }}
+                 onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp}
+                 onMouseLeave={() => { setHoverPos(null); isPanningRef.current = false; setIsPanning(false); }}
+                 onContextMenu={e => e.preventDefault()}>
               
-              // Chỉ cho phép tương tác (kéo) nếu đang mở đúng form sửa cho điểm này
-              const isBeingEdited = form.open && form.id === m.id;
-              const canDrag = isBeingEdited && drawMode === 'none';
-
-              return (
-                <div key={m.id} style={{ 
-                  position:'absolute', left:pct(nx), top:pct(ny), transform:'translate(-50%,-50%)', 
-                  cursor: canDrag ? 'move' : (drawMode !== 'none' ? 'crosshair' : 'default'), 
-                  pointerEvents: (drawMode !== 'none' || canDrag) ? 'auto' : 'none' 
-                }}
-                     onMouseDown={e=>{ if(canDrag && e.button===0){ e.stopPropagation(); dragMkRef.current = m.id; }}}>
-                  {/* Ngang */}
-                  <div style={{ position:'absolute', top:0, left:0, width:armLen, height:1.5, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 3px rgba(0,0,0,.9)' }} />
-                  {/* Dọc */}
-                  <div style={{ position:'absolute', top:0, left:0, width:1.5, height:armLen, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 3px rgba(0,0,0,.9)' }} />
-                  {/* Hit area */}
-                  <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
-                  {/* Label: Mã + nhiệt độ */}
-                  <div style={{ position:'absolute', top:0, left:labelOffset, transform:'translateY(-50%)', background:'rgba(8,8,12,.88)', borderRadius: 0, padding:'1px 6px', display:'flex', flexDirection:'column', alignItems:'flex-start', whiteSpace:'nowrap', pointerEvents:'none' }}>
-                    <span style={{fontSize:10, color:'#94a3b8', lineHeight:1.3}}>{(m.shortName||m.name).replace(/Điểm\s*/gi, 'D').replace(/P\s*/g, 'D')}</span>
-                    <span style={{fontSize:11, fontWeight:800, color:c, fontFamily:'monospace', lineHeight:1.3}}>{m.temp?.toFixed(1)??'--'}°C</span>
+              {/* Draw Rois */}
+              {rois.map(r => {
+                const nx1 = viewMode==='th' ? r.tx1 : t2o(r.tx1, r.ty1, vvr).ox;
+                const ny1 = viewMode==='th' ? r.ty1 : t2o(r.tx1, r.ty1, vvr).oy;
+                const nx2 = viewMode==='th' ? r.tx2 : t2o(r.tx2, r.ty2, vvr).ox;
+                const ny2 = viewMode==='th' ? r.ty2 : t2o(r.tx2, r.ty2, vvr).oy;
+                const c = clr(r.maxTemp, r.preAlarm, r.alarm);
+                const lp = r.labelPos || 'top';
+                const fs = r.fontSize || 11;
+                const bw = r.borderWidth || 0.5;
+                const labelStyle: React.CSSProperties =
+                  lp === 'bottom' ? { top:'calc(100% + 3px)', left:0 } :
+                  lp === 'left'   ? { top:'50%', right:'calc(100% + 3px)', transform:'translateY(-50%)' } :
+                  lp === 'right'  ? { top:'50%', left:'calc(100% + 3px)', transform:'translateY(-50%)' } :
+                                    { bottom:'calc(100% + 3px)', left:0 };
+                return (
+                  <div key={r.id} style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:`${bw}px solid ${c}`, background:c+'10' }}>
+                    <div style={{ position:'absolute', ...labelStyle, background:'rgba(0,0,0,0.72)', padding:'1px 5px', borderRadius: 0, color:'#fff', fontSize:fs, fontFamily:'monospace', whiteSpace:'nowrap' }}>
+                      <b>{r.name.replace(/Vùng\s*/g, 'V')}</b> <span style={{color:c}}>{r.maxTemp?.toFixed(1)??'--'}°C</span>
+                    </div>
                   </div>
+                );
+              })}
+
+              {/* Draw Markers */}
+              {markers.map(m => {
+                const { ox: dynOx, oy: dynOy } = t2o(m.tx, m.ty, vvr);
+                const nx = viewMode==='th' ? m.tx : dynOx;
+                const ny = viewMode==='th' ? m.ty : dynOy;
+                const c = clr(m.temp, m.preAlarm, m.alarm);
+                const armLen = m.markerSize || 28;
+                const labelOffset = Math.round(armLen / 2) + 5;
+                
+                // Chỉ cho phép tương tác (kéo) nếu đang mở đúng form sửa cho điểm này
+                const isBeingEdited = form.open && form.id === m.id;
+                const canDrag = isBeingEdited && drawMode === 'none';
+
+                return (
+                  <div key={m.id} style={{ 
+                    position:'absolute', left:pct(nx), top:pct(ny), transform:'translate(-50%,-50%)', 
+                    cursor: canDrag ? 'move' : (drawMode !== 'none' ? 'crosshair' : 'default'), 
+                    pointerEvents: (drawMode !== 'none' || canDrag) ? 'auto' : 'none' 
+                  }}
+                       onMouseDown={e=>{ if(canDrag && e.button===0){ e.stopPropagation(); dragMkRef.current = m.id; }}}>
+                    {/* Ngang */}
+                    <div style={{ position:'absolute', top:0, left:0, width:armLen, height:1.5, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 3px rgba(0,0,0,.9)' }} />
+                    {/* Dọc */}
+                    <div style={{ position:'absolute', top:0, left:0, width:1.5, height:armLen, background:c, transform:'translate(-50%,-50%)', boxShadow:'0 0 3px rgba(0,0,0,.9)' }} />
+                    {/* Hit area */}
+                    <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
+                    {/* Label: Mã + nhiệt độ */}
+                    <div style={{ position:'absolute', top:0, left:labelOffset, transform:'translateY(-50%)', background:'rgba(8,8,12,.88)', borderRadius: 0, padding:'1px 6px', display:'flex', flexDirection:'column', alignItems:'flex-start', whiteSpace:'nowrap', pointerEvents:'none' }}>
+                      <span style={{fontSize:10, color:'#94a3b8', lineHeight:1.3}}>{(m.shortName||m.name).replace(/Điểm\s*/gi, 'D').replace(/P\s*/g, 'D')}</span>
+                      <span style={{fontSize:11, fontWeight:800, color:c, fontFamily:'monospace', lineHeight:1.3}}>{m.temp?.toFixed(1)??'--'}°C</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Preview New Marker (Ghi chú: hiển thị ngay khi form thêm mới đang mở) */}
+              {form.open && form.isNew && form.type === 'marker' ? (() => {
+                 const tx = parseFloat(form.tx), ty = parseFloat(form.ty);
+                 const {ox, oy} = viewMode === 'th' ? {ox:tx, oy:ty} : t2o(tx, ty, vvr);
+                 const armLen = parseInt(form.markerSize) || 28;
+                 return (
+                  <div style={{ position:'absolute', left:pct(ox), top:pct(oy), transform:'translate(-50%,-50%)', zIndex:25, cursor: 'move', pointerEvents: 'auto' }}
+                       onMouseDown={e=>{ if(e.button===0){ e.stopPropagation(); dragMkRef.current = '__new_marker__'; }}}>
+                     <div style={{ position:'absolute', top:0, left:0, width:armLen, height:2, background:'var(--admin-accent)', transform:'translate(-50%,-50%)', boxShadow:'0 0 8px var(--admin-accent)', pointerEvents:'none' }} />
+                     <div style={{ position:'absolute', top:0, left:0, width:2, height:armLen, background:'var(--admin-accent)', transform:'translate(-50%,-50%)', boxShadow:'0 0 8px var(--admin-accent)', pointerEvents:'none' }} />
+                     {/* Hit area */}
+                     <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
+                     <div style={{ position:'absolute', top:0, left:Math.round(armLen/2)+5, transform:'translateY(-50%)', background:'var(--admin-accent)', color:'#fff', padding:'2px 8px', fontSize:10, fontWeight:800, whiteSpace:'nowrap', pointerEvents:'none' }}>
+                        ĐANG THÊM: {form.name}
+                     </div>
+                  </div>
+                 );
+              })() : null}
+
+              {/* Hover preview dấu + khi đang ở chế độ chấm điểm */}
+              {drawMode==='point' && hoverPos && (
+                <div style={{ position:'absolute', left:pct(hoverPos.nx), top:pct(hoverPos.ny), transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:20 }}>
+                  <div style={{ position:'absolute', top:0, left:0, width:28, height:2, background:'#fff', transform:'translate(-50%,-50%)', opacity:.9, boxShadow:'0 0 5px rgba(0,0,0,1)' }} />
+                  <div style={{ position:'absolute', top:0, left:0, width:2, height:28, background:'#fff', transform:'translate(-50%,-50%)', opacity:.9, boxShadow:'0 0 5px rgba(0,0,0,1)' }} />
                 </div>
-              );
-            })}
+              )}
 
-            {/* Preview New Marker (Ghi chú: hiển thị ngay khi form thêm mới đang mở) */}
-            {form.open && form.isNew && form.type === 'marker' ? (() => {
-               const tx = parseFloat(form.tx), ty = parseFloat(form.ty);
-               const {ox, oy} = viewMode === 'th' ? {ox:tx, oy:ty} : t2o(tx, ty, vvr);
-               const armLen = parseInt(form.markerSize) || 28;
-               return (
-                <div style={{ position:'absolute', left:pct(ox), top:pct(oy), transform:'translate(-50%,-50%)', zIndex:25, cursor: 'move', pointerEvents: 'auto' }}
-                     onMouseDown={e=>{ if(e.button===0){ e.stopPropagation(); dragMkRef.current = '__new_marker__'; }}}>
-                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:2, background:'var(--admin-accent)', transform:'translate(-50%,-50%)', boxShadow:'0 0 8px var(--admin-accent)', pointerEvents:'none' }} />
-                   <div style={{ position:'absolute', top:0, left:0, width:2, height:armLen, background:'var(--admin-accent)', transform:'translate(-50%,-50%)', boxShadow:'0 0 8px var(--admin-accent)', pointerEvents:'none' }} />
-                   {/* Hit area */}
-                   <div style={{ position:'absolute', top:0, left:0, width:armLen, height:armLen, transform:'translate(-50%,-50%)' }} />
-                   <div style={{ position:'absolute', top:0, left:Math.round(armLen/2)+5, transform:'translateY(-50%)', background:'var(--admin-accent)', color:'#fff', padding:'2px 8px', fontSize:10, fontWeight:800, whiteSpace:'nowrap', pointerEvents:'none' }}>
-                      ĐANG THÊM: {form.name}
-                   </div>
+              {/* Instructions Overlay */}
+              {drawMode === 'point' && (
+                <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', background: 'var(--admin-accent)', color: '#fff', padding: '8px 16px', borderRadius: 0, fontWeight: 800, fontSize: '.75rem', zIndex: 30, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>
+                  📍 BẤM VÀO HÌNH ẢNH ĐỂ CHỌN VỊ TRÍ ĐIỂM ĐO
                 </div>
-               );
-            })() : null}
-
-            {/* Hover preview dấu + khi đang ở chế độ chấm điểm */}
-            {drawMode==='point' && hoverPos && (
-              <div style={{ position:'absolute', left:pct(hoverPos.nx), top:pct(hoverPos.ny), transform:'translate(-50%,-50%)', pointerEvents:'none', zIndex:20 }}>
-                <div style={{ position:'absolute', top:0, left:0, width:28, height:2, background:'#fff', transform:'translate(-50%,-50%)', opacity:.9, boxShadow:'0 0 5px rgba(0,0,0,1)' }} />
-                <div style={{ position:'absolute', top:0, left:0, width:2, height:28, background:'#fff', transform:'translate(-50%,-50%)', opacity:.9, boxShadow:'0 0 5px rgba(0,0,0,1)' }} />
-              </div>
-            )}
-
-            {/* Instructions Overlay */}
-            {drawMode === 'point' && (
-              <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', background: 'var(--admin-accent)', color: '#fff', padding: '8px 16px', borderRadius: 0, fontWeight: 800, fontSize: '.75rem', zIndex: 30, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>
-                📍 BẤM VÀO HÌNH ẢNH ĐỂ CHỌN VỊ TRÍ ĐIỂM ĐO
-              </div>
-            )}
-            {drawMode === 'rect' && (
-              <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', background: 'var(--admin-accent)', color: '#fff', padding: '8px 16px', borderRadius: 0, fontWeight: 800, fontSize: '.75rem', zIndex: 30, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>
-                🟧 KÉO CHUỘT TRÊN HÌNH ẢNH ĐỂ VẼ VÙNG ĐO
-              </div>
-            )}
-
-            {dragRoi ? (() => {
-              const x1=Math.min(dragRoi.sx,dragRoi.ex), y1=Math.min(dragRoi.sy,dragRoi.ey);
-              const x2=Math.max(dragRoi.sx,dragRoi.ex), y2=Math.max(dragRoi.sy,dragRoi.ey);
-              return <div style={{ position:'absolute', left:pct(x1), top:pct(y1), width:pct(x2-x1), height:pct(y2-y1), border:'2px dashed #ff9900', background:'rgba(255,153,0,.06)', pointerEvents:'none' }} />;
-            })() : null}
-
-            {/* Preview New ROI (Ghi chú: hiển thị ngay khi form thêm mới đang mở) */}
-            {form.open && form.isNew && form.type === 'roi' ? (() => {
-               const tx1 = parseFloat(form.tx1), ty1 = parseFloat(form.ty1), tx2 = parseFloat(form.tx2), ty2 = parseFloat(form.ty2);
-               const nx1 = viewMode==='th' ? tx1 : t2o(tx1, ty1, vvr).ox;
-               const ny1 = viewMode==='th' ? ty1 : t2o(tx1, ty1, vvr).oy;
-               const nx2 = viewMode==='th' ? tx2 : t2o(tx2, ty2, vvr).ox;
-               const ny2 = viewMode==='th' ? ty2 : t2o(tx2, ty2, vvr).oy;
-               return (
-                <div style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:'2px solid var(--admin-accent)', background:'rgba(59,130,246,0.1)', pointerEvents:'none', zIndex:25 }}>
-                   <div style={{ position:'absolute', top:'-24px', left:0, background:'var(--admin-accent)', color:'#fff', padding:'2px 8px', fontSize:10, fontWeight:800, whiteSpace:'nowrap' }}>
-                      ĐANG VẼ: {form.name}
-                   </div>
+              )}
+              {drawMode === 'rect' && (
+                <div style={{ position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)', background: 'var(--admin-accent)', color: '#fff', padding: '8px 16px', borderRadius: 0, fontWeight: 800, fontSize: '.75rem', zIndex: 30, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>
+                  🟧 KÉO CHUỘT TRÊN HÌNH ẢNH ĐỂ VẼ VÙNG ĐO
                 </div>
-               );
-            })() : null}
+              )}
 
+              {dragRoi ? (() => {
+                const x1=Math.min(dragRoi.sx,dragRoi.ex), y1=Math.min(dragRoi.sy,dragRoi.ey);
+                const x2=Math.max(dragRoi.sx,dragRoi.ex), y2=Math.max(dragRoi.sy,dragRoi.ey);
+                return <div style={{ position:'absolute', left:pct(x1), top:pct(y1), width:pct(x2-x1), height:pct(y2-y1), border:'2px dashed #ff9900', background:'rgba(255,153,0,.06)', pointerEvents:'none' }} />;
+              })() : null}
+
+              {/* Preview New ROI (Ghi chú: hiển thị ngay khi form thêm mới đang mở) */}
+              {form.open && form.isNew && form.type === 'roi' ? (() => {
+                 const tx1 = parseFloat(form.tx1), ty1 = parseFloat(form.ty1), tx2 = parseFloat(form.tx2), ty2 = parseFloat(form.ty2);
+                 const nx1 = viewMode==='th' ? tx1 : t2o(tx1, ty1, vvr).ox;
+                 const ny1 = viewMode==='th' ? ty1 : t2o(tx1, ty1, vvr).oy;
+                 const nx2 = viewMode==='th' ? tx2 : t2o(tx2, ty2, vvr).ox;
+                 const ny2 = viewMode==='th' ? ty2 : t2o(tx2, ty2, vvr).oy;
+                 return (
+                  <div style={{ position:'absolute', left:pct(nx1), top:pct(ny1), width:pct(nx2-nx1), height:pct(ny2-ny1), border:'2px solid var(--admin-accent)', background:'rgba(59,130,246,0.1)', pointerEvents:'none', zIndex:25 }}>
+                     <div style={{ position:'absolute', top:'-24px', left:0, background:'var(--admin-accent)', color:'#fff', padding:'2px 8px', fontSize:10, fontWeight:800, whiteSpace:'nowrap' }}>
+                        ĐANG VẼ: {form.name}
+                     </div>
+                  </div>
+                 );
+              })() : null}
+
+            </div>
           </div>
 
           {/* Live Cursor Temp overlay */}

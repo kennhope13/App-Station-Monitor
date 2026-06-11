@@ -1021,7 +1021,7 @@ canvas,
   color: var(--semantic-critical);
 }
 
-.header-clock {
+.panel-header-clock {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);

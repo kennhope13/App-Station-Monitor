@@ -47,6 +47,51 @@ export default function ThermalConfigPage() {
   const [alarm, setAlarm] = useState<string>('70');
 
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef<boolean>(false);
+  const startXRef = useRef<number>(0);
+  const startYRef = useRef<number>(0);
+  const scrollLeftRef = useRef<number>(0);
+  const scrollTopRef = useRef<number>(0);
+  const draggedRef = useRef<boolean>(false);
+  const [cursorStyle, setCursorStyle] = useState<'grab' | 'grabbing'>('grab');
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    if (e.button !== 0) return; // Left click only
+
+    isDraggingRef.current = true;
+    draggedRef.current = false;
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    scrollLeftRef.current = containerRef.current.scrollLeft;
+    scrollTopRef.current = containerRef.current.scrollTop;
+    setCursorStyle('grabbing');
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || !containerRef.current) return;
+
+    const dx = e.clientX - startXRef.current;
+    const dy = e.clientY - startYRef.current;
+
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      draggedRef.current = true;
+    }
+
+    containerRef.current.scrollLeft = scrollLeftRef.current - dx;
+    containerRef.current.scrollTop = scrollTopRef.current - dy;
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+    setCursorStyle('grab');
+  };
+
+  const handleMouseLeave = () => {
+    isDraggingRef.current = false;
+    setCursorStyle('grab');
+  };
 
   useEffect(() => {
     if (!deviceId) return;
@@ -81,6 +126,10 @@ export default function ThermalConfigPage() {
   const showDot = !isNaN(activeX) && !isNaN(activeY) && activeX >= 0 && activeY >= 0;
 
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      return;
+    }
     if (!wrapperRef.current) return;
     const rect = wrapperRef.current.getBoundingClientRect();
     
@@ -277,16 +326,29 @@ export default function ThermalConfigPage() {
                   <button onClick={() => setPickerMode('optical')} className="btn-industrial" style={{ flex: 1, borderColor: pickerMode === 'optical' ? 'var(--admin-accent)' : 'var(--admin-border)', color: pickerMode === 'optical' ? 'var(--admin-accent)' : 'var(--admin-text)' }}>Optical</button>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 12, color: 'var(--admin-text-muted)' }}>
-                  <label>Zoom: {zoomLevel}%</label>
-                  <label>Opacity: {overlayOpacity}%</label>
-                </div>
-                <div style={{ display: 'flex', gap: 20, marginBottom: 15 }}>
-                  <input type="range" min="50" max="300" step="10" value={zoomLevel} onChange={e => setZoomLevel(parseInt(e.target.value))} style={{ flex: 1 }} />
-                  <input type="range" min="0" max="100" value={overlayOpacity} onChange={e => setOverlayOpacity(parseInt(e.target.value))} style={{ flex: 1 }} />
+                <div style={{ marginBottom: 10, fontSize: 11, color: 'var(--admin-text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>💡 Sử dụng cuộn chuột để phóng to/thu nhỏ, nhấn giữ kéo chuột để di chuyển vùng nhìn</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>Zoom: {zoomLevel}%</span>
                 </div>
 
-                <div style={{ background: '#000', border: '1px solid var(--admin-border)', borderRadius: 8, height: 400, overflow: 'auto', position: 'relative', cursor: 'crosshair' }} onWheel={handleWheel}>
+                <div 
+                  ref={containerRef}
+                  style={{ 
+                    background: '#000', 
+                    border: '1px solid var(--admin-border)', 
+                    borderRadius: 8, 
+                    height: 400, 
+                    overflow: 'auto', 
+                    position: 'relative', 
+                    cursor: cursorStyle,
+                    userSelect: 'none'
+                  }} 
+                  onWheel={handleWheel}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseLeave}
+                >
                   <div ref={wrapperRef} onClick={handleImageClick} style={{ position: 'relative', width: `${zoomLevel}%`, transformOrigin: 'top left' }}>
                     {streamUrl ? (
                       <video src={streamUrl} autoPlay loop muted playsInline style={{ display: 'block', width: '100%', opacity: overlayOpacity / 100, pointerEvents: 'none' }} />

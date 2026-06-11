@@ -71,7 +71,7 @@ export class VideoRTC extends HTMLElement {
          */
         this.pcConfig = {
             bundlePolicy: 'max-bundle',
-            iceServers: [{urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302']}],
+            iceServers: [],
             sdpSemantics: 'unified-plan',  // important for Chromecast 1
         };
 

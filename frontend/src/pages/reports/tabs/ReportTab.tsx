@@ -430,19 +430,17 @@ export default function ReportTab({ stationId }: { stationId: string }) {
     setTimeout(() => win.print(), 400);
   };
 
-  const downloadServer = async () => {
+  const downloadServer = () => {
     if (!currentReportId) return;
-    try {
-      const blob = await stationApi.downloadReport(currentReportId);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `BaoCao_${new Date().toISOString().split('T')[0]}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      alert(`Lỗi tải PDF: ${err.message}`);
-    }
+    const typeNameMap: Record<string, string> = { daily: 'Ngay', monthly: 'Thang', event: 'SuCo' };
+    const typeName = typeNameMap[type] || type;
+    const url = stationApi.getDownloadUrl(currentReportId);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `BaoCao_${typeName}_${from}_den_${to}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const deleteReport = async (id: string) => {
@@ -527,14 +525,21 @@ export default function ReportTab({ stationId }: { stationId: string }) {
                   <span style={{ fontSize: '0.62rem', padding: '2px 6px', borderRadius: 0, background: `${color}22`, color: color, fontWeight: 700, whiteSpace: 'nowrap' }}>{typeLabels[r.type] ?? r.type}</span>
                   <span style={{ flex: 1, fontSize: '0.7rem', color: 'var(--admin-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tFrom}{tTo && tTo !== tFrom ? ' – ' + tTo : ''}</span>
                   {r.fileUrl && (
-                    <button onClick={async () => {
-                      const blob = await stationApi.downloadReport(r.id);
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a'); a.href = url; a.download = `BaoCao_${r.id.slice(0, 8)}.pdf`; a.click();
-                      URL.revokeObjectURL(url);
+                    <button onClick={() => {
+                      const typeFileMap: Record<string, string> = { daily: 'Ngay', monthly: 'Thang', event: 'SuCo' };
+                      const typeFile = typeFileMap[r.type] || r.type;
+                      const dateFrom = r.periodFrom ? new Date(r.periodFrom).toISOString().split('T')[0] : '';
+                      const dateTo = r.periodTo ? new Date(r.periodTo).toISOString().split('T')[0] : '';
+                      const url = stationApi.getDownloadUrl(r.id);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `BaoCao_${typeFile}_${dateFrom}${dateTo && dateTo !== dateFrom ? '_den_' + dateTo : ''}.pdf`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
                     }} style={{ padding: '2px 7px', background: 'var(--admin-btn-secondary-bg)', border: '1px solid var(--admin-accent)', borderRadius: 0, color: 'var(--admin-btn-secondary-text)', fontSize: '0.65rem', cursor: 'pointer', whiteSpace: 'nowrap' }}>⬇</button>
                   )}
-                  <button onClick={() => deleteReport(r.id)} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid var(--admin-border)', borderRadius: 0, color: 'var(--admin-text-muted)', fontSize: '0.65rem', cursor: 'pointer' }}></button>
+                  <button onClick={() => deleteReport(r.id)} style={{ padding: '2px 7px', background: 'transparent', border: '1px solid var(--admin-border)', borderRadius: 0, color: 'var(--admin-text-muted)', fontSize: '0.65rem', cursor: 'pointer' }}>🗑</button>
                 </div>
               );
             })}

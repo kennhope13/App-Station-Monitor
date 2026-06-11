@@ -21,7 +21,6 @@ import CameraGrid, { CameraSensor } from '@/components/dashboard/camera/CameraGr
 import DashboardToolbar from '@/components/dashboard/toolbar/DashboardToolbar';
 import CameraLiveViewer from '@/components/dashboard/camera/CameraLiveViewer';
 import AlertPanel from '@/components/dashboard/alerts/AlertPanel';
-import { MULTISITE_RETURN_TAB_KEY } from '@/utils/centralAccess';
 
 /**
  * Trang tổng quan chính — hiển thị SLD, KPI, camera live và cảnh báo.
@@ -97,7 +96,6 @@ export default function DashboardPage() {
     return (cfg.go2rtc_optical || cfg.go2rtc_id || cfg.go2rtc_thermal) as string | undefined;
   }, [devices]);
 
-  const isMulti = Boolean(searchParams.get('stationId') || viewingStationId);
 
   // ── Resolve stationId nếu chưa có ──────────────────────────────
   useEffect(() => {
@@ -367,13 +365,6 @@ export default function DashboardPage() {
         stationName={stationName || 'StationOS'}
         isEditMode={isEditMode}
         onToggleEditMode={() => setIsEditMode(!isEditMode)}
-        isMulti={isMulti}
-        onBackToCentral={() => {
-          const returnTab = localStorage.getItem(MULTISITE_RETURN_TAB_KEY);
-          setViewingStation(null);
-          navigate(returnTab ? `/multisite?tab=${encodeURIComponent(returnTab)}` : '/multisite');
-          localStorage.removeItem(MULTISITE_RETURN_TAB_KEY);
-        }}
         showLabels={showLabels}
         onToggleLabels={() => setShowLabels(!showLabels)}
         onFit={handleFit}

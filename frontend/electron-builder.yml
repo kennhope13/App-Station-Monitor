@@ -1,0 +1,24 @@
+appId: com.stationmonitor.desktop
+productName: Station Monitor
+copyright: Copyright © 2025 StationOS Team
+directories:
+  output: dist-electron
+files:
+  - electron/**/*
+  - package.json
+linux:
+  target:
+    - deb
+    - AppImage
+  category: Utility
+  maintainer: StationOS Team <support@stationos.com>
+  icon: build/icon.png
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Station Monitor

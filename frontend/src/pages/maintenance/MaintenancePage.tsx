@@ -70,6 +70,7 @@ export default function MaintenancePage() {
   const [mAssign, setMAssign] = useState('');
   const [mNotes, setMNotes] = useState('');
   const [mChecklist, setMChecklist] = useState<ChecklistItem[]>([]);
+  const [mSendEmail, setMSendEmail] = useState(false);
 
   /** Tải danh sách công việc bảo trì và danh sách thiết bị của trạm. */
   const loadData = async (sid: string) => {
@@ -108,6 +109,7 @@ export default function MaintenancePage() {
       setMNotes('');
       setMChecklist((DEFAULT_CHECKLIST['inspection'] ?? []).map(item => ({ item, done: false })));
     }
+    setMSendEmail(false);
     setModalOpen(true);
   };
 
@@ -132,6 +134,7 @@ export default function MaintenancePage() {
       assignedTo: mAssign,
       notes: mNotes,
       checklist: JSON.stringify(mChecklist),
+      sendEmail: mSendEmail,
     };
     try {
       if (editingId) await stationApi.updateMaintenance(editingId, payload);
@@ -296,7 +299,19 @@ export default function MaintenancePage() {
                 </div>
                 <div className="form-group">
                   <label style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>GIAO CHO</label>
-                  <input type="text" className="form-input" style={{ background: 'var(--admin-layer-2)' }} value={mAssign} onChange={e => setMAssign(e.target.value)} placeholder="Tên kỹ thuật viên" />
+                  <input type="text" className="form-input" style={{ background: 'var(--admin-layer-2)' }} value={mAssign} onChange={e => setMAssign(e.target.value)} placeholder="Tên kỹ thuật viên / email..." />
+                </div>
+                <div className="form-group" style={{ gridColumn: '1/-1', display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <input 
+                    type="checkbox" 
+                    id="mSendEmail" 
+                    checked={mSendEmail} 
+                    onChange={e => setMSendEmail(e.target.checked)} 
+                    style={{ accentColor: 'var(--admin-accent)', cursor: 'pointer', width: 14, height: 14 }} 
+                  />
+                  <label htmlFor="mSendEmail" style={{ fontSize: '.72rem', fontWeight: 700, color: 'var(--admin-text)', cursor: 'pointer', userSelect: 'none' }}>
+                    GỬI THÔNG BÁO QUA EMAIL CHO KỸ SƯ (CMMS)
+                  </label>
                 </div>
               </div>
 

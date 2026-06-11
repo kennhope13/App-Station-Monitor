@@ -34,9 +34,6 @@ const TYPE_LABELS = DEVICE_TYPE_LABELS;
 interface DeviceManagementPageProps {
   initialAction?: 'new' | null;
   onInitialActionHandled?: () => void;
-  embeddedMode?: 'default' | 'central';
-  stationIdOverride?: string | null;
-  onStationIdChange?: (stationId: string) => void;
 }
 
 /**
@@ -46,9 +43,6 @@ interface DeviceManagementPageProps {
 export default function DeviceManagementPage({
   initialAction = null,
   onInitialActionHandled,
-  embeddedMode = 'default',
-  stationIdOverride = null,
-  onStationIdChange,
 }: DeviceManagementPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const stations = useStationStore(s => s.stations);
@@ -290,15 +284,8 @@ export default function DeviceManagementPage({
   };
 
   useEffect(() => {
-    if (embeddedMode === 'central' && !stationIdOverride) {
-      setStationId(null);
-      setDevices([]);
-      setLoading(false);
-      setStationMenuOpen(false);
-      return;
-    }
-    loadDevices(stationIdOverride);
-  }, [stationIdOverride, embeddedMode]);
+    loadDevices();
+  }, []);
 
   useEffect(() => {
     if (!stationId || loading) return;
@@ -323,18 +310,18 @@ export default function DeviceManagementPage({
   const loadDevices = async (preferredStationId?: string | null) => {
     setLoading(true);
     try {
+      const stationList = await useStationStore.getState().fetch().catch(() => []);
       const savedStationId = localStorage.getItem('selected_station_id');
       const drillStationId = localStorage.getItem(MULTISITE_DRILL_STATION_KEY);
-      const fallbackStationId = embeddedMode === 'central'
-        ? null
-        : preferredStationId || viewingStationId || drillStationId || savedStationId || await stationApi.getFirstStationId();
+      
+      const isValidSaved = savedStationId && stationList.some((s: any) => s.id === savedStationId);
+      const validSavedId = isValidSaved ? savedStationId : null;
+
+      const fallbackStationId = preferredStationId || viewingStationId || drillStationId || validSavedId || stationList[0]?.id || await stationApi.getFirstStationId();
       const id = preferredStationId || fallbackStationId;
       setStationId(id);
-      if (id && id !== stationIdOverride) {
-        onStationIdChange?.(id);
-        localStorage.setItem('selected_station_id', id);
-      }
       if (id) {
+        localStorage.setItem('selected_station_id', id);
         const data = await stationApi.getDevices(id);
         setDevices(data);
       } else {
@@ -542,7 +529,7 @@ export default function DeviceManagementPage({
   };
 
   const online = devices.filter(d => d.status === 'online').length;
-  const requiresStationSelection = embeddedMode === 'central' && !stationId;
+  const requiresStationSelection = false;
 
 
   return (
@@ -594,61 +581,7 @@ export default function DeviceManagementPage({
       ) : (
         <div className="page-toolbar-row">
           <div className="page-title-cell">
-            {embeddedMode !== 'central' && <h2>QUẢN LÝ THIẾT BỊ</h2>}
-            {embeddedMode === 'central' && (
-              <div style={{ display: 'inline-block' }}>
-                {stationMenuOpen && (
-                  <div style={{ position: 'fixed', inset: 0, zIndex: 9998 }} onClick={() => setStationMenuOpen(false)} />
-                )}
-                <button
-                  ref={stationBtnRef}
-                  onClick={() => {
-                    const r = stationBtnRef.current?.getBoundingClientRect();
-                    if (r) setStationMenuPos({ top: r.bottom, left: r.left, width: r.width });
-                    setStationMenuOpen(o => !o);
-                  }}
-                  style={{
-                    width: 260, background: '#0f1729',
-                    border: '1px solid var(--admin-border)',
-                    color: 'var(--admin-text)', padding: '4px 10px',
-                    fontSize: '.72rem', fontWeight: 700, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
-                  }}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {stations.find(s => s.id === stationId)?.name || 'Chọn trạm'}
-                  </span>
-                  <span style={{ flexShrink: 0, opacity: 0.5, fontSize: '.65rem' }}>▾</span>
-                </button>
-                {stationMenuOpen && (
-                  <div style={{
-                    position: 'fixed', top: stationMenuPos.top, left: stationMenuPos.left,
-                    width: stationMenuPos.width, zIndex: 9999,
-                    background: '#0f1729', border: '1px solid var(--admin-border)',
-                    maxHeight: 220, overflowY: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                  }}>
-                    {stations.map(s => (
-                      <div
-                        key={s.id}
-                        onClick={async () => { onStationIdChange?.(s.id); await loadDevices(s.id); setStationMenuOpen(false); }}
-                        style={{
-                          padding: '6px 10px', fontSize: '.72rem', cursor: 'pointer',
-                          fontWeight: stationId === s.id ? 800 : 500,
-                          color: stationId === s.id ? 'var(--admin-accent)' : 'var(--admin-text)',
-                          background: stationId === s.id ? 'rgba(14,165,233,0.12)' : 'transparent',
-                          borderLeft: `2px solid ${stationId === s.id ? 'var(--admin-accent)' : 'transparent'}`,
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}
-                        onMouseEnter={e => { if (stationId !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'rgba(255,255,255,0.05)'; }}
-                        onMouseLeave={e => { if (stationId !== s.id) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-                      >
-                        {(s.code ? `${s.code} - ` : '') + s.name}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <h2>QUẢN LÝ THIẾT BỊ</h2>
           </div>
           <div className="page-toolbar-group">
             {/* Status Indicators */}
@@ -696,8 +629,6 @@ export default function DeviceManagementPage({
             <tbody>
               {loading ? (
                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>⏳ Đang tải...</td></tr>
-              ) : embeddedMode === 'central' && !stationId ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Chọn một trạm để xem thiết bị.</td></tr>
               ) : devices.length === 0 ? (
                 <tr><td colSpan={6} style={{ textAlign: 'center', padding: 30, color: 'var(--admin-text-muted)' }}>Chưa có thiết bị nào.</td></tr>
               ) : (

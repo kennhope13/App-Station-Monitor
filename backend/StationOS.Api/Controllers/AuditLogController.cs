@@ -299,7 +299,7 @@ public class AuditLogController : ControllerBase
 
         var userStations = await _db.Users
             .Where(u => userIds.Contains(u.Id) || (u.Username != null && usernames.Contains(u.Username)))
-            .Select(u => new { u.Id, u.Username, u.StationIds })
+            .Select(u => new { u.Id, u.Username, u.StationIds, u.Role, u.FullName })
             .ToListAsync();
 
         var mappedLogs = logs.Select(l => {
@@ -309,7 +309,9 @@ public class AuditLogController : ControllerBase
             return new {
                 l.Id, l.Username, l.Action,
                 l.IpAddress, l.Ts,
-                StationId = resolvedStationId
+                StationId = resolvedStationId,
+                Role = dbUser?.Role,
+                FullName = dbUser?.FullName
             };
         }).ToList();
 
@@ -332,7 +334,9 @@ public class AuditLogController : ControllerBase
             l.Id, l.Username, l.Action,
             l.IpAddress, l.Ts,
             l.StationId,
-            StationName = l.StationId.HasValue && stationNames.TryGetValue(l.StationId.Value, out var sn) ? sn : null
+            StationName = l.StationId.HasValue && stationNames.TryGetValue(l.StationId.Value, out var sn) ? sn : null,
+            l.Role,
+            l.FullName
         });
 
         return Ok(result);

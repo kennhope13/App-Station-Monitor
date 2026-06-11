@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // EmailNotifyService — Gửi email cảnh báo qua SMTP (MailKit)
 // Cấu hình được lưu trong bảng SystemSettings (ưu tiên cao nhất)
 // Nếu không có trong DB → fallback ra appsettings.json "Smtp"
@@ -137,6 +137,94 @@ public class EmailNotifyService
         finally
         {
             await WriteNotifyLogAsync(alertId: null, "email", toEmail,
+                errMsg == null ? "sent" : "failed", errMsg);
+        }
+        if (errMsg != null) throw new Exception(errMsg);
+    }
+
+    /// <summary>Gửi email giao việc bảo trì CMMS cho kỹ sư</summary>
+    public async Task SendMaintenanceEmailAsync(
+        string toEmail,
+        string title,
+        string taskType,
+        string deviceName,
+        string scheduledDate,
+        string notes)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail)) return;
+
+        var config = await GetSmtpConfigAsync();
+        if (string.IsNullOrEmpty(config.User)) 
+        {
+            _logger.LogWarning("[Email] Bỏ qua gửi email bảo trì vì chưa cấu hình SMTP User.");
+            return;
+        }
+
+        var typeLabel = taskType switch {
+            "inspection" => "Kiểm tra",
+            "repair" => "🚨 Sửa chữa khẩn cấp (CMMS)",
+            "cleaning" => "Vệ sinh",
+            "calibration" => "Hiệu chỉnh",
+            _ => "Khác"
+        };
+
+        var html = $"""
+            <div style="font-family:sans-serif;max-width:520px;margin:0 auto;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+              <div style="background:#2563eb;padding:16px 20px;">
+                <h2 style="margin:0;color:#fff;font-size:1.1rem;">📋 PHIẾU GIAO VIỆC BẢO TRÌ CMMS</h2>
+                <p style="margin:4px 0 0;color:rgba(255,255,255,.85);font-size:.85rem;">Hạn hoàn thành: {scheduledDate}</p>
+              </div>
+              <div style="padding:20px;">
+                <table style="width:100%;border-collapse:collapse;font-size:.9rem;">
+                  <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 0;color:#64748b;width:130px;">Tiêu đề công việc</td>
+                    <td style="padding:8px 0;font-weight:600;color:#1e293b;">{title}</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 0;color:#64748b;">Loại bảo trì</td>
+                    <td style="padding:8px 0;font-weight:600;color:#1e293b;">{typeLabel}</td>
+                  </tr>
+                  <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:8px 0;color:#64748b;">Thiết bị</td>
+                    <td style="padding:8px 0;color:#1e293b;">{deviceName ?? "—"}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px 0;color:#64748b;">Ghi chú / Yêu cầu</td>
+                    <td style="padding:8px 0;color:#1e293b;">{notes ?? "—"}</td>
+                  </tr>
+                </table>
+                <div style="margin-top:16px;padding:12px;background:#f8fafc;border-radius:6px;font-size:.8rem;color:#64748b;">
+                  Đăng nhập hệ thống để thực hiện và cập nhật tiến độ công việc:
+                  <a href="http://localhost:5173" style="color:#2563eb;">http://localhost:5173</a>
+                </div>
+              </div>
+            </div>
+            """;
+
+        var message = new MimeMessage();
+        message.From.Add(MailboxAddress.Parse(config.From));
+        message.To.Add(MailboxAddress.Parse(toEmail));
+        message.Subject = $"[CMMS] Phiếu bảo trì: {title}";
+        message.Body = new TextPart("html") { Text = html };
+
+        string? errMsg = null;
+        try
+        {
+            using var client = new SmtpClient();
+            await client.ConnectAsync(config.Host, config.Port, SecureSocketOptions.StartTls);
+            await client.AuthenticateAsync(config.User, config.Pass);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
+            _logger.LogInformation("[Email] Đã gửi thông báo bảo trì CMMS tới {email}", toEmail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Email] Gửi thông báo bảo trì thất bại tới {email}", toEmail);
+            errMsg = ex.Message;
+        }
+        finally
+        {
+            await WriteNotifyLogAsync(null, "email", toEmail,
                 errMsg == null ? "sent" : "failed", errMsg);
         }
         if (errMsg != null) throw new Exception(errMsg);

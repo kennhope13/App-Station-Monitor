@@ -7,8 +7,6 @@ interface DashboardToolbarProps {
   stationName: string;
   isEditMode: boolean;
   onToggleEditMode: () => void;
-  isMulti?: boolean;
-  onBackToCentral?: () => void;
   showLabels: boolean;
   onToggleLabels: () => void;
   onFit: () => void;
@@ -24,8 +22,6 @@ export default function DashboardToolbar(props: DashboardToolbarProps) {
     stationName,
     isEditMode,
     onToggleEditMode,
-    isMulti = false,
-    onBackToCentral,
     onFit,
     onRotate,
     showLabels,

@@ -366,19 +366,47 @@ public class RuleEvaluationWorker : BackgroundService
 
         _logger.LogWarning("[Rules] Alert [{Level}] ({confirmReadings} readings): {Msg}", level, confirmReadings, alert.Message);
 
-        var emailSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "alert_email", ct);
-        var toEmail = emailSetting?.Value?.Trim('"');
-        if (!string.IsNullOrWhiteSpace(toEmail))
+        var enableEmailSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "enable_alert_email", ct);
+        var enableEmail = enableEmailSetting?.Value?.Trim('"') != "false";
+
+        if (enableEmail)
         {
-            var emailSvc = services.GetRequiredService<EmailNotifyService>();
-            var device   = alert.DeviceId.HasValue
-                ? await db.Devices.FindAsync(new object[] { alert.DeviceId.Value }, ct)
-                : null;
-            _ = emailSvc.SendAlertEmailAsync(
-                toEmail, alert.Level, alert.Message ?? "",
-                device?.Name ?? "Không rõ", alert.Value,
-                alert.Message?.Contains("°C") == true ? "°C" : "dB"
-            ).ContinueWith(_ => { });
+            var emailSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "alert_email", ct);
+            var toEmail = emailSetting?.Value?.Trim('"');
+            if (!string.IsNullOrWhiteSpace(toEmail))
+            {
+                var emailSvc = services.GetRequiredService<EmailNotifyService>();
+                var device   = alert.DeviceId.HasValue
+                    ? await db.Devices.FindAsync(new object[] { alert.DeviceId.Value }, ct)
+                    : null;
+                _ = emailSvc.SendAlertEmailAsync(
+                    toEmail, alert.Level, alert.Message ?? "",
+                    device?.Name ?? "Không rõ", alert.Value,
+                    alert.Message?.Contains("°C") == true ? "°C" : "dB"
+                ).ContinueWith(_ => { });
+            }
+        }
+
+        var enableSmsSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "enable_alert_sms", ct);
+        var enableSms = enableSmsSetting?.Value?.Trim('"') == "true";
+
+        if (enableSms)
+        {
+            var phoneSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "alert_phone", ct);
+            var toPhone = phoneSetting?.Value?.Trim('"');
+            if (!string.IsNullOrWhiteSpace(toPhone))
+            {
+                _logger.LogInformation("[SMS] (Simulation) Sending SMS alert to {Phone}: {Message}", toPhone, alert.Message);
+                db.NotifyLogs.Add(new NotifyLog
+                {
+                    AlertId   = alert.Id,
+                    Channel   = "sms",
+                    Recipient = toPhone,
+                    Status    = "sent",
+                    SentAt    = DateTime.UtcNow
+                });
+                await db.SaveChangesAsync(ct);
+            }
         }
 
         await _notifier.SendAlertAsync(new {

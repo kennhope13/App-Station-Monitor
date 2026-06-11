@@ -7,7 +7,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '@/services/AuthService';
-import { isCentralUser } from '@/utils/centralAccess';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -25,12 +24,7 @@ export default function LoginPage() {
   // Nếu đã đăng nhập rồi thì không cho vào trang login nữa, đá về trang tương ứng
   useEffect(() => {
     if (authService.isAuthenticated()) {
-      const u = authService.getUser();
-      if (isCentralUser(u)) {
-        navigate('/multisite', { replace: true });
-      } else {
-        navigate('/dashboard', { replace: true });
-      }
+      navigate('/dashboard', { replace: true });
     } else {
       usernameRef.current?.focus();
     }
@@ -52,12 +46,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.success) {
-      const u = authService.getUser();
-      if (isCentralUser(u)) {
-        navigate('/multisite');
-      } else {
-        navigate('/dashboard');
-      }
+      navigate('/dashboard');
     } else {
       setErrorMsg(result.error || 'Đăng nhập thất bại');
       setIsShaking(true);

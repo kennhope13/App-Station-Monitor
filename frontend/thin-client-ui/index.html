@@ -235,8 +235,6 @@
       text-align: center;
       line-height: 1.6;
     }
-    .hint a { color: var(--accent); text-decoration: none; }
-    .hint a:hover { text-decoration: underline; }
 
     /* Examples */
     .examples {
@@ -259,9 +257,18 @@
       border-color: var(--accent);
       color: var(--accent);
     }
+    .drag-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 40px;
+      background: transparent;
+      -webkit-app-region: drag;
+      z-index: 9990;
+    }
   </style>
 </head>
 <body>
+  <div class="drag-bar"></div>
   <div class="glow-blob"></div>
 
   <div class="container">
@@ -328,44 +335,13 @@
   </div>
 
   <script>
-    let invoke;
-    if (window.__TAURI__) {
-      if (window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
-        invoke = window.__TAURI__.core.invoke;
-      } else if (typeof window.__TAURI__.invoke === 'function') {
-        invoke = window.__TAURI__.invoke;
-      } else if (window.__TAURI__.tauri && typeof window.__TAURI__.tauri.invoke === 'function') {
-        invoke = window.__TAURI__.tauri.invoke;
-      } else {
-        invoke = async (cmd, args) => {
-          console.warn("Could not find invoke function in window.__TAURI__:", cmd, args);
-          throw new Error("Tauri invoke function not found.");
-        };
-      }
-    } else {
-      invoke = async (cmd, args) => {
-        console.warn("Tauri API not injected. Command ignored:", cmd, args);
-        throw new Error("Tauri API is not available.");
-      };
-    }
+    // Sử dụng Electron IPC trực tiếp qua electronAPI được expose từ preload
+    const invoke = (cmd, args) => window.electronAPI.invoke(cmd, args);
 
     // Điền ví dụ
     function fillExample(ip) {
       document.getElementById('serverInput').value = ip;
       document.getElementById('serverInput').focus();
-    }
-
-    // Kiểm tra URL hợp lệ
-    function validateUrl(raw) {
-      const normalized = raw.startsWith('http') ? raw : `http://${raw}`;
-      try {
-        const u = new URL(normalized);
-        // Thêm port mặc định nếu không có
-        if (!u.port) u.port = '5173';
-        return u.toString();
-      } catch {
-        return null;
-      }
     }
 
     // Trạng thái UI
@@ -414,7 +390,6 @@
       setConnecting();
 
       try {
-        // Lưu URL và điều hướng ngay lập tức (không chạy fetch kiểm tra tránh lỗi CORS/mạng)
         showStatus('success', 'Đang kết nối tới máy chủ...');
         await invoke('connect_to_server', { url: normalized });
       } catch (err) {
@@ -423,38 +398,16 @@
       }
     }
 
-    async function openTailscale() {
-      try {
-        await invoke('open_url', { url: 'https://tailscale.com/download' });
-      } catch (err) {
-        alert('Không thể mở trình duyệt: ' + err);
-      }
-    }
-
-    async function runTailscaleInstaller() {
-      try {
-        showStatus('connecting', 'Đang khởi chạy trình cài đặt Tailscale...');
-        await invoke('install_tailscale');
-        showStatus('success', 'Đã mở trình cài đặt Tailscale trên Windows!');
-        setTimeout(setIdle, 3000);
-      } catch (err) {
-        showStatus('error', `Lỗi: ${err}`);
-        setTimeout(setIdle, 4000);
-      }
-    }
-
     // Enter để kết nối
     document.getElementById('serverInput').addEventListener('keydown', e => {
       if (e.key === 'Enter') doConnect();
     });
 
-    // Tự động điền URL đã lưu (nếu có, Rust sẽ navigate trước khi HTML này load)
-    // Nhưng nếu vẫn hiển thị trang này nghĩa là chưa có URL hoặc kết nối thất bại
+    // Tự động điền URL đã lưu nếu có
     window.addEventListener('load', async () => {
       try {
         const savedUrl = await invoke('get_server_url');
         if (savedUrl) {
-          // Extract IP từ URL để hiển thị
           const u = new URL(savedUrl);
           document.getElementById('serverInput').value = u.hostname;
           showStatus('error', 'Không thể kết nối tới máy chủ đã lưu. Kiểm tra lại.');

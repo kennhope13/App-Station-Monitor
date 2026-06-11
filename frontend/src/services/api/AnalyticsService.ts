@@ -37,7 +37,7 @@ export class AnalyticsService {
     return apiMutate('DELETE', `/reports/${id}`);
   }
 
-  /** Tải file báo cáo (PDF/XLSX). Trả về Blob để trigger browser download. */
+  /** Tải file báo cáo (PDF). Trả về Blob để trigger browser download. */
   async downloadReport(id: string): Promise<Blob> {
     const token = authService.getToken();
     const res = await fetch(`${API_BASE}/reports/${id}/download`, {
@@ -45,6 +45,15 @@ export class AnalyticsService {
     });
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
     return res.blob();
+  }
+
+  /** Tạo URL tải trực tiếp qua Vite proxy (same-origin) — a.download hoạt động đúng trong Chrome. */
+  getDownloadUrl(id: string): string {
+    const token = authService.getToken();
+    // Dùng đường dẫn tương đối /api/... để đi qua Vite proxy (same-origin với trang web)
+    // Khi đó browser coi đây là same-origin và tôn trọng a.download attribute
+    const path = `/api/v1/reports/${id}/download`;
+    return token ? `${path}?access_token=${encodeURIComponent(token)}` : path;
   }
 
   // ── Maintenance ───────────────────────────────────────────
@@ -63,6 +72,7 @@ export class AnalyticsService {
   async createMaintenance(data: {
     stationId: string; deviceId?: string; title: string; type: string;
     scheduledDate: string; assignedTo?: string; notes?: string; checklist?: string;
+    sendEmail?: boolean;
   }): Promise<MaintenanceTask> {
     return apiMutate('POST', '/maintenance', data);
   }

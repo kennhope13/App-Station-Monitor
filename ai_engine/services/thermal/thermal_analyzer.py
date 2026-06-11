@@ -120,45 +120,50 @@ class ThermalAnalyzer:
         point_temps = {}
         zone_results = {}
 
-        if not matrix_data:
-            return
+        if matrix_data:
+            floats, w, h = matrix_data
 
-        floats, w, h = matrix_data
+            # 2. Trích xuất nhiệt độ cho points
+            for pt in self.points:
+                px = int(pt.x * w)
+                py = int(pt.y * h)
+                px = max(0, min(px, w - 1))
+                py = max(0, min(py, h - 1))
+                idx = py * w + px
+                point_temps[pt.id] = float(floats[idx])
 
-        # 2. Trích xuất nhiệt độ cho points
-        for pt in self.points:
-            px = int(pt.x * w)
-            py = int(pt.y * h)
-            px = max(0, min(px, w - 1))
-            py = max(0, min(py, h - 1))
-            idx = py * w + px
-            point_temps[pt.id] = float(floats[idx])
-
-        # 3. Trích xuất nhiệt độ cho zones (Max temp trong vùng)
-        for zn in self.zones:
-            if not zn.polygon or len(zn.polygon) < 3:
-                continue
-            
-            # Tạo mask cho polygon trên matrix nhỏ
-            poly_pts = np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)
-            mask = np.zeros((h, w), dtype=np.uint8)
-            cv2.fillPoly(mask, [poly_pts], 255)
-            
-            # Lọc các giá trị nhiệt độ trong vùng
-            masked_floats = floats.reshape((h, w))[mask == 255]
-            if masked_floats.size > 0:
-                max_val = float(np.max(masked_floats))
+            # 3. Trích xuất nhiệt độ cho zones (Max temp trong vùng)
+            for zn in self.zones:
+                if not zn.polygon or len(zn.polygon) < 3:
+                    continue
                 
-                full_matrix = floats.reshape((h, w))
-                full_matrix_masked = np.where(mask == 255, full_matrix, -1000.0)
-                max_idx = np.argmax(full_matrix_masked)
-                max_y, max_x = divmod(max_idx, w)
+                # Tạo mask cho polygon trên matrix nhỏ
+                poly_pts = np.array([[int(p[0]*w), int(p[1]*h)] for p in zn.polygon], np.int32)
+                mask = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillPoly(mask, [poly_pts], 255)
                 
-                zone_results[zn.id] = {
-                    "max": max_val,
-                    "x": float(max_x / w),
-                    "y": float(max_y / h)
-                }
+                # Lọc các giá trị nhiệt độ trong vùng
+                masked_floats = floats.reshape((h, w))[mask == 255]
+                if masked_floats.size > 0:
+                    max_val = float(np.max(masked_floats))
+                    
+                    full_matrix = floats.reshape((h, w))
+                    full_matrix_masked = np.where(mask == 255, full_matrix, -1000.0)
+                    max_idx = np.argmax(full_matrix_masked)
+                    max_y, max_x = divmod(max_idx, w)
+                    
+                    zone_results[zn.id] = {
+                        "max": max_val,
+                        "x": float(max_x / w),
+                        "y": float(max_y / h)
+                    }
+        else:
+            # Dự phòng cho camera không hỗ trợ đọc matrix raw (ví dụ: Camera 152)
+            fallback_res = await self._read_temperatures_fallback()
+            if fallback_res:
+                point_temps, zone_results = fallback_res
+            else:
+                return
 
         # Lưu cache nhiệt độ thời gian thực
         self.last_point_temps = point_temps
@@ -296,6 +301,93 @@ class ThermalAnalyzer:
                                     return np.frombuffer(matrix_bytes, dtype=np.float32), w, h
                     break
             except Exception: pass
+        return None
+
+    async def _fetch_rule_id_to_name(self) -> dict[int, str]:
+        mapping = {}
+        if not hasattr(self, '_http_client'):
+            self._http_client = httpx.AsyncClient(timeout=5.0)
+        client = self._http_client
+        for ch in [2, 1]:
+            url = f"http://{self.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/realTimeList"
+            try:
+                resp = await client.get(url, auth=httpx.DigestAuth(self.username, self.password))
+                if resp.status_code == 200:
+                    import xml.etree.ElementTree as ET
+                    root = ET.fromstring(resp.content)
+                    for r in root.iter():
+                        tag_local = r.tag.split("}")[-1]
+                        if tag_local == "ThermometryRegion":
+                            rid = None
+                            name_val = None
+                            for child in r:
+                                child_tag = child.tag.split("}")[-1]
+                                if child_tag == "id":
+                                    try:
+                                        rid = int(child.text)
+                                    except Exception:
+                                        pass
+                                elif child_tag == "name":
+                                    name_val = child.text
+                            if rid is not None and name_val is not None:
+                                mapping[rid] = name_val
+                    break
+            except Exception as e:
+                logger.error("[ThermalAnalyzer] Fallback fetch rule mapping error: %s", e)
+        return mapping
+
+    async def _read_temperatures_fallback(self) -> tuple[dict[str, float], dict[str, dict]] | None:
+        if not hasattr(self, '_rule_id_to_name') or not self._rule_id_to_name:
+            self._rule_id_to_name = await self._fetch_rule_id_to_name()
+
+        if not hasattr(self, '_http_client'):
+            self._http_client = httpx.AsyncClient(timeout=5.0)
+        client = self._http_client
+
+        point_temps = {}
+        zone_results = {}
+
+        for ch in [2, 1]:
+            url = f"http://{self.camera_ip}/ISAPI/Thermal/channels/{ch}/thermometry/1/rulesTemperatureInfo?format=json"
+            try:
+                resp = await client.get(url, auth=httpx.DigestAuth(self.username, self.password))
+                if resp.status_code == 200:
+                    data = resp.json()
+                    rules_info = data.get("ThermometryRulesTemperatureInfoList", {}).get("ThermometryRulesTemperatureInfo", [])
+                    for rule in rules_info:
+                        rid = rule.get("id")
+                        max_t = rule.get("maxTemperature")
+                        if rid is None or max_t is None:
+                            continue
+
+                        rname = self._rule_id_to_name.get(rid, f"ID_{rid}")
+                        matched = False
+
+                        for pt in self.points:
+                            if pt.id == f"P{rid}" or pt.id == str(rid) or pt.label == rname or pt.id == rname:
+                                point_temps[pt.id] = float(max_t)
+                                matched = True
+                                break
+
+                        if matched:
+                            continue
+
+                        for zn in self.zones:
+                            if zn.id == f"Z{rid}" or zn.id == str(rid) or zn.label == rname or zn.id == rname:
+                                max_pt = rule.get("MaxTemperaturePoint", {})
+                                px = max_pt.get("positionX", 0.5)
+                                py = max_pt.get("positionY", 0.5)
+                                py_inverted = 1.0 - py
+
+                                zone_results[zn.id] = {
+                                    "max": float(max_t),
+                                    "x": float(px),
+                                    "y": float(py_inverted)
+                                }
+                                break
+                    return point_temps, zone_results
+            except Exception as e:
+                logger.error("[ThermalAnalyzer] Fallback read temperatures error: %s", e)
         return None
 
     def _annotate(self, frame: np.ndarray, point_temps: dict[str, float], zone_results: dict[str, dict]) -> np.ndarray:

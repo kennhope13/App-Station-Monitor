@@ -63,7 +63,7 @@ public class PlcPollingWorker : BackgroundService
 
                 var dbSaveSetting = await db.SystemSettings.FirstOrDefaultAsync(s => s.Key == "db_save_interval_s", stoppingToken);
                 int dbSaveIntervalS = 60; // default 60s
-                if (dbSaveSetting != null && int.TryParse(dbSaveSetting.Value.Trim('"'), out var dbSecs) && dbSecs > 0)
+                if (dbSaveSetting != null && dbSaveSetting.Value != null && int.TryParse(dbSaveSetting.Value.Trim('"'), out var dbSecs) && dbSecs > 0)
                     dbSaveIntervalS = dbSecs;
 
                 // Tự động dọn dẹp dữ liệu cũ mỗi 1 giờ
@@ -232,7 +232,7 @@ public class PlcPollingWorker : BackgroundService
                 // Kiểm tra xem hệ thống có cho phép kích hoạt Giả lập dự phòng (Fallback Simulation) khi mất mạng không
                 bool isFallbackEnabled = true; // Mặc định bật để hỗ trợ duyệt giao diện khi đứt dây mạng
                 var fallbackSetting = db.SystemSettings.FirstOrDefault(s => s.Key == "plc_fallback_simulation_enabled");
-                if (fallbackSetting != null && bool.TryParse(fallbackSetting.Value.Trim('"'), out var fbVal))
+                if (fallbackSetting != null && fallbackSetting.Value != null && bool.TryParse(fallbackSetting.Value.Trim('"'), out var fbVal))
                 {
                     isFallbackEnabled = fbVal;
                 }
@@ -280,9 +280,12 @@ public class PlcPollingWorker : BackgroundService
 
                     // Cập nhật IMemoryCache để các RuleEngine hoạt động bình thường
                     var fbCachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
-                    foreach (var r in fbReadings)
+                    if (fbCachedDict != null)
                     {
-                        fbCachedDict[r.PointId] = r;
+                        foreach (var r in fbReadings)
+                        {
+                            fbCachedDict[r.PointId] = r;
+                        }
                     }
 
                     // TUYỆT ĐỐI KHÔNG lưu vào DB đo lường để giữ dữ liệu DB sạch 100% không bị lẫn lộn dữ liệu giả!
@@ -330,10 +333,13 @@ public class PlcPollingWorker : BackgroundService
 
             // Lưu vào IMemoryCache để RuleEngine dùng mà không cần query DB (Key = LatestReadings)
             var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
-            foreach (var r in readings)
+            if (cachedDict != null)
             {
-                var cacheKey = $"{r.DeviceId}_{r.PointId}".ToLower();
-                cachedDict[cacheKey] = r;
+                foreach (var r in readings)
+                {
+                    var cacheKey = $"{r.DeviceId}_{r.PointId}".ToLower();
+                    cachedDict[cacheKey] = r;
+                }
             }
 
             // Chỉ lưu vào DB nếu đến chu kỳ (giảm I/O)

@@ -147,6 +147,9 @@ public class MeasurementsController : ControllerBase
 
         var selectedPoints = pointIds?.Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
         string deviceFilter = deviceId.HasValue ? $"AND \"DeviceId\" = '{deviceId.Value}'" : "";
+        string stationFilter = (stationId.HasValue && stationId.Value != Guid.Empty)
+            ? $"AND \"StationId\" = '{stationId.Value}'"
+            : "";
 
         var conn = _db.Database.GetDbConnection();
         await conn.OpenAsync();
@@ -159,10 +162,10 @@ public class MeasurementsController : ControllerBase
             sql = $"""
                 SELECT "PointId", "Time", "Value", "DeviceId"
                 FROM "SensorReadings"
-                WHERE "StationId" = '{stationId}'
-                  {deviceFilter}
-                  AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
+                WHERE "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
                   AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
+                  {stationFilter}
+                  {deviceFilter}
                 ORDER BY "Time", "PointId"
                 LIMIT 50000
                 """;
@@ -176,10 +179,10 @@ public class MeasurementsController : ControllerBase
                        AVG("Value")::float8 AS "Value",
                        "DeviceId"
                 FROM "SensorReadings"
-                WHERE "StationId" = '{stationId}'
-                  {deviceFilter}
-                  AND "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
+                WHERE "Time" >= '{from:yyyy-MM-ddTHH:mm:ss}'
                   AND "Time" <= '{to:yyyy-MM-ddTHH:mm:ss}'
+                  {stationFilter}
+                  {deviceFilter}
                 GROUP BY "PointId", "DeviceId", time_bucket('{intervalMinutes} minutes', "Time")
                 ORDER BY "Time", "PointId"
                 """;
@@ -317,9 +320,11 @@ public class MeasurementsController : ControllerBase
         {
             var stationId = (await _db.Stations.FirstOrDefaultAsync())?.Id ?? Guid.Empty;
             var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
+            if (cachedDict == null) return BadRequest();
             
             // Throttling: Kiểm tra xem đã đến lúc lưu vào DB chưa (chu kỳ 1 phút/thiết bị)
             var firstDeviceId = readings.FirstOrDefault()?.DeviceId;
+            if (firstDeviceId == null) return BadRequest();
             var throttleKey = $"last_db_save_{firstDeviceId}";
             bool shouldSaveDb = !_cache.TryGetValue(throttleKey, out DateTime lastSave) || (DateTime.UtcNow - lastSave).TotalMinutes >= 1;
 
@@ -475,6 +480,7 @@ public class MeasurementsController : ControllerBase
 
         // Cập nhật IMemoryCache cho Rule Engine
         var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
+        if (cachedDict == null) return BadRequest();
         
         var dbReadings = new List<SensorReading>();
         foreach (var r in readingsToSave)

@@ -80,6 +80,9 @@ backend/StationOS.Api/wwwroot/media/buffer/
 # Scratch Directory
 scratch/
 
+# Electron builds
+frontend/dist-electron/
+
 # AI Engine Temporary Data & Models
 ai_engine/data/received_data/
 ai_engine/data/live_predictions_*

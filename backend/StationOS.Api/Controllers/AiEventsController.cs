@@ -52,9 +52,9 @@ public class AiEventsController : ControllerBase
             StationId = stationId,
             CameraId = req.CameraId,
             Source = "yolo",
-            DetectionType = req.Type,
+            DetectionType = req.Type ?? "unknown",
             Label = req.Label,
-            Severity = (req.Type.Contains("pd") || req.Type.Contains("hotspot")) ? "alarm" : (req.Severity ?? "warning"),
+            Severity = (req.Type != null && (req.Type.Contains("pd") || req.Type.Contains("hotspot"))) ? "alarm" : (req.Severity ?? "warning"),
             DetectedAt = req.Timestamp ?? DateTime.UtcNow,
             Metadata = req.Metadata,
             MaxTemp = req.MaxTemp,
@@ -65,9 +65,9 @@ public class AiEventsController : ControllerBase
 
         // 2. ÉP TẠO ALERT NGAY LẬP TỨC (Dành cho Hotspot/PD)
         Alert? alert = null;
-        bool isPdHotspot = evt.DetectionType.Contains("hotspot") || evt.DetectionType.Contains("pd");
+        bool isPdHotspot = evt.DetectionType != null && (evt.DetectionType.Contains("hotspot") || evt.DetectionType.Contains("pd"));
 
-        if (isPdHotspot || evt.Severity.ToLower() is "warning" or "alarm" or "critical")
+        if (isPdHotspot || (evt.Severity != null && evt.Severity.ToLower() is "warning" or "alarm" or "critical"))
         {
             // Tìm tên vùng chi tiết
             string zoneDisplayName = evt.AffectedZone ?? "vùng chưa xác định";
@@ -96,7 +96,7 @@ public class AiEventsController : ControllerBase
                 DeviceId = req.CameraId,
                 DetectionId = evt.Id,
                 Source = "ai_detection",
-                Level = isPdHotspot ? "alarm" : (evt.Severity.ToLower() == "critical" ? "alarm" : evt.Severity.ToLower()),
+                Level = isPdHotspot ? "alarm" : ((evt.Severity?.ToLower() ?? "warning") == "critical" ? "alarm" : (evt.Severity?.ToLower() ?? "warning")),
                 Status = "open",
                 Message = msg,
                 Value = (double?)(evt.MaxTemp ?? (float?)evt.Confidence),
@@ -243,6 +243,7 @@ public class AiEventsController : ControllerBase
 
         // Cập nhật IMemoryCache để RuleEngine dùng mà không cần query DB (Key = LatestReadings)
         var cachedDict = _cache.GetOrCreate("LatestReadings", entry => new Dictionary<string, SensorReading>());
+        if (cachedDict == null) return BadRequest();
 
         foreach (var req in reqs)
         {

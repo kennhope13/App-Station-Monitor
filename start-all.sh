@@ -34,10 +34,11 @@ done
 if command -v docker &> /dev/null; then
     sudo docker rm -f stationmonitor-db >/dev/null 2>&1 || true
     sudo docker rm -f stationos-dev-db >/dev/null 2>&1 || true
+    sudo docker rm -f stationos-monitor-db >/dev/null 2>&1 || true
     sudo docker rm -f stationmonitor-streaming >/dev/null 2>&1 || true
     sudo docker rm -f stationmonitor-mqtt >/dev/null 2>&1 || true
     sudo docker rm -f stationmonitor-backend >/dev/null 2>&1 || true
-    sudo docker rm -f stationos-go2rtc >/dev/null 2>&1 || true
+    sudo docker rm -f stationos-go2rtc-monitor >/dev/null 2>&1 || true
 fi
 sleep 1
 echo "✅ Dọn dẹp hoàn tất."
@@ -54,8 +55,8 @@ fi
 # 3. Khởi động Video Streaming (go2rtc)
 echo "[3/4] Khởi động go2rtc Video Streamer..."
 if command -v docker &> /dev/null; then
-    sudo docker rm -f stationos-go2rtc >/dev/null 2>&1 || true
-    sudo docker run -d --name stationos-go2rtc \
+    sudo docker rm -f stationos-go2rtc-monitor >/dev/null 2>&1 || true
+    sudo docker run -d --name stationos-go2rtc-monitor \
         -p 1984:1984 -p 8554:8554 -p 8555:8555 \
         -v "$ROOT/go2rtc/go2rtc.yaml:/config/go2rtc.yaml" \
         alexxit/go2rtc:latest >/dev/null 2>&1

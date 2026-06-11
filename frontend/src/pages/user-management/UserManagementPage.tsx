@@ -27,6 +27,7 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
   const [isPwModalOpen, setIsPwModalOpen] = useState(false);
   
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [showPermissions, setShowPermissions] = useState(false);
   
   // Form State
   const [formData, setFormData] = useState({
@@ -177,10 +178,10 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
   }, [filteredUsers]);
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', height: '100%', overflow: 'hidden' }}>
+    <div className="admin-page-container">
       
       {embeddedMode === 'central' && (
-        <div style={{ padding: '20px 20px 0 20px' }}>
+        <div style={{ padding: '12px 12px 0 12px' }}>
           <div
             style={{
               display: 'grid',
@@ -245,23 +246,22 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
         </div>
       )}
 
-      <div style={{ padding: '0 20px 20px 20px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div className="page-toolbar-row" style={{ marginTop: embeddedMode === 'central' ? 16 : 0, marginBottom: 16 }}>
-          <div className="page-title-cell">
-            {embeddedMode !== 'central' && <h2>NGƯỜI DÙNG</h2>}
-          </div>
-          <div className="page-toolbar-group">
-            <button 
-              className="btn-industrial btn-primary" 
-              style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
-              onClick={openAddModal}
-            >
-              + THÊM TÀI KHOẢN
-            </button>
-          </div>
+      <div className="page-toolbar-row" style={{ marginTop: embeddedMode === 'central' ? 12 : 0 }}>
+        <div className="page-title-cell">
+          {embeddedMode !== 'central' && <h2>NGƯỜI DÙNG</h2>}
         </div>
-        
-        <div className="admin-card" style={{ padding: 0, overflow: 'auto', flex: 1 }}>
+        <div className="page-toolbar-group">
+          <button 
+            className="btn-industrial btn-primary" 
+            style={{ height: 32, padding: '0 16px', fontSize: '.75rem', fontWeight: 800 }}
+            onClick={openAddModal}
+          >
+            + THÊM TÀI KHOẢN
+          </button>
+        </div>
+      </div>
+      
+      <div className="admin-card" style={{ padding: 0, overflow: 'auto', flex: 1, marginTop: 12 }}>
           <table className="data-table">
             <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
               <tr>
@@ -323,40 +323,58 @@ export default function UserManagementPage({ embeddedMode = 'default' }: UserMan
           </tbody>
         </table>
       </div>
-      </div>
 
-      <div className="admin-card" style={{ padding: 20, marginTop: 16 }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--admin-text)', marginBottom: 12, textTransform: 'uppercase', fontFamily: 'Consolas, monospace', letterSpacing: '0.5px' }}>BẢNG PHÂN QUYỀN HỆ THỐNG</div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Tính năng</th>
-              <th style={{ textAlign: 'center' }}>Operator</th>
-              <th style={{ textAlign: 'center' }}>Manager</th>
-              <th style={{ textAlign: 'center' }}>Admin</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[
-              ['Xem Dashboard', '✓', '✓', '✓'],
-              ['Acknowledge Alarm', '✓', '✓', '✓'],
-              ['Xem báo cáo', '✓', '✓', '✓'],
-              ['Tạo & Gửi báo cáo', '—', '✓', '✓'],
-              ['Cấu hình ngưỡng', '—', '—', '✓'],
-              ['Quản lý thiết bị', '—', '—', '✓'],
-              ['Quản lý người dùng', '—', '—', '✓'],
-              ['Xem Audit Log', '—', '✓', '✓'],
-              ['Cài đặt hệ thống', '—', '—', '✓'],
-            ].map((row, i) => (
-              <tr key={i}>
-                <td>{row[0]}</td>
-                <td style={{ textAlign: 'center', color: row[1] === '✓' ? 'var(--admin-success)' : 'var(--admin-text-muted)', fontWeight: row[1] === '✓' ? 'bold' : 'normal' }}>{row[1]}</td>
-                <td style={{ textAlign: 'center', color: row[2] === '✓' ? 'var(--admin-success)' : 'var(--admin-text-muted)', fontWeight: row[2] === '✓' ? 'bold' : 'normal' }}>{row[2]}</td>
-                <td style={{ textAlign: 'center', color: row[3] === '✓' ? 'var(--admin-success)' : 'var(--admin-text-muted)', fontWeight: row[3] === '✓' ? 'bold' : 'normal' }}>{row[3]}</td>
+      <div className="admin-card" style={{ padding: '12px 20px', marginTop: 12 }}>
+        <div 
+          style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}
+          onClick={() => setShowPermissions(!showPermissions)}
+        >
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--admin-text)', textTransform: 'uppercase', fontFamily: 'Consolas, monospace', letterSpacing: '0.5px' }}>
+            BẢNG PHÂN QUYỀN HỆ THỐNG {showPermissions ? '▼' : '►'}
+          </div>
+          <span style={{ fontSize: '0.7rem', color: 'var(--admin-accent)', fontWeight: 800 }}>
+            {showPermissions ? 'THU GỌN' : 'HIỂN THỊ CHI TIẾT'}
+          </span>
+        </div>
+        
+        {showPermissions && (
+          <table className="data-table" style={{ marginTop: 12 }}>
+            <thead>
+              <tr>
+                <th>Tính năng</th>
+                <th style={{ textAlign: 'center' }}>Operator</th>
+                <th style={{ textAlign: 'center' }}>Manager</th>
+                <th style={{ textAlign: 'center' }}>Admin</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {[
+                ['Xem Dashboard', '✓', '✓', '✓'],
+                ['Acknowledge Alarm', '✓', '✓', '✓'],
+                ['Xem báo cáo', '✓', '✓', '✓'],
+                ['Tạo & Gửi báo cáo', '—', '✓', '✓'],
+                ['Cấu hình ngưỡng', '—', '—', '✓'],
+                ['Quản lý thiết bị', '—', '—', '✓'],
+                ['Quản lý người dùng', '—', '—', '✓'],
+                ['Xem Audit Log', '—', '✓', '✓'],
+                ['Cài đặt hệ thống', '—', '—', '✓'],
+              ].map((row, i) => (
+                <tr key={i}>
+                  <td>{row[0]}</td>
+                  <td style={{ textAlign: 'center', color: row[1] === '✓' ? 'var(--admin-success)' : 'var(--admin-text-muted)', fontWeight: row[1] === '✓' ? 'bold' : 'normal' }}>{row[1]}</td>
+                  <td style={{ textAlign: 'center', color: row[2] === '✓' ? 'var(--admin-success)' : 'var(--admin-text-muted)', fontWeight: row[2] === '✓' ? 'bold' : 'normal' }}>{row[2]}</td>
+                  <td style={{ textAlign: 'center', color: row[3] === '✓' ? 'var(--admin-success)' : 'var(--admin-text-muted)', fontWeight: row[3] === '✓' ? 'bold' : 'normal' }}>{row[3]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* MODAL USER FORM */}

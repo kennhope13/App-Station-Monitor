@@ -1,6 +1,6 @@
 import psycopg2
-conn = psycopg2.connect("dbname='postgres123' user='postgres' host='localhost' password='password'")
+conn = psycopg2.connect("dbname='StationOS' user='postgres' host='localhost' password='postgres123'")
 cur = conn.cursor()
-cur.execute("SELECT \"Config\" FROM \"Devices\" WHERE \"Config\" LIKE '%192.168.10.120%';")
+cur.execute('SELECT "Id", "Name", "Type", "Config" FROM "Devices";')
 for row in cur.fetchall():
-    print(row[0])
+    print(f"ID: {row[0]} | Name: {row[1]} | Type: {row[2]} | Config: {row[3]}")

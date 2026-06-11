@@ -20,7 +20,7 @@ streams:
   cam_192_168_10_152_optical:
     - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/101
   cam_192_168_10_152_thermal:
-    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/201
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/2
   cam_192_168_10_152_optical_sub:
     - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/102
   camera_192_168_10_153_pd:
@@ -48,7 +48,7 @@ streams:
   camera_152_normal_sub:
     - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/102
   camera_152_thermal:
-    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/201
+    - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/2
   camera_152_thermal_sub:
     - rtsp://admin:Demo%402024@192.168.10.152:554/Streaming/Channels/202
   camera_153_pd:

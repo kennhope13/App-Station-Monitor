@@ -131,7 +131,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
       if (!label) label = p.pointId;
 
       return {
-        id: `${d.id}_${p.pointId}`,
+        id: `${d.id.toLowerCase()}_${p.pointId.toLowerCase()}`,
         rawPointId: p.pointId,
         label,
         unit: p.unit || '',
@@ -192,7 +192,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
       
       const row = map.get(key)!;
       if (r.deviceId) {
-        const uniqueId = `${r.deviceId.toLowerCase()}_${r.pointId}`;
+        const uniqueId = `${r.deviceId.toLowerCase()}_${r.pointId.toLowerCase()}`;
         row[uniqueId] = r.value;
       }
     });
@@ -200,7 +200,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
   };
 
   const loadPreview = async () => {
-    if (!stationId) { setInfo({ msg: 'Chưa kết nối backend', type: 'error' }); return; }
+    if (stationId === undefined || stationId === null) { setInfo({ msg: 'Chưa kết nối backend', type: 'error' }); return; }
     if (!selectedPoints.length) { setInfo({ msg: 'Chọn ít nhất 1 cảm biến', type: 'error' }); return; }
     if (!from || !to) { setInfo({ msg: 'Chọn đầy đủ ngày', type: 'error' }); return; }
     setLoading(true);
@@ -220,7 +220,7 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
   };
 
   const exportXlsx = async () => {
-    if (!stationId) { setInfo({ msg: 'Chưa kết nối backend', type: 'error' }); return; }
+    if (stationId === undefined || stationId === null) { setInfo({ msg: 'Chưa kết nối backend', type: 'error' }); return; }
     if (!selectedPoints.length) { setInfo({ msg: 'Chọn ít nhất 1 cảm biến', type: 'error' }); return; }
     if (!from || !to) { setInfo({ msg: 'Chọn đầy đủ ngày', type: 'error' }); return; }
     setExporting(true);
@@ -296,7 +296,9 @@ export default function ExportTab({ stationId, alerts }: { stationId: string, al
         XLSX.utils.book_append_sheet(wb, ws3, 'Cảnh báo');
       }
 
-      XLSX.writeFile(wb, `SensorData_${from.replace(/[-:T]/g, '')}_${to.replace(/[-:T]/g, '')}.xlsx`);
+      const fromDate = from.split('T')[0] || from.substring(0, 10);
+      const toDate = to.split('T')[0] || to.substring(0, 10);
+      XLSX.writeFile(wb, `DuLieu_${fromDate}_den_${toDate}.xlsx`);
     } catch (err: any) {
       setInfo({ msg: `Lỗi xuất XLSX: ${err.message}`, type: 'error' });
     } finally {

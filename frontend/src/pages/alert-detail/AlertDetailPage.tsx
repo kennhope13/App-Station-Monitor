@@ -120,7 +120,7 @@ export default function AlertDetailPage() {
     closed: '🟢 Đã đóng',
   };
   const sourceLabel: Record<string, string> = {
-    rule_engine: 'Rule Engine',
+    rule_engine: 'Quy tắc tự động',
     ai_detection: 'AI Detection',
     manual: 'Thủ công',
     maintenance: 'Bảo trì',
@@ -287,12 +287,12 @@ export default function AlertDetailPage() {
               <span style={{ marginLeft: 6, opacity: .6 }}>→</span>
             </a>
           ) : '—')}
-          {infoRow('Rule', alert.ruleId ? (
+          {infoRow('Quy tắc tự động', alert.ruleId ? (
             <a
               href="#"
               onClick={(e) => { e.preventDefault(); navigate(`/rule-engine?ruleId=${alert.ruleId}`); }}
               style={{ color: 'var(--admin-info-text)', textDecoration: 'underline', cursor: 'pointer', fontSize: '.85rem' }}
-              title="Mở Rule Engine"
+              title="Xem Quy tắc tự động"
             >
               {alert.ruleId.slice(0, 8)}
               <span style={{ marginLeft: 6, opacity: .6 }}>→</span>

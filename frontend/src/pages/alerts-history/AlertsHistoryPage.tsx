@@ -9,7 +9,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { Calendar, RefreshCw, Play, Camera } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import CentralTitleMenu from '@/components/CentralTitleMenu';
 import { stationApi, AlertItem, AlertHistoryEntry } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore } from '@/store';
 import { ALERT_STATUS, ALERT_LEVEL, alertStatusLabel, alertLevelLabel } from '@/types/enums';
@@ -18,7 +17,6 @@ import { fmtDateTime } from '@/utils/format';
 import { confirmDialog } from '@/utils/confirm';
 import { GO2RTC_URL } from '@/utils/env';
 import { authService } from '@/services/AuthService';
-import { isCentralUser } from '@/utils/centralAccess';
 import './AlertsHistoryPage.css';
 
 type SortCol = 'time' | 'level';
@@ -61,8 +59,7 @@ export default function AlertsHistoryPage() {
   const initialStationId = searchParams.get('stationId') || '';
 
   // Kiểm tra chế độ trạm tổng (đồng bộ với AppShell)
-  const currentUser = authService.getUser();
-  const isCentralMode = isCentralUser(currentUser);
+  const isCentralMode = false;
 
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -340,20 +337,9 @@ export default function AlertsHistoryPage() {
     <div className="admin-page-container">
       <div className="page-toolbar-row">
         <div className="page-title-cell">
-          <CentralTitleMenu title="NHẬT KÝ" />
+          <h2>NHẬT KÝ</h2>
         </div>
         <div className="page-toolbar-group">
-          {isCentralMode && (
-            <div className="page-toolbar-cell" style={{ height: 28 }}>
-              <span className="page-cell-label">TRẠM:</span>
-              <ToolbarSelect
-                value={filterStation}
-                onChange={setFilterStation}
-                options={[{ value: '', label: `Tất cả (${stations.length})` }, ...stations.map(s => ({ value: s.id, label: s.name }))]}
-                width={140}
-              />
-            </div>
-          )}
           <div className="page-toolbar-cell" style={{ height: 28 }}>
             <span className="page-cell-label">LỌC NHANH:</span>
             <ToolbarSelect
@@ -437,7 +423,6 @@ export default function AlertsHistoryPage() {
               <div className="ah-sortable-th" style={{ justifyContent: 'flex-start' }} onClick={() => handleSort('level')}>
                 MỨC ĐỘ <span className={`ah-sort-badge ${sortBy !== 'level' ? 'ah-sort-inactive' : ''}`}>{sortBy === 'level' && sortDir === 'asc' ? '↑' : '↓'}</span>
               </div>
-              {isCentralMode && <div>TRẠM</div>}
               <div>NỘI DUNG</div>
               <div>TRẠNG THÁI</div>
               <div>HÀNH ĐỘNG</div>
@@ -490,19 +475,6 @@ export default function AlertsHistoryPage() {
                         ? <span className="ah-badge ah-badge-alarm">{alertLevelLabel(a.level)}</span>
                         : <span className="ah-badge ah-badge-warning">{alertLevelLabel(a.level)}</span>}
                     </div>
-
-                    {/* COL 3.5: TRẠM (chỉ hiện ở trạm tổng) */}
-                    {isCentralMode && (
-                      <div>
-                        <span style={{
-                          fontSize: '0.6rem', fontWeight: 800, padding: '2px 6px',
-                          background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.3)',
-                          color: 'var(--admin-accent)', whiteSpace: 'nowrap', display: 'inline-block'
-                        }}>
-                          {stations.find(s => s.id === a.stationId)?.name || a.stationName || '—'}
-                        </span>
-                      </div>
-                    )}
 
                     {/* COL 4: NỘI DUNG */}
                     <div className="ah-msg-cell">

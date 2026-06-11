@@ -207,6 +207,8 @@ export interface LoginLogEntry {
   ts: string;
   stationId?: string;
   stationName?: string;
+  role?: string;
+  fullName?: string;
 }
 
 export interface NotifyLogEntry {

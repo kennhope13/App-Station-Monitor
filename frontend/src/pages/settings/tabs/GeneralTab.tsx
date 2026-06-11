@@ -19,6 +19,9 @@ export default function GeneralTab() {
   const [camRecord, setCamRecord] = useState('12');
   const [healthCheck, setHealthCheck] = useState('30');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [enableEmail, setEnableEmail] = useState(true);
+  const [enableSms, setEnableSms] = useState(false);
   const [timezone, setTimezone] = useState('Asia/Ho_Chi_Minh');
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
@@ -39,6 +42,9 @@ export default function GeneralTab() {
         setCamRecord(data['camera_record_duration_s'] ?? '12');
         setHealthCheck(data['health_check_interval_s'] ?? '30');
         setEmail(data['alert_email'] ?? '');
+        setPhone(data['alert_phone'] ?? '');
+        setEnableEmail(data['enable_alert_email'] !== 'false');
+        setEnableSms(data['enable_alert_sms'] === 'true');
         setTimezone(data['timezone'] ?? 'Asia/Ho_Chi_Minh');
         
         // Reset errors
@@ -50,26 +56,35 @@ export default function GeneralTab() {
 
   // Kiểm tra tính hợp lệ của tham số thời gian thực (Live Validation)
   const validateField = (name: string, value: string): string => {
-    const num = Number(value);
-    if (!value || isNaN(num)) return 'Giá trị nhập phải là chữ số';
-    
-    switch (name) {
-      case 'plcPoll':
-        if (num < 1 || num > 60) return 'Chu kỳ quét PLC phải từ 1 đến 60 giây';
-        break;
-      case 'dbSave':
-        if (num < 5 || num > 3600) return 'Chu kỳ lưu DB phải từ 5 đến 3600 giây (1 giờ)';
-        if (num < Number(plcPoll)) return 'Chu kỳ lưu trữ DB không được nhỏ hơn chu kỳ lấy mẫu PLC';
-        break;
-      case 'camRecord':
-        if (num < 3 || num > 300) return 'Thời lượng video trích xuất phải từ 3 đến 300 giây';
-        break;
-      case 'healthCheck':
-        if (num < 5 || num > 1800) return 'Tần suất kiểm tra thiết bị phải từ 5 đến 1800 giây';
-        break;
-      case 'email':
-        if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Định dạng Email không hợp lệ';
-        break;
+    const numericFields = ['plcPoll', 'dbSave', 'camRecord', 'healthCheck'];
+    if (numericFields.includes(name)) {
+      const num = Number(value);
+      if (!value || isNaN(num)) return 'Giá trị nhập phải là chữ số';
+      
+      switch (name) {
+        case 'plcPoll':
+          if (num < 1 || num > 60) return 'Chu kỳ quét PLC phải từ 1 đến 60 giây';
+          break;
+        case 'dbSave':
+          if (num < 5 || num > 3600) return 'Chu kỳ lưu DB phải từ 5 đến 3600 giây (1 giờ)';
+          if (num < Number(plcPoll)) return 'Chu kỳ lưu trữ DB không được nhỏ hơn chu kỳ lấy mẫu PLC';
+          break;
+        case 'camRecord':
+          if (num < 3 || num > 300) return 'Thời lượng video trích xuất phải từ 3 đến 300 giây';
+          break;
+        case 'healthCheck':
+          if (num < 5 || num > 1800) return 'Tần suất kiểm tra thiết bị phải từ 5 đến 1800 giây';
+          break;
+      }
+    } else {
+      switch (name) {
+        case 'email':
+          if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Định dạng Email không hợp lệ';
+          break;
+        case 'phone':
+          if (value && !/^\+?[0-9]{9,15}$/.test(value)) return 'Số điện thoại không hợp lệ';
+          break;
+      }
     }
     return '';
   };
@@ -118,6 +133,9 @@ export default function GeneralTab() {
     setCamRecord('12');
     setHealthCheck('30');
     setEmail('');
+    setPhone('');
+    setEnableEmail(true);
+    setEnableSms(false);
     setTimezone('Asia/Ho_Chi_Minh');
     setErrors({});
     showToast('Đã khôi phục cài đặt mặc định nhà máy', 'info');
@@ -126,7 +144,7 @@ export default function GeneralTab() {
   const handleSave = async () => {
     // Chạy kiểm tra lỗi cho tất cả các trường
     const newErrors: Record<string, string> = {};
-    const checks = { plcPoll, dbSave, camRecord, healthCheck, email };
+    const checks = { plcPoll, dbSave, camRecord, healthCheck, email, phone };
     Object.entries(checks).forEach(([key, val]) => {
       const err = validateField(key, val);
       if (err) newErrors[key] = err;
@@ -146,6 +164,9 @@ export default function GeneralTab() {
         stationApi.updateSetting('camera_record_duration_s', camRecord),
         stationApi.updateSetting('health_check_interval_s', healthCheck),
         stationApi.updateSetting('alert_email', email),
+        stationApi.updateSetting('alert_phone', phone),
+        stationApi.updateSetting('enable_alert_email', String(enableEmail)),
+        stationApi.updateSetting('enable_alert_sms', String(enableSms)),
         stationApi.updateSetting('timezone', timezone),
       ]);
       setSaveStatus('Đã lưu thành công');
@@ -343,6 +364,40 @@ export default function GeneralTab() {
             />
             {errors.email && <div className="err-label">✕ {errors.email}</div>}
             <div className="hint-text">Hệ thống gửi thư báo ngay khi có sự cố Báo động đỏ xảy ra.</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
+              <input 
+                type="checkbox" 
+                checked={enableEmail} 
+                onChange={e => setEnableEmail(e.target.checked)} 
+                style={{ accentColor: 'var(--admin-accent)', cursor: 'pointer' }}
+              />
+              <span>Kích hoạt gửi thư cảnh báo (Email)</span>
+            </label>
+          </div>
+
+          <div className="form-group" style={{ margin: 0 }}>
+            <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 800, marginBottom: 6, textTransform: 'uppercase' }}>
+              Số điện thoại nhận cảnh báo (SMS)
+            </label>
+            <input 
+              type="text" 
+              className="form-input" 
+              style={{ width: '100%', boxSizing: 'border-box', borderRadius: 0, borderColor: errors.phone ? 'var(--admin-danger)' : 'var(--admin-border)' }}
+              placeholder="e.g. 0912345678" 
+              value={phone} 
+              onChange={e => handleFieldChange('phone', e.target.value, setPhone)} 
+            />
+            {errors.phone && <div className="err-label">✕ {errors.phone}</div>}
+            <div className="hint-text">Hệ thống gửi tin nhắn SMS khẩn cấp khi có sự cố nghiêm trọng xảy ra.</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
+              <input 
+                type="checkbox" 
+                checked={enableSms} 
+                onChange={e => setEnableSms(e.target.checked)} 
+                style={{ accentColor: 'var(--admin-accent)', cursor: 'pointer' }}
+              />
+              <span>Kích hoạt gửi tin nhắn cảnh báo (SMS)</span>
+            </label>
           </div>
 
           <div className="form-group" style={{ margin: 0 }}>

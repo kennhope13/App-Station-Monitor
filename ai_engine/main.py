@@ -51,6 +51,29 @@ async def _process_loop() -> None:
 
 # ── Lifespan ─────────────────────────────────────────────────
 
+async def _startup_task():
+    try:
+        # Kích hoạt chế độ xử lý camera trực tiếp và tự động load config
+        await _load_config_from_backend()
+        # Immediately trigger a processing cycle so that predictions are available right after startup
+        for analyzer in list(routes._thermal_analyzers.values()):
+            try:
+                await analyzer.process()
+            except Exception as e:
+                logger.warning("[Startup] Failed to process thermal analyzer: %s", e)
+        for detector in list(routes._line_detectors.values()):
+            try:
+                await detector.process()
+            except Exception as e:
+                logger.warning("[Startup] Failed to process detector: %s", e)
+        for acoustic in list(routes._acoustic_analyzers.values()):
+            try:
+                await acoustic.process()
+            except Exception as e:
+                logger.warning("[Startup] Failed to process acoustic: %s", e)
+    except Exception as e:
+        logger.error("[Startup] Background startup task failed: %s", e)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Quản lý vòng đời ứng dụng: khởi tạo analyzer và scheduler khi bật, dọn dẹp khi tắt."""
@@ -58,15 +81,8 @@ async def lifespan(app: FastAPI):
     logger.info("Backend : %s", cfg.backend_url)
     logger.info("Port    : 8100")
     
-    # Kích hoạt chế độ xử lý camera trực tiếp và tự động load config
-    await _load_config_from_backend()
-    # Immediately trigger a processing cycle so that predictions are available right after startup
-    for analyzer in list(routes._thermal_analyzers.values()):
-        await analyzer.process()
-    for detector in list(routes._line_detectors.values()):
-        await detector.process()
-    for acoustic in list(routes._acoustic_analyzers.values()):
-        await acoustic.process()
+    # Run config loader in the background to avoid blocking server start
+    asyncio.create_task(_startup_task())
     task = asyncio.create_task(_process_loop())
     
     yield
@@ -81,7 +97,7 @@ async def _load_config_from_backend() -> None:
     """
     import httpx
     devices = []
-    max_retries = 10
+    max_retries = 120
     retry_delay = 2.0
     for attempt in range(1, max_retries + 1):
         try:

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // MaintenanceController — Quản lý lịch bảo trì
 // GET    /api/v1/maintenance                     — Danh sách tasks
 // POST   /api/v1/maintenance                     — Tạo task mới
@@ -16,6 +16,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StationOS.Data;
 using StationOS.Data.Entities;
+using Microsoft.Extensions.Logging;
+using StationOS.Services;
 
 namespace StationOS.Api.Controllers;
 
@@ -25,8 +27,15 @@ namespace StationOS.Api.Controllers;
 public class MaintenanceController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly EmailNotifyService _email;
+    private readonly ILogger<MaintenanceController> _logger;
 
-    public MaintenanceController(AppDbContext db) => _db = db;
+    public MaintenanceController(AppDbContext db, EmailNotifyService email, ILogger<MaintenanceController> logger)
+    {
+        _db = db;
+        _email = email;
+        _logger = logger;
+    }
 
     // ── GET /api/v1/maintenance ──────────────────────────────
     /// <summary>Lấy danh sách tất cả task bảo trì, hỗ trợ lọc theo trạm, trạng thái và thiết bị.</summary>
@@ -90,6 +99,8 @@ public class MaintenanceController : ControllerBase
         _db.MaintenanceTasks.Add(task);
         await _db.SaveChangesAsync();
 
+        await SendMaintenanceEmailIfNeededAsync(task, req.SendEmail);
+
         var deviceNames = new Dictionary<Guid, string>();
         if (task.DeviceId.HasValue)
         {
@@ -121,6 +132,8 @@ public class MaintenanceController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        await SendMaintenanceEmailIfNeededAsync(task, req.SendEmail);
+
         var deviceNames = new Dictionary<Guid, string>();
         if (task.DeviceId.HasValue)
         {
@@ -129,6 +142,51 @@ public class MaintenanceController : ControllerBase
         }
 
         return Ok(MapTask(task, deviceNames));
+    }
+
+    private async Task SendMaintenanceEmailIfNeededAsync(MaintenanceTask task, bool? sendEmail)
+    {
+        if (sendEmail == true && !string.IsNullOrEmpty(task.AssignedTo))
+        {
+            string? recipientEmail = null;
+            if (task.AssignedTo.Contains("@"))
+            {
+                recipientEmail = task.AssignedTo;
+            }
+            else
+            {
+                var user = await _db.Users.FirstOrDefaultAsync(u => u.Username == task.AssignedTo || u.FullName == task.AssignedTo);
+                if (user != null && !string.IsNullOrEmpty(user.Email))
+                {
+                    recipientEmail = user.Email;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(recipientEmail))
+            {
+                try
+                {
+                    var devName = "Tất cả";
+                    if (task.DeviceId.HasValue)
+                    {
+                        var dev = await _db.Devices.FindAsync(task.DeviceId.Value);
+                        if (dev != null) devName = dev.Name;
+                    }
+                    await _email.SendMaintenanceEmailAsync(
+                        recipientEmail,
+                        task.Title,
+                        task.Type,
+                        devName,
+                        task.ScheduledDate.ToLocalTime().ToString("dd/MM/yyyy"),
+                        task.Notes ?? ""
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi gửi email bảo trì CMMS cho {email}", recipientEmail);
+                }
+            }
+        }
     }
 
     // ── DELETE /api/v1/maintenance/{id} ──────────────────────
@@ -423,7 +481,8 @@ public record CreateMaintenanceRequest(
     DateTime ScheduledDate,
     string?  AssignedTo,
     string?  Notes,
-    string?  Checklist
+    string?  Checklist,
+    bool?    SendEmail
 );
 
 public record UpdateMaintenanceRequest(
@@ -433,7 +492,8 @@ public record UpdateMaintenanceRequest(
     string?   AssignedTo,
     string?   Notes,
     string?   Checklist,
-    string?   Status
+    string?   Status,
+    bool?     SendEmail
 );
 
 public record CompleteRequest(string? Notes);

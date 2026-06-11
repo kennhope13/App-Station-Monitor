@@ -1,3 +1,4 @@
+
 # Docker Compose for Development TimescaleDB (PostgreSQL)
 # Run to start local DB: docker compose -f docker-compose.db.yml up -d
 # To stop: docker compose -f docker-compose.db.yml down
@@ -8,7 +9,7 @@ name: stationos-main
 services:
   postgres:
     image: timescale/timescaledb:latest-pg16
-    container_name: stationos-dev-db
+    container_name: stationos-monitor-db
     environment:
       POSTGRES_DB: StationOS
       POSTGRES_USER: postgres

@@ -5,7 +5,7 @@ import { getCSSColor } from '@/utils/theme-colors';
 const MOCK_EVENTS_BY_SOURCE = [
   { source: 'AI Detection (Lửa/Khói)', count: 45, color: '#3B82F6' },
   { source: 'ISAPI (Vượt hàng rào)', count: 120, color: '#8B5CF6' },
-  { source: 'Rule Engine (Nhiệt độ cao)', count: 85, color: '#F59E0B' },
+  { source: 'Liên kết CMMS & Email (Nhiệt độ cao)', count: 85, color: '#F59E0B' },
   { source: 'Hệ thống báo cháy (Fire Alarm)', count: 8, color: '#EF4444' },
   { source: 'Manual (Báo cáo thủ công)', count: 12, color: '#10B981' },
 ];

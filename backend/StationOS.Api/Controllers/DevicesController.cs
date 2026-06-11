@@ -558,12 +558,12 @@ public class DevicesController : ControllerBase
         var point = new RoiPoint
         {
             DeviceId = deviceId,
-            Name = req.Name,
+            Name = req.Name ?? string.Empty,
             Tx = req.Tx,
             Ty = req.Ty,
             Ox = req.Ox ?? req.Tx,
             Oy = req.Oy ?? req.Ty,
-            PointId = assignedPointId,
+            PointId = assignedPointId ?? string.Empty,
             Color = req.Color,
             SortOrder = req.SortOrder,
             PreAlarmThreshold = req.PreAlarmThreshold ?? 50.0f,
@@ -633,7 +633,7 @@ public class DevicesController : ControllerBase
             var scopedService = scope.ServiceProvider.GetRequiredService<DeviceService>();
             await scopedService.SyncThermalConfigToAIEngineAsync(deviceId);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Fail silently or log if possible to prevent background thread crash
         }

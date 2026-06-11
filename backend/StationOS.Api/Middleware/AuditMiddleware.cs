@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // AuditMiddleware — Tự động ghi AuditLog cho mọi thao tác
 // POST/PUT/DELETE /api/v1/** → ghi vào bảng AuditLogs
 // Bỏ qua: GET, auth/login, auth/refresh, ws/*
@@ -32,6 +32,16 @@ public class AuditMiddleware
         if (!IsWriteMethod(method)) return;
         if (!path.StartsWith("/api/v1/")) return;
         if (path.Contains("/auth/")) return;
+        
+        // Bỏ qua các API tự động, dữ liệu lớn hoặc query runtime (tránh làm tràn ngập log)
+        if (path.Contains("/measurements/ingest") ||
+            path.Contains("/camera-webhook") ||
+            path.Contains("/thermal/live-temps") ||
+            path.StartsWith("/api/v1/ai-events", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         if (ctx.Response.StatusCode is < 200 or >= 300) return;
         if (ctx.User?.Identity?.IsAuthenticated != true) return;
 
@@ -104,6 +114,15 @@ public class AuditMiddleware
         if (!IsWriteMethod(method)) return null;
         if (!path.StartsWith("/api/v1/")) return null;
         if (path.Contains("/auth/")) return null;
+
+        // Bỏ qua các API tự động, dữ liệu lớn hoặc query runtime để tránh buffer tốn tài nguyên
+        if (path.Contains("/measurements/ingest") ||
+            path.Contains("/camera-webhook") ||
+            path.Contains("/thermal/live-temps") ||
+            path.StartsWith("/api/v1/ai-events", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
         if (!contentType.Contains("application/json", StringComparison.OrdinalIgnoreCase)) return null;
         if (!ctx.Request.Body.CanRead) return null;
 
