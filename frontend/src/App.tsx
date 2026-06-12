@@ -124,6 +124,9 @@ export default function App() {
             <Route path="license" element={<ProtectedRoute roles={['admin']} denyRestricted><LicensePage /></ProtectedRoute>} />
             <Route path="*" element={<div style={{color:'var(--admin-text)', padding:20}}>404 - Page not found</div>} />
           </Route>
+
+          {/* Standalone Live View for Multi-monitor (no AppShell) */}
+          <Route path="/standalone-live/:stationId" element={<ProtectedRoute><RealtimeMonitorPage standaloneMode={true} /></ProtectedRoute>} />
         </Routes>
       </Suspense>
     </BrowserRouter>

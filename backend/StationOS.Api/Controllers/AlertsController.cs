@@ -61,12 +61,16 @@ public class AlertsController : ControllerBase
         [FromQuery] string? status,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
+        [FromQuery] Guid? stationId,
         [FromQuery] int limit = 200)
     {
         var q = _db.Alerts.AsQueryable();
 
         var allowed = await _permissions.GetAllowedStationIdsAsync();
         if (allowed != null) q = q.Where(a => allowed.Contains(a.StationId));
+
+        if (stationId.HasValue)
+            q = q.Where(a => a.StationId == stationId.Value);
 
         if (!string.IsNullOrEmpty(status))
             q = q.Where(a => a.Status == status);
@@ -239,12 +243,16 @@ public class AlertsController : ControllerBase
     public async Task<IActionResult> Export(
         [FromQuery] string? status,
         [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to)
+        [FromQuery] DateTime? to,
+        [FromQuery] Guid? stationId)
     {
         var q = _db.Alerts.AsQueryable();
+        var allowed = await _permissions.GetAllowedStationIdsAsync();
+        if (allowed != null) q = q.Where(a => allowed.Contains(a.StationId));
         if (!string.IsNullOrEmpty(status)) q = q.Where(a => a.Status == status);
         if (from.HasValue) q = q.Where(a => a.TriggeredAt >= from.Value);
         if (to.HasValue)   q = q.Where(a => a.TriggeredAt <= to.Value);
+        if (stationId.HasValue) q = q.Where(a => a.StationId == stationId.Value);
         var alerts = await q.OrderByDescending(a => a.TriggeredAt).ToListAsync();
 
         // Lấy tên thiết bị

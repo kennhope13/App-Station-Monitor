@@ -36,6 +36,7 @@ export interface StationLocation {
   lat?: number;
   lng?: number;
   address?: string;
+  province?: string;
 }
 
 export interface Device {

@@ -10,11 +10,12 @@ import type { AlertItem, AlertHistoryEntry } from '@/types/api.types';
 
 export class AlertService {
   /** Lấy danh sách cảnh báo. Lọc theo status (open/acked/closed), khoảng thời gian, giới hạn số lượng. */
-  async getAlerts(status?: string, from?: string, to?: string, limit = 200): Promise<AlertItem[]> {
+  async getAlerts(status?: string, from?: string, to?: string, limit = 200, stationId?: string): Promise<AlertItem[]> {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (from)   params.set('from', from);
     if (to)     params.set('to', to);
+    if (stationId) params.set('stationId', stationId);
     params.set('limit', String(limit));
     return apiFetch<AlertItem[]>(`/alerts?${params.toString()}`);
   }
@@ -35,11 +36,12 @@ export class AlertService {
   }
 
   /** Xuất danh sách cảnh báo ra file CSV. Trả về Blob để trigger download. */
-  async exportCsv(opts?: { status?: string; from?: string; to?: string }): Promise<Blob> {
+  async exportCsv(opts?: { status?: string; from?: string; to?: string; stationId?: string }): Promise<Blob> {
     const params = new URLSearchParams();
     if (opts?.status) params.set('status', opts.status);
     if (opts?.from)   params.set('from', opts.from);
     if (opts?.to)     params.set('to', opts.to);
+    if (opts?.stationId) params.set('stationId', opts.stationId);
     const token = authService.getToken();
     const res = await fetch(`${API_BASE}/alerts/export?${params}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}

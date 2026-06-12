@@ -12,7 +12,17 @@ import './AlertsHistoryPage.css';
 
 type AlertDetail = AlertItem & { history: AlertHistoryEntry[] };
 
-export default function AlertsHistoryPage() {
+interface AlertsHistoryPageProps {
+  embeddedMode?: 'default' | 'central';
+  stationIdOverride?: string | null;
+  onStationIdChange?: (stationId: string | null) => void;
+}
+
+export default function AlertsHistoryPage({
+  embeddedMode = 'default',
+  stationIdOverride = null,
+  onStationIdChange,
+}: AlertsHistoryPageProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [timeRange, setTimeRange] = useState('7d');
   const [filterStatus, setFilterStatus] = useState('');
@@ -23,27 +33,59 @@ export default function AlertsHistoryPage() {
   const [detailData, setDetailData] = useState<AlertDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [isEpOpen, setIsEpOpen] = useState(true);
+  const [stationFilter, setStationFilter] = useState<string>(stationIdOverride || searchParams.get('stationId') || '');
 
   const stations = useStationStore(s => s.stations);
   const fetchStations = useStationStore(s => s.fetch);
   const ackAlertInStore = useAlertStore(s => s.ack);
   const closeAlertInStore = useAlertStore(s => s.close);
+  const isCentralMode = embeddedMode === 'central';
+  const isFleetView = isCentralMode && !stationIdOverride;
+  const effectiveStationId = stationIdOverride || stationFilter || undefined;
 
   const dates = useMemo(() => fmtTimeRange(timeRange), [timeRange]);
 
   useEffect(() => { fetchStations(); }, [fetchStations]);
+
+  useEffect(() => {
+    if (stationIdOverride !== null) {
+      setStationFilter(stationIdOverride || '');
+    }
+  }, [stationIdOverride]);
+
+  useEffect(() => {
+    const queryStationId = searchParams.get('stationId') || '';
+    const queryAlertId = searchParams.get('alertId');
+
+    if (embeddedMode === 'default' && queryStationId) {
+      setStationFilter(queryStationId);
+    }
+    if (queryAlertId) {
+      setSelectedAlertId(queryAlertId);
+    }
+  }, [embeddedMode, searchParams]);
 
   const loadAlerts = useCallback(async () => {
     setLoading(true);
     try {
       const from = dates.from ? new Date(dates.from).toISOString() : undefined;
       const to = dates.to ? new Date(dates.to + 'T23:59:59').toISOString() : undefined;
-      const data = await stationApi.getAlerts(filterStatus || undefined, from, to);
+      const data = await stationApi.getAlerts(filterStatus || undefined, from, to, 200, effectiveStationId);
       setAlerts(data);
     } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [dates, filterStatus]);
+  }, [dates, effectiveStationId, filterStatus]);
 
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
+
+  useEffect(() => {
+    if (!selectedAlertId) return;
+    if (!alerts.some(a => a.id === selectedAlertId)) {
+      setSelectedAlertId(null);
+      setDetailData(null);
+      return;
+    }
+    loadDetail(selectedAlertId, true);
+  }, [alerts, selectedAlertId]);
 
   useEffect(() => {
     const hub = getRealtimeHub();
@@ -70,8 +112,24 @@ export default function AlertsHistoryPage() {
   const filtered = useMemo(() => {
     if (!searchText) return alerts;
     const q = searchText.toLowerCase();
-    return alerts.filter(a => a.message.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
+    return alerts.filter(a =>
+      a.message.toLowerCase().includes(q) ||
+      a.id.toLowerCase().includes(q) ||
+      (a.stationName || '').toLowerCase().includes(q)
+    );
   }, [alerts, searchText]);
+
+  const handleStationFilterChange = (value: string) => {
+    setStationFilter(value);
+    onStationIdChange?.(value || null);
+    if (embeddedMode === 'default') {
+      setSearchParams(prev => {
+        if (value) prev.set('stationId', value);
+        else prev.delete('stationId');
+        return prev;
+      }, { replace: true });
+    }
+  };
 
   const handleAck = async (id: string) => {
     await ackAlertInStore(id, 'Tiếp nhận qua hệ thống');
@@ -102,6 +160,17 @@ export default function AlertsHistoryPage() {
         </div>
         <div style={{ flex: 1 }} />
         <div className="nvr-ep-filters" style={{ display:'flex', gap: 10, alignItems: 'center' }}>
+           {isCentralMode && (
+             <>
+               <span className="rtm-title" style={{ letterSpacing: 1, fontSize: 9 }}>TRẠM:</span>
+               <select className="nvr-sel" value={stationFilter} onChange={e => handleStationFilterChange(e.target.value)} disabled={!!stationIdOverride}>
+                  <option value="">{isFleetView ? 'TẤT CẢ TRẠM' : 'TRẠM HIỆN TẠI'}</option>
+                  {stations.map(st => (
+                    <option key={st.id} value={st.id}>{st.name}</option>
+                  ))}
+               </select>
+             </>
+           )}
            <span className="rtm-title" style={{ letterSpacing: 1, fontSize: 9 }}>TRẠNG THÁI:</span>
            <select className="nvr-sel" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
               <option value="">TẤT CẢ</option>
@@ -128,6 +197,7 @@ export default function AlertsHistoryPage() {
                     <tr>
                        <th style={{ width: 60, textAlign: 'center' }}>ẢNH</th>
                        <th style={{ width: 140 }}>THỜI GIAN</th>
+                       {isFleetView && <th style={{ width: 180 }}>TRẠM</th>}
                        <th style={{ width: 100 }}>MỨC ĐỘ</th>
                        <th>NỘI DUNG</th>
                        <th style={{ width: 100 }}>TRẠNG THÁI</th>
@@ -143,6 +213,7 @@ export default function AlertsHistoryPage() {
                              </div>
                           </td>
                           <td className="mono">{fmtDateTime(a.triggeredAt)}</td>
+                          {isFleetView && <td><b className="act-bold">{a.stationName || 'N/A'}</b></td>}
                           <td><span className={'badge-' + a.level}>{alertLevelLabel(a.level).toUpperCase()}</span></td>
                           <td><b className="act-bold">{a.message}</b></td>
                           <td><span className={'status-' + a.status}>{alertStatusLabel(a.status).toUpperCase()}</span></td>
@@ -173,6 +244,7 @@ export default function AlertsHistoryPage() {
                          ) : <div className="no-media">KHÔNG CÓ DỮ LIỆU PHƯƠNG TIỆN</div>}
                       </div>
                       <div className="detail-row"><span>THÔNG ĐIỆP</span><b className="highlight">{detailData.message}</b></div>
+                      {detailData.stationName && <div className="detail-row"><span>TRẠM</span><b>{detailData.stationName}</b></div>}
                       <div className="detail-row"><span>THỜI GIAN</span><b>{fmtDateTime(detailData.triggeredAt)}</b></div>
                       <div className="detail-row"><span>MỨC ĐỘ</span><b className={'badge-' + detailData.level}>{alertLevelLabel(detailData.level).toUpperCase()}</b></div>
                       

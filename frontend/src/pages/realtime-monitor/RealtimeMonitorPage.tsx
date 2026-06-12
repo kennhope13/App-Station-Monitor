@@ -6,7 +6,11 @@
 // ============================================================
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Map as MapIcon, AlertTriangle, Activity, Server, CheckCircle, Video, Radio, ShieldCheck, Clock, Search } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { 
+  Map as MapIcon, AlertTriangle, Activity, Server, CheckCircle, Video, Radio, 
+  ShieldCheck, Clock, Search, ExternalLink, PlusSquare
+} from 'lucide-react';
 import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
 import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
@@ -25,6 +29,7 @@ interface RealtimeMonitorPageProps {
   embeddedMode?: 'default' | 'central';
   stationIdOverride?: string | null;
   onStationIdChange?: (stationId: string) => void;
+  standaloneMode?: boolean;
 }
 
 
@@ -39,7 +44,11 @@ export default function RealtimeMonitorPage({
   embeddedMode = 'default',
   stationIdOverride = null,
   onStationIdChange,
+  standaloneMode = false,
 }: RealtimeMonitorPageProps) {
+  const { stationId: paramStationId } = useParams();
+  const effectiveStationId = stationIdOverride || paramStationId || null;
+
   const [cameras, setCameras] = useState<CameraDevice[]>([]);
   const [layout, setLayout] = useState<Layout>('l4');
   const [selectedCamFilter, setSelectedCamFilter] = useState('');
@@ -191,8 +200,8 @@ export default function RealtimeMonitorPage({
       }
     };
 
-    const savedStationId = stationIdOverride || localStorage.getItem('selected_station_id');
-    if (embeddedMode === 'central' && !stationIdOverride) {
+    const savedStationId = effectiveStationId || localStorage.getItem('selected_station_id');
+    if (embeddedMode === 'central' && !effectiveStationId) {
       stations.forEach(s => fetchDevices(s.id));
       fetchAlerts(ALERT_STATUS.OPEN);
       loadAllStationsCams();
@@ -1121,12 +1130,12 @@ export default function RealtimeMonitorPage({
     <div className="rtm-page">
 
       {/* ── Toolbar ── */}
-      {(!isCentralFleetView || stationIdOverride) && (
+      {(!isCentralFleetView || effectiveStationId || standaloneMode) && (
         <div className="page-toolbar-row dash-header" style={{ height: 32, minHeight: 32 }}>
-          {((embeddedMode !== 'central') || (embeddedMode === 'central' && stationIdOverride)) && (
+          {((embeddedMode !== 'default') || (embeddedMode === 'central' && effectiveStationId) || standaloneMode) && (
             <div className="page-title-cell">
-              {embeddedMode !== 'central' && <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>}
-              {embeddedMode === 'central' && stationIdOverride && (
+              {(embeddedMode === 'default' && !standaloneMode) && <h2>GIÁM SÁT CAMERA TRỰC TIẾP</h2>}
+              {((embeddedMode === 'central' && effectiveStationId) || standaloneMode) && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{
                     padding: '2px 10px', background: 'rgba(255,255,255,0.03)',
@@ -1135,15 +1144,16 @@ export default function RealtimeMonitorPage({
                     fontSize: '.72rem', fontWeight: 800,
                     textTransform: 'uppercase', letterSpacing: '0.05em'
                   }}>
-                    {stations.find(s => s.id === stationIdOverride)?.name || 'Chi tiết trạm'}
+                    {stations.find(s => s.id === (effectiveStationId || paramStationId))?.name || 'Chi tiết trạm'}
                   </div>
+                  {standaloneMode && <span style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>CHẾ ĐỘ GIÁM SÁT ĐỘC LẬP</span>}
                 </div>
               )}
             </div>
           )}
 
           <div className="page-toolbar-group">
-            {!isCentralFleetView && (
+            {(!isCentralFleetView || standaloneMode) && (
               <>
             <button className={`nvr-lb ${layout === 'l1' ? 'active' : ''}`} onClick={() => setLayout('l1')} title="1×1">
               <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="1.5"/></svg>
@@ -1183,7 +1193,7 @@ export default function RealtimeMonitorPage({
 
       {/* ── Main Area ── */}
       <div className="rtm-main">
-        {isCentralFleetView ? (
+        {isCentralFleetView && !standaloneMode ? (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--admin-bg)', overflow: 'hidden' }}>
 
             {/* Station Mosaic Grid */}
@@ -1212,11 +1222,30 @@ export default function RealtimeMonitorPage({
                                  <div className="rtm-fleet-card-dot" style={{ background: stat.online > 0 ? 'var(--admin-success)' : 'var(--admin-danger)', boxShadow: stat.online > 0 ? '0 0 5px var(--admin-success)' : 'none' }} />
                                  <b>{stat.stationName.toUpperCase()}</b>
                               </div>
-                              {stat.alertCount > 0 && (
-                                 <div className="rtm-fleet-alert-badge">
-                                    <AlertTriangle size={10} /> {stat.alertCount}
-                                 </div>
-                              )}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <button 
+                                  className="rtm-card-action-btn" 
+                                  title="Mở tab mới"
+                                  onClick={(e) => { e.stopPropagation(); stat.stationId && onStationIdChange?.(stat.stationId); }}
+                                >
+                                  <PlusSquare size={12} />
+                                </button>
+                                <button 
+                                  className="rtm-card-action-btn" 
+                                  title="Mở cửa sổ riêng (Pop-out)"
+                                  onClick={(e) => { 
+                                    e.stopPropagation(); 
+                                    window.open(`/standalone-live/${stat.stationId}`, `live_${stat.stationId}`, 'width=1280,height=720'); 
+                                  }}
+                                >
+                                  <ExternalLink size={12} />
+                                </button>
+                                {stat.alertCount > 0 && (
+                                  <div className="rtm-fleet-alert-badge">
+                                      <AlertTriangle size={10} /> {stat.alertCount}
+                                  </div>
+                                )}
+                              </div>
                            </div>
 
                            {/* Preview Section */}

@@ -6,7 +6,7 @@ import { ALERT_STATUS, DEVICE_STATUS } from '@/types/enums';
 import {
   Search, Map, AlertTriangle,
   X, ShieldCheck, Wifi,
-  ChevronLeft, ChevronRight, Plus, LogIn, LogOut, FileText, FileArchive, Users, LineChart, Radio, Video,
+  ChevronLeft, ChevronRight, Plus, LogIn, LogOut, FileText, FileArchive, Users, LineChart, Radio, Video, Maximize2,
   Download, RefreshCw, Calendar, Clock, Loader2, Filter, Bell, Zap
 } from 'lucide-react';
 import { stationApi } from '@/services/StationApiService';
@@ -17,6 +17,7 @@ const CentralAnalyticsLayout = lazy(() => import('@/pages/analytics/CentralAnaly
 const DeviceManagementPage = lazy(() => import('@/pages/device-management/DeviceManagementPage'));
 const CentralDeviceView = lazy(() => import('@/pages/multisite/CentralDeviceView'));
 const RealtimeMonitorPage = lazy(() => import('@/pages/realtime-monitor/RealtimeMonitorPage'));
+const AlertsHistoryPage = lazy(() => import('@/pages/alerts-history/AlertsHistoryPage'));
 const ReportsPage = lazy(() => import('@/pages/reports/ReportsPage'));
 const UserManagementPage = lazy(() => import('@/pages/user-management/UserManagementPage'));
 
@@ -35,13 +36,14 @@ interface StationView {
   alertsList: AlertItem[];
 }
 
-type MultisiteTab = 'overview' | 'analytics' | 'devices' | 'truc_tiep' | 'audit_log' | 'reports' | 'users';
+type MultisiteTab = 'overview' | 'analytics' | 'devices' | 'truc_tiep' | 'alerts_history' | 'audit_log' | 'reports' | 'users';
 
 const MULTISITE_TAB_TITLES: Record<MultisiteTab, string> = {
   overview: 'GIÁM SÁT TỔNG QUAN',
   truc_tiep: 'TRỰC TIẾP',
   analytics: 'PHÂN TÍCH',
   devices: 'THIẾT BỊ',
+  alerts_history: 'LỊCH SỬ CẢNH BÁO',
   audit_log: 'NHẬT KÝ',
   reports: 'BÁO CÁO',
   users: 'QUẢN TRỊ NHÂN SỰ & TRẠM',
@@ -53,6 +55,18 @@ function parseLocation(raw?: any): StationLocation {
   if (!raw) return {};
   if (typeof raw === 'object') return raw;
   try { return JSON.parse(raw); } catch { return {}; }
+}
+
+function extractProvince(v: StationView): string {
+  if (v.location.province) return v.location.province;
+  if (v.location.address) {
+    const parts = v.location.address.split(',').map((s: string) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1] as string;
+  }
+  // Tách từ tên trạm: "Trạm 110kV Long An" → "Long An"
+  const m = v.station.name.match(/(?:Trạm|TBA)\s+\d+[kK][vV]\s+(.+)$/i);
+  if (m && m[1]) return m[1].trim();
+  return 'Khác';
 }
 
 export default function MultisitePage() {
@@ -95,6 +109,8 @@ export default function MultisitePage() {
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'warning' | 'normal'>('all');
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
+  const [openLiveStations, setOpenLiveStations] = useState<string[]>([]);
+  const [selectedProvince, setSelectedProvince] = useState<string | null>(null);
   const [showLeftPanel, setShowLeftPanel] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [devicePanelAction, setDevicePanelAction] = useState<'new' | null>(null);
@@ -112,7 +128,27 @@ export default function MultisitePage() {
     setDevicePanelAction(options?.deviceAction ?? null);
     if (!options?.preserveStation) {
       setSelectedStationId(null);
+      setSelectedProvince(null);
       setViewingStation(null);
+      if (tab !== 'truc_tiep') {
+        setOpenLiveStations([]);
+      }
+    }
+  };
+
+  const handleOpenStationTab = (stationId: string) => {
+    if (!openLiveStations.includes(stationId)) {
+      setOpenLiveStations(prev => [...prev, stationId]);
+    }
+    setSelectedStationId(stationId);
+  };
+
+  const handleCloseStationTab = (e: React.MouseEvent, stationId: string) => {
+    e.stopPropagation();
+    const nextList = openLiveStations.filter(id => id !== stationId);
+    setOpenLiveStations(nextList);
+    if (selectedStationId === stationId) {
+      setSelectedStationId(nextList.length > 0 ? (nextList[nextList.length - 1] ?? null) : null);
     }
   };
 
@@ -129,6 +165,7 @@ export default function MultisitePage() {
   const [newStationLat, setNewStationLat] = useState('');
   const [newStationLng, setNewStationLng] = useState('');
   const [newStationAddress, setNewStationAddress] = useState('');
+  const [newStationProvince, setNewStationProvince] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
@@ -171,11 +208,8 @@ export default function MultisitePage() {
 
     setIsSaving(true);
     try {
-      const locationObj = {
-        lat,
-        lng,
-        address: newStationAddress.trim()
-      };
+      const locationObj: Record<string, unknown> = { lat, lng, address: newStationAddress.trim() };
+      if (newStationProvince.trim()) locationObj.province = newStationProvince.trim();
       await stationApi.createStation(
         newStationName.trim(),
         newStationCode.trim(),
@@ -188,6 +222,7 @@ export default function MultisitePage() {
       setNewStationLat('');
       setNewStationLng('');
       setNewStationAddress('');
+      setNewStationProvince('');
       setIsAddModalOpen(false);
 
       // Force refresh the station list
@@ -268,6 +303,16 @@ export default function MultisitePage() {
       return true;
     });
   }, [views, statusFilter]);
+
+  const provinceGroups = useMemo(() => {
+    const groups: Record<string, StationView[]> = {};
+    filteredViews.forEach(v => {
+      const p = extractProvince(v);
+      if (!groups[p]) groups[p] = [];
+      groups[p].push(v);
+    });
+    return groups;
+  }, [filteredViews]);
 
   // Alias tương thích cho các đoạn JSX/refresh cũ còn tham chiếu tên trước đó.
   const filteredStationStats = filteredViews;
@@ -412,7 +457,7 @@ export default function MultisitePage() {
     return () => clearTimeout(timer);
   }, [showLeftPanel, showRightPanel]);
 
-  // Render station markers on map when views data updates
+  // Render markers: province clusters (level 1) or stations within province (level 2)
   useEffect(() => {
     const L = (window as any).L;
     const map = leafletMap.current;
@@ -421,49 +466,77 @@ export default function MultisitePage() {
     const bounds: [number, number][] = [];
     const newMarkerMap: Record<string, any> = {};
 
-    views.forEach(v => {
-      const lat = v.location.lat;
-      const lng = v.location.lng;
-      if (lat == null || lng == null) return;
+    const stationSvg = `<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="2" y1="3" x2="22" y2="3"/><line x1="2" y1="3" x2="9" y2="10"/><line x1="22" y1="3" x2="15" y2="10"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="10" x2="16" y2="16"/><line x1="16" y1="10" x2="8" y2="16"/><line x1="7" y1="16" x2="17" y2="16"/><line x1="12" y1="3" x2="12" y2="22"/><line x1="8" y1="16" x2="5" y2="22"/><line x1="16" y1="16" x2="19" y2="22"/></svg>`;
 
-      const isWarning = v.kpi.alerts > 0;
-      
-      // Professional Power Station / Facility SVG Icon
-      const svgIcon = `
-        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="css-i6dzq1">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        </svg>
-      `;
+    if (selectedProvince) {
+      // Level 2: individual station markers inside the selected province
+      const pvViews = provinceGroups[selectedProvince] || [];
+      pvViews.forEach(v => {
+        const lat = v.location.lat;
+        const lng = v.location.lng;
+        if (lat == null || lng == null) return;
 
-      const icon = L.divIcon({
-        className: 'custom-gis-marker',
-        html: `
-          <div class="marker-icon-wrapper ${isWarning ? 'pulse-red' : 'pulse-green'}">
-            ${svgIcon}
-          </div>
-          <div class="marker-label-v3">${v.station.name}</div>
-        `,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
-
-      const marker = L.marker([lat, lng], { icon }).addTo(map);
-      bounds.push([lat, lng]);
-      newMarkerMap[v.station.id] = marker;
-
-      // Click on marker will select station on Right Panel
-      marker.on('click', () => {
-        window.requestAnimationFrame(() => {
-          setSelectedStationId(v.station.id);
+        const isWarning = v.kpi.alerts > 0;
+        const icon = L.divIcon({
+          className: 'custom-gis-marker',
+          html: `
+            <div class="marker-icon-wrapper ${isWarning ? 'pulse-red' : 'pulse-green'}">
+              ${stationSvg}
+            </div>
+            <div class="marker-label-v3">${v.station.name}</div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
         });
-      });
 
-      markers.push(marker);
-    });
+        const marker = L.marker([lat, lng], { icon }).addTo(map);
+        bounds.push([lat, lng]);
+        newMarkerMap[v.station.id] = marker;
+        marker.on('click', () => {
+          window.requestAnimationFrame(() => setSelectedStationId(v.station.id));
+        });
+        markers.push(marker);
+      });
+    } else {
+      // Level 1: one cluster marker per province at centroid
+      Object.entries(provinceGroups).forEach(([province, pvViews]) => {
+        const valid = pvViews.filter(v => v.location.lat != null && v.location.lng != null);
+        if (valid.length === 0) return;
+
+        const lat = valid.reduce((s, v) => s + v.location.lat!, 0) / valid.length;
+        const lng = valid.reduce((s, v) => s + v.location.lng!, 0) / valid.length;
+        const hasAlerts = pvViews.some(v => v.kpi.alerts > 0);
+
+        const badgeColor = hasAlerts ? 'var(--admin-danger)' : 'var(--admin-success)';
+        const icon = L.divIcon({
+          className: 'custom-gis-marker',
+          html: `
+            <div class="marker-icon-wrapper ${hasAlerts ? 'pulse-red' : 'pulse-green'}" style="width:36px;height:36px;position:relative;">
+              <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+              <div style="position:absolute;top:-6px;right:-6px;background:${badgeColor};color:#fff;font-size:9px;font-weight:900;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;border:1.5px solid rgba(255,255,255,0.7);line-height:1;">${pvViews.length}</div>
+            </div>
+            <div class="marker-label-v3">${province}</div>
+          `,
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+        });
+
+        const marker = L.marker([lat, lng], { icon }).addTo(map);
+        bounds.push([lat, lng]);
+        marker.on('click', () => {
+          window.requestAnimationFrame(() => {
+            setSelectedProvince(province);
+            setSelectedStationId(null);
+          });
+        });
+        markers.push(marker);
+      });
+    }
 
     markerMapRef.current = newMarkerMap;
 
-    // Center map around all stations only once per overview mount
     if (bounds.length > 0 && !overviewFittedRef.current) {
       if (bounds.length === 1) {
         try { map.setView(bounds[0], 12, { animate: false }); } catch {}
@@ -474,15 +547,28 @@ export default function MultisitePage() {
     }
 
     return () => {
-      markers.forEach(m => {
-        try {
-          m.closePopup?.();
-          m.remove();
-        } catch {}
-      });
+      markers.forEach(m => { try { m.closePopup?.(); m.remove(); } catch {} });
       markerMapRef.current = {};
     };
-  }, [views, activeTab, mapReadyTick]);
+  }, [provinceGroups, selectedProvince, activeTab, mapReadyTick]);
+
+  // Fly to province bounds when a province is selected
+  useEffect(() => {
+    if (!selectedProvince) return;
+    const L = (window as any).L;
+    const map = leafletMap.current;
+    if (!L || !map) return;
+    const pvViews = (provinceGroups[selectedProvince] || []).filter(v => v.location.lat != null && v.location.lng != null);
+    if (pvViews.length === 0) return;
+    const bounds: [number, number][] = pvViews.map(v => [v.location.lat!, v.location.lng!]);
+    try {
+      if (bounds.length === 1) {
+        map.flyTo(bounds[0], 13, { duration: 0.8 });
+      } else {
+        map.flyToBounds(bounds, { padding: [70, 70], maxZoom: 13, duration: 0.8 });
+      }
+    } catch {}
+  }, [selectedProvince, provinceGroups]);
 
   return (
     <div className="multisite-page" style={{ 
@@ -762,6 +848,27 @@ export default function MultisitePage() {
               Thiết bị
             </button>
             <button
+              onClick={() => activateTab('alerts_history')}
+              className="btn-industrial"
+              style={{
+                padding: '0 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                height: 24,
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+                background: activeTab === 'alerts_history' ? 'var(--admin-accent)' : 'transparent',
+                color: activeTab === 'alerts_history' ? '#fff' : 'var(--admin-text-muted)',
+                borderColor: activeTab === 'alerts_history' ? 'var(--admin-accent)' : 'transparent'
+              }}
+            >
+              <Bell size={11} />
+              Cảnh báo
+            </button>
+            <button
               onClick={() => activateTab('audit_log')}
               className="btn-industrial"
               style={{
@@ -933,18 +1040,52 @@ export default function MultisitePage() {
             right: 0,
             bottom: 0,
             zIndex: 2,
-            overflow: 'auto',
+            overflow: 'hidden',
             background: 'var(--admin-bg, #0b1220)',
-            padding: 0
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column'
           }}
         >
-          <Suspense fallback={null}>
-            <RealtimeMonitorPage
-              embeddedMode="central"
-              stationIdOverride={selectedStationId}
-              onStationIdChange={setSelectedStationId}
-            />
-          </Suspense>
+          {/* Sub-tab bar for Live View */}
+          <div className="rtm-subtabs">
+            <div 
+              className={`rtm-subtab ${!selectedStationId ? 'active' : ''}`}
+              onClick={() => setSelectedStationId(null)}
+            >
+              <Video size={14} />
+              <span>TỔNG QUAN LƯỚI</span>
+            </div>
+            {openLiveStations.map(sid => {
+              const s = stations.find(st => st.id === sid);
+              return (
+                <div 
+                  key={sid} 
+                  className={`rtm-subtab ${selectedStationId === sid ? 'active' : ''}`}
+                  onClick={() => setSelectedStationId(sid)}
+                >
+                  <Radio size={12} />
+                  <span>{s?.name || 'Chi tiết trạm'}</span>
+                  <div className="rtm-subtab-pop" onClick={(e) => { e.stopPropagation(); window.open(`/standalone-live/${sid}`, `live_${sid}`, 'width=1280,height=720'); }} title="Mở cửa sổ riêng">
+                    <Maximize2 size={10} />
+                  </div>
+                  <div className="rtm-subtab-close" onClick={(e) => handleCloseStationTab(e, sid)}>
+                    <X size={10} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ flex: 1, position: 'relative', overflow: 'auto' }}>
+            <Suspense fallback={null}>
+              <RealtimeMonitorPage
+                embeddedMode="central"
+                stationIdOverride={selectedStationId}
+                onStationIdChange={handleOpenStationTab}
+              />
+            </Suspense>
+          </div>
         </div>
       )}
 
@@ -963,6 +1104,30 @@ export default function MultisitePage() {
           }}
         >
           <CentralLogView stations={stations} />
+        </div>
+      )}
+
+      {activeTab === 'alerts_history' && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 74,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 2,
+            overflow: 'auto',
+            background: 'var(--admin-bg, #0b1220)',
+            padding: 0
+          }}
+        >
+          <Suspense fallback={null}>
+            <AlertsHistoryPage
+              embeddedMode="central"
+              stationIdOverride={selectedStationId}
+              onStationIdChange={setSelectedStationId}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -1116,59 +1281,100 @@ export default function MultisitePage() {
               </div>
 
               <div className="custom-hud-scroll" style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
-                {filteredViews.length === 0 ? (
-                  <div style={{ padding: 12, textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '0.65rem' }}>
-                    Trống
-                  </div>
-                ) : (
-                  filteredViews.map(v => {
-                    const isWarning = v.kpi.alerts > 0;
-                    const isActive = selectedStationId === v.station.id;
-
-                    return (
-                      <div
-                        key={v.station.id}
-                        className={`station-item-card ${isActive ? 'active-card' : ''}`}
-                        onClick={() => setSelectedStationId(v.station.id)}
-                        style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                            <span style={{
-                              fontSize: '0.68rem', fontWeight: 800, color: 'var(--admin-text)',
-                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.2,
-                              fontFamily: 'monospace'
-                            }}>
-                              {v.station.code || v.station.id.slice(0, 8).toUpperCase()}
-                            </span>
+                {selectedProvince ? (
+                  // Level 2: stations within the selected province
+                  <>
+                    {/* Back to province list */}
+                    <div
+                      className="station-item-card active-card"
+                      onClick={() => { setSelectedProvince(null); setSelectedStationId(null); }}
+                      style={{ padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', background: 'rgba(14,165,233,0.08)' }}
+                    >
+                      <ChevronLeft size={11} style={{ color: 'var(--admin-accent)', flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.65rem', fontWeight: 900, color: 'var(--admin-accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {selectedProvince}
+                      </span>
+                    </div>
+                    {(provinceGroups[selectedProvince] || []).length === 0 ? (
+                      <div style={{ padding: 12, textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '0.65rem' }}>Trống</div>
+                    ) : (
+                      (provinceGroups[selectedProvince] || []).map(v => {
+                        const isWarning = v.kpi.alerts > 0;
+                        const isActive = selectedStationId === v.station.id;
+                        return (
+                          <div
+                            key={v.station.id}
+                            className={`station-item-card ${isActive ? 'active-card' : ''}`}
+                            onClick={() => setSelectedStationId(v.station.id)}
+                            style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--admin-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: 'monospace' }}>
+                                {v.station.code || v.station.id.slice(0, 8).toUpperCase()}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                                <span style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
+                                  {v.kpi.devicesOnline}/{v.kpi.devicesTotal}
+                                </span>
+                                {isWarning ? (
+                                  <span style={{ fontSize: 8, background: 'rgba(239,68,68,0.15)', color: 'var(--admin-danger)', border: '1px solid rgba(239,68,68,0.3)', padding: '0px 3px', fontWeight: 900, height: 12, display: 'flex', alignItems: 'center' }}>
+                                    🔴{v.kpi.alerts}
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--admin-success)', border: '1px solid rgba(16,185,129,0.2)', padding: '0px 3px', fontWeight: 900, height: 12, display: 'flex', alignItems: 'center' }}>
+                                    🟢OK
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: '0.6rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
-                              {v.kpi.devicesOnline}/{v.kpi.devicesTotal}
+                        );
+                      })
+                    )}
+                  </>
+                ) : (
+                  // Level 1: province list
+                  Object.keys(provinceGroups).length === 0 ? (
+                    <div style={{ padding: 12, textAlign: 'center', color: 'var(--admin-text-muted)', fontSize: '0.65rem' }}>Trống</div>
+                  ) : (
+                    Object.entries(provinceGroups).map(([province, pvViews]) => {
+                      const hasAlerts = pvViews.some(v => v.kpi.alerts > 0);
+                      const alertCount = pvViews.reduce((s, v) => s + v.kpi.alerts, 0);
+                      const onlineCount = pvViews.reduce((s, v) => s + v.kpi.devicesOnline, 0);
+                      const totalCount = pvViews.reduce((s, v) => s + v.kpi.devicesTotal, 0);
+                      return (
+                        <div
+                          key={province}
+                          className="station-item-card"
+                          onClick={() => { setSelectedProvince(province); setSelectedStationId(null); }}
+                          style={{ padding: '5px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 900, color: 'var(--admin-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {province}
                             </span>
-                            {isWarning ? (
-                              <span style={{
-                                fontSize: 8, background: 'rgba(239,68,68,0.15)', color: 'var(--admin-danger)',
-                                border: '1px solid rgba(239,68,68,0.3)', padding: '0px 3px', fontWeight: 900,
-                                height: 12, display: 'flex', alignItems: 'center'
-                              }}>
-                                🔴{v.kpi.alerts}
+                            {hasAlerts ? (
+                              <span style={{ fontSize: 8, background: 'rgba(239,68,68,0.15)', color: 'var(--admin-danger)', border: '1px solid rgba(239,68,68,0.3)', padding: '0px 3px', fontWeight: 900, height: 12, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                                🔴{alertCount}
                               </span>
                             ) : (
-                              <span style={{
-                                fontSize: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--admin-success)',
-                                border: '1px solid rgba(16,185,129,0.2)', padding: '0px 3px', fontWeight: 900,
-                                height: 12, display: 'flex', alignItems: 'center'
-                              }}>
+                              <span style={{ fontSize: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--admin-success)', border: '1px solid rgba(16,185,129,0.2)', padding: '0px 3px', fontWeight: 900, height: 12, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                                 🟢OK
                               </span>
                             )}
                           </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.58rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
+                              {pvViews.length} trạm
+                            </span>
+                            <span style={{ fontSize: '0.58rem', color: 'var(--admin-text-muted)', fontWeight: 700 }}>
+                              {onlineCount}/{totalCount} TB
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })
+                  )
                 )}
               </div>
             </div>
@@ -1241,7 +1447,10 @@ export default function MultisitePage() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <button
-                        onClick={() => navigate(`/alerts-history?stationId=${selectedView.station.id}`)}
+                        onClick={() => {
+                          setSelectedStationId(selectedView.station.id);
+                          activateTab('alerts_history', { preserveStation: true });
+                        }}
                         style={{ background: 'var(--admin-accent)', border: 'none', cursor: 'pointer', color: '#fff', padding: '2px 6px', borderRadius: 2, fontSize: '0.6rem', fontWeight: 700 }}
                         title="Xem lịch sử hệ thống của trạm này"
                       >
@@ -1456,18 +1665,33 @@ export default function MultisitePage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>ĐỊA CHỈ</label>
-                <input 
-                  type="text" 
-                  placeholder="Ví dụ: Ninh Kiều, Cần Thơ"
-                  value={newStationAddress}
-                  onChange={e => setNewStationAddress(e.target.value)}
-                  style={{
-                    background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)',
-                    padding: '8px 10px', fontSize: '0.75rem', color: 'var(--admin-text)', outline: 'none'
-                  }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>TỈNH / THÀNH PHỐ *</label>
+                  <input
+                    type="text"
+                    placeholder="Ví dụ: Long An"
+                    value={newStationProvince}
+                    onChange={e => setNewStationProvince(e.target.value)}
+                    style={{
+                      background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)',
+                      padding: '8px 10px', fontSize: '0.75rem', color: 'var(--admin-text)', outline: 'none'
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--admin-text-muted)' }}>ĐỊA CHỈ</label>
+                  <input
+                    type="text"
+                    placeholder="Ví dụ: Tân An, Long An"
+                    value={newStationAddress}
+                    onChange={e => setNewStationAddress(e.target.value)}
+                    style={{
+                      background: 'var(--admin-layer-2)', border: '1px solid var(--admin-border)',
+                      padding: '8px 10px', fontSize: '0.75rem', color: 'var(--admin-text)', outline: 'none'
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
