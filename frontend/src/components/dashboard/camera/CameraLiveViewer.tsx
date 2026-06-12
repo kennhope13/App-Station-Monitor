@@ -1,3 +1,4 @@
+
 import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GO2RTC_URL } from '@/utils/env';
@@ -67,15 +68,18 @@ export default function CameraLiveViewer({ cameraSrc = '', headerAddon, hasAlert
           onDoubleClick={() => navigate('/realtime')}
           style={{ position: 'relative', width: '100%', aspectRatio: '4/3', background: '#000', overflow: 'hidden', cursor: 'pointer' }}
         >
-          {cameraSrc ? (
-            <iframe
-              ref={iframeRef}
-              src={`/camera-stream.html?src=${cameraSrc}&mode=webrtc,mse&go2rtc=${GO2RTC_URL}`}
-              style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', display: 'block' }}
-              allow="autoplay"
-              title="Camera Live Stream"
-            />
-          ) : (
+          {cameraSrc ? (() => {
+            const activeSrc = cameraSrc ? `${cameraSrc}_sub` : '';
+            return (
+              <iframe
+                ref={iframeRef}
+                src={`/camera-stream.html?src=${encodeURIComponent(activeSrc)}&mode=webrtc,mse&go2rtc=${GO2RTC_URL}`}
+                style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none', display: 'block' }}
+                allow="autoplay"
+                title="Camera Live Stream"
+              />
+            );
+          })() : (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', fontWeight: 600 }}>
               Chưa có Camera
             </div>

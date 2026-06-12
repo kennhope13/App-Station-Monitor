@@ -58,30 +58,49 @@ export default function FleetCameraMosaic({ stations, alerts }: FleetCameraMosai
         results.forEach(({ stationName, cams }) => {
           cams.forEach((c) => {
             const cfg = (c as any).config || {};
-            if (c.type === 'camera_dual') {
+             if (c.type === 'camera_dual') {
               mergedCams.push({
                 ...(c as any),
                 id: `${c.id}_optical`,
                 name: `${c.name} (Quang học)`,
-                config: { ...cfg, go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id },
+                config: { 
+                  ...cfg, 
+                  go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id,
+                  go2rtc_sub_id: cfg.go2rtc_optical_sub || (cfg.go2rtc_optical ? `${cfg.go2rtc_optical}_sub` : undefined)
+                },
                 stationName,
               } as any);
               mergedCams.push({
                 ...(c as any),
                 id: `${c.id}_thermal`,
                 name: `${c.name} (Nhiệt)`,
-                config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id },
+                config: { 
+                  ...cfg, 
+                  go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id,
+                  go2rtc_sub_id: cfg.go2rtc_thermal_sub || (cfg.go2rtc_thermal ? `${cfg.go2rtc_thermal}_sub` : undefined)
+                },
                 stationName,
               } as any);
             } else if (c.type === 'camera_thermal') {
               mergedCams.push({
                 ...(c as any),
                 name: c.name.includes('nhiệt') || c.name.includes('Nhiệt') ? c.name : `${c.name} (Nhiệt)`,
-                config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id },
+                config: { 
+                  ...cfg, 
+                  go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id,
+                  go2rtc_sub_id: cfg.go2rtc_thermal_sub || (cfg.go2rtc_thermal ? `${cfg.go2rtc_thermal}_sub` : (cfg.go2rtc_id ? `${cfg.go2rtc_id}_sub` : undefined))
+                },
                 stationName,
               } as any);
             } else {
-              mergedCams.push({ ...(c as any), stationName } as any);
+              mergedCams.push({ 
+                ...(c as any), 
+                config: {
+                  ...cfg,
+                  go2rtc_sub_id: cfg.go2rtc_sub_id || (cfg.go2rtc_id ? `${cfg.go2rtc_id}_sub` : undefined)
+                },
+                stationName 
+              } as any);
             }
             const bId = baseId(c.id);
             mergedStatus[bId] = c.status || 'unknown';
@@ -229,7 +248,7 @@ export default function FleetCameraMosaic({ stations, alerts }: FleetCameraMosai
               <div className="fcm-card-preview">
                 {cam ? (
                   <iframe
-                    src={`/camera-stream.html?src=${encodeURIComponent((cam as any).config?.go2rtc_id || (cam as any).config?.go2rtc_optical || '')}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`}
+                    src={`/camera-stream.html?src=${encodeURIComponent((cam as any).config?.go2rtc_sub_id || (cam as any).config?.go2rtc_id || (cam as any).config?.go2rtc_optical || '')}&mode=webrtc,mse&go2rtc=${encodeURIComponent(GO2RTC_URL)}`}
                     className="fcm-card-iframe"
                     title={cam.name}
                   />

@@ -1,50 +1,55 @@
-import { useEffect, useRef } from 'react';
-import { createRealtimeHub } from '@/services/realtime.service';
+import { useEffect } from 'react';
+import { getRealtimeHub, startRealtimeConnection } from '@/services/realtime.service';
 import { HubConnection } from '@microsoft/signalr';
 
 interface RealtimeHandlers {
   onSensorUpdate?: (data: any[]) => void;
   onAlertNew?: (data: any) => void;
   onAlertUpdated?: (data: any) => void;
+  onDeviceStatus?: (data: any) => void;
 }
 
-/** Hook quản lý vòng đời kết nối SignalR WebSocket: tự động connect khi mount, cleanup khi unmount. */
+/** Hook quản lý vòng đời kết nối SignalR WebSocket sử dụng kết nối singleton dùng chung. */
 export function useRealtime(handlers: RealtimeHandlers, dependencies: any[] = []) {
-  const hubRef = useRef<HubConnection | null>(null);
-
   useEffect(() => {
-    const hub = createRealtimeHub();
-    hubRef.current = hub;
+    const hub = getRealtimeHub();
 
-    if (handlers.onSensorUpdate) {
-      hub.on('SensorUpdate', handlers.onSensorUpdate);
+    const sensorHandler = handlers.onSensorUpdate;
+    const alertNewHandler = handlers.onAlertNew;
+    const alertUpdatedHandler = handlers.onAlertUpdated;
+    const deviceStatusHandler = handlers.onDeviceStatus;
+
+    if (sensorHandler) {
+      hub.on('SensorUpdate', sensorHandler);
     }
-    if (handlers.onAlertNew) {
-      hub.on('AlertNew', handlers.onAlertNew);
+    if (alertNewHandler) {
+      hub.on('AlertNew', alertNewHandler);
     }
-    if (handlers.onAlertUpdated) {
-      hub.on('AlertUpdated', handlers.onAlertUpdated);
+    if (alertUpdatedHandler) {
+      hub.on('AlertUpdated', alertUpdatedHandler);
+    }
+    if (deviceStatusHandler) {
+      hub.on('DeviceStatus', deviceStatusHandler);
     }
 
-    let isMounted = true;
-    const startHub = async () => {
-      try {
-        await hub.start();
-      } catch (err) {
-        console.warn('[useRealtime] SignalR Connection failed, retrying in 5s...', err);
-        if (isMounted) {
-          setTimeout(startHub, 5000);
-        }
-      }
-    };
-    startHub();
+    startRealtimeConnection().catch(() => {});
 
     return () => {
-      isMounted = false;
-      hub.stop();
-      hubRef.current = null;
+      if (sensorHandler) {
+        hub.off('SensorUpdate', sensorHandler);
+      }
+      if (alertNewHandler) {
+        hub.off('AlertNew', alertNewHandler);
+      }
+      if (alertUpdatedHandler) {
+        hub.off('AlertUpdated', alertUpdatedHandler);
+      }
+      if (deviceStatusHandler) {
+        hub.off('DeviceStatus', deviceStatusHandler);
+      }
     };
   }, dependencies);
 
-  return hubRef.current;
+  return getRealtimeHub();
 }
+

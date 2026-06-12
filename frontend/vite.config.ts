@@ -8,6 +8,9 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
+  optimizeDeps: {
+    entries: ['index.html'],
+  },
   plugins: [
     react(),
     VitePWA({
@@ -57,6 +60,11 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
+      },
+      '/sld': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        secure: false,
       },
       '/ai-api': {
         target: 'http://127.0.0.1:8100',

@@ -1,0 +1,19 @@
+import psycopg2
+try:
+    conn = psycopg2.connect(
+        dbname='StationOS',
+        user='postgres',
+        password='postgres123',
+        host='localhost',
+        port='5432'
+    )
+    cur = conn.cursor()
+    cur.execute("SELECT \"Id\", \"Name\", \"Code\" FROM \"Stations\"")
+    stations = cur.fetchall()
+    print("Stations in StationOS (Port 5432):")
+    for s in stations:
+        print(f"ID: {s[0]}, Name: {s[1]}, Code: {s[2]}")
+    cur.close()
+    conn.close()
+except Exception as e:
+    print(f"Error: {e}")

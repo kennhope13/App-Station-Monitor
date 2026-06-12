@@ -385,7 +385,7 @@ const SldCanvas = forwardRef<SldCanvasRef, SldCanvasProps>(
             <g id="sld-bg">
               <rect width={SLD_W} height={SLD_H} fill="none" />
               {svgUrl ? (
-                <image href={svgUrl.startsWith('/sld/') ? `${API_BASE_URL}${svgUrl}` : svgUrl}
+                <image href={svgUrl.startsWith('/sld/') ? svgUrl : `${API_BASE_URL}${svgUrl}`}
                   x="0" y="0" width={SLD_W} height={SLD_H} preserveAspectRatio="xMidYMid meet" filter="url(#sld-color-filter)" />
               ) : (
                 <text x={SLD_W / 2} y={SLD_H / 2} textAnchor="middle" fill="var(--admin-border)" fontSize="18" fontFamily="sans-serif">

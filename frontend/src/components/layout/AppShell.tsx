@@ -14,7 +14,7 @@ import { setTheme as setGlobalTheme } from '@/utils/theme-manager';
 import { showToast } from '@/utils/toast';
 import { playAlertSound } from '@/utils/sound-utils';
 import { isCentralUser as isCentralUserAccount, MULTISITE_RETURN_TAB_KEY } from '@/utils/centralAccess';
-import { createRealtimeHub } from '@/services/realtime.service';
+import { getRealtimeHub, startRealtimeConnection } from '@/services/realtime.service';
 import RichAlertModal from '@/components/ui/RichAlertModal';
 import {
   LayoutDashboard, Video, AlertTriangle, LineChart, FileText,
@@ -185,10 +185,9 @@ export default function AppShell() {
     }).catch(() => {});
 
     // Khởi tạo SignalR Hub toàn cục để lắng nghe mọi sự kiện trên mọi Tab
-    const hub = createRealtimeHub();
+    const hub = getRealtimeHub();
 
-    // 1. Lắng nghe cảnh báo mới từ Rule Engine, Camera, Maintenance
-    hub.on('AlertNew', (alert: AlertItem) => {
+    const onAlertNew = (alert: AlertItem) => {
       invalidateAlerts(ALERT_STATUS.OPEN);
       useAlertStore.getState().prepend(alert);
       fetchAlerts(ALERT_STATUS.OPEN, true);
@@ -212,33 +211,27 @@ export default function AppShell() {
         showToast(alert.message || 'Báo động đỏ mới', 'error');
         playAlertSound('warning'); 
       }
-    });
+    };
 
-    // 2. Lắng nghe cập nhật cảnh báo
-    hub.on('AlertUpdated', (data: any) => {
+    const onAlertUpdated = (data: any) => {
       invalidateAlerts(ALERT_STATUS.OPEN);
       fetchAlerts(ALERT_STATUS.OPEN, true);
 
       // Nếu cảnh báo đang hiện Popup được cập nhật (vd: có ảnh/video mới), cập nhật ngay
       setAlertQueue(q => q.map(a => a.id === data.id ? { ...a, ...data } : a));
-    });
+    };
 
-    // 3. Lắng nghe sự kiện Camera AI
-    hub.on('CameraEvent', (evt: any) => {
-      // Chúng ta không gọi setActiveAlert ở đây nữa vì AlertNew sẽ hiển thị Popup 
-      // với đầy đủ ảnh và thông tin chi tiết (do backend đã thống nhất gửi chung vào AlertNew)
+    const onCameraEvent = (evt: any) => {
       if (!evt || !evt.detectionType) return;
       
-      // partial_discharge đã có AlertNew (level warning/alarm) nên không cần toast info rời rạc gây spam
       const isCritical = ['fire', 'thermal_hotspot', 'intrusion', 'partial_discharge'].includes(evt.detectionType);
       
       if (!isCritical) {
         showToast(`Camera: ${evt.detectionType.toUpperCase()}`, 'info');
       }
-    });
+    };
 
-    // 4. Lắng nghe cập nhật cảm biến (để đồng bộ store cho mọi tab)
-    hub.on('SensorUpdate', (data: SensorPoint[]) => {
+    const onSensorUpdate = (data: SensorPoint[]) => {
       if (!Array.isArray(data)) return;
       useSensorStore.setState(s => {
         const nextPoints = { ...s.pointsByStation };
@@ -257,13 +250,19 @@ export default function AppShell() {
         });
         return { pointsByStation: nextPoints };
       });
-    });
+    };
+
+    // Đăng ký các sự kiện lên connection dùng chung
+    hub.on('AlertNew', onAlertNew);
+    hub.on('AlertUpdated', onAlertUpdated);
+    hub.on('CameraEvent', onCameraEvent);
+    hub.on('SensorUpdate', onSensorUpdate);
 
     let isMounted = true;
     const startHub = async () => {
       try {
         if (isMounted) setSyncState('syncing');
-        await hub.start();
+        await startRealtimeConnection();
         if (isMounted) setSyncState('ok');
         console.log('[AppShell] SignalR Global Connected.');
       } catch (err) {
@@ -278,9 +277,13 @@ export default function AppShell() {
 
     return () => {
       isMounted = false;
-      hub.stop();
+      // Gỡ bỏ listener của AppShell thay vì stop toàn cục connection
+      hub.off('AlertNew', onAlertNew);
+      hub.off('AlertUpdated', onAlertUpdated);
+      hub.off('CameraEvent', onCameraEvent);
+      hub.off('SensorUpdate', onSensorUpdate);
     };
-  }, [fetchAlerts, invalidateAlerts]);
+  }, [fetchAlerts, invalidateAlerts, isCentralMode, location.pathname, enqueueAlertWithTrack]);
 
   const [time, setTime] = useState(new Date().toLocaleTimeString('vi-VN'));
   const [syncState, setSyncState] = useState<'ok' | 'syncing' | 'offline'>(navigator.onLine ? 'syncing' : 'offline');

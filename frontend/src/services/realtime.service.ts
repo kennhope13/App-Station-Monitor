@@ -8,16 +8,66 @@ import * as signalR from '@microsoft/signalr';
 import { API_BASE_URL } from '@/utils/env';
 import { useAuthStore } from '@/store/authStore';
 
-// Tạo HubConnection mới mỗi lần component mount.
-// withAutomaticReconnect([...]) cấu hình thời gian retry rõ ràng thay vì dùng mặc định [0,0,10000]
-// LogLevel.Warning: chỉ log lỗi và warning, bỏ qua debug noise
-export function createRealtimeHub(): signalR.HubConnection {
-  return new signalR.HubConnectionBuilder()
+let hubConnection: signalR.HubConnection | null = null;
+let startPromise: Promise<void> | null = null;
+
+/**
+ * Trả về instance duy nhất của HubConnection (Singleton).
+ */
+export function getRealtimeHub(): signalR.HubConnection {
+  if (hubConnection) return hubConnection;
+
+  hubConnection = new signalR.HubConnectionBuilder()
     .withUrl(`${API_BASE_URL}/ws/realtime`, {
-      // Đọc token từ Zustand store — đồng bộ với AuthService
       accessTokenFactory: () => useAuthStore.getState().token ?? '',
     })
     .withAutomaticReconnect([0, 2000, 5000, 10000, 15000, 30000])
     .configureLogging(signalR.LogLevel.Warning)
     .build();
+
+  return hubConnection;
 }
+
+/**
+ * Khởi chạy kết nối một cách an toàn, tránh chồng chéo các lần kết nối song song.
+ */
+export async function startRealtimeConnection(): Promise<void> {
+  const hub = getRealtimeHub();
+  if (hub.state === signalR.HubConnectionState.Connected) {
+    return;
+  }
+  if (hub.state === signalR.HubConnectionState.Connecting || hub.state === signalR.HubConnectionState.Reconnecting) {
+    return startPromise ?? Promise.resolve();
+  }
+
+  startPromise = (async () => {
+    try {
+      await hub.start();
+      console.log('[RealtimeService] SignalR connection established.');
+    } catch (err) {
+      console.error('[RealtimeService] Failed to start connection:', err);
+      startPromise = null;
+      throw err;
+    }
+  })();
+
+  return startPromise;
+}
+
+/**
+ * Ngắt kết nối SignalR (ví dụ khi người dùng đăng xuất).
+ */
+export async function stopRealtimeConnection(): Promise<void> {
+  if (!hubConnection) return;
+  const hub = hubConnection;
+  startPromise = null;
+  if (hub.state !== signalR.HubConnectionState.Disconnected) {
+    try {
+      await hub.stop();
+      console.log('[RealtimeService] SignalR connection stopped.');
+    } catch (err) {
+      console.error('[RealtimeService] Failed to stop connection:', err);
+    }
+  }
+}
+

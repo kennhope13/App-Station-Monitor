@@ -4,7 +4,7 @@ import { stationApi } from '../../../services/StationApiService';
 import { CameraDevice } from '../../../types/api.types';
 import { authService } from '../../../services/AuthService';
 import { GO2RTC_URL } from '../../../utils/env';
-import { createRealtimeHub } from '../../../services/realtime.service';
+import { getRealtimeHub, startRealtimeConnection } from '../../../services/realtime.service';
 import { confirmDialog } from '@/utils/confirm';
 
 type VVR = { x:number, y:number, width:number, height:number };
@@ -50,7 +50,8 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
   const cursorTimer = useRef<any>(null);
 
   const opSrc = dev.config?.go2rtc_optical || `cam_${(dev.config?.ip||'').replace(/\./g,'_')}_optical`;
-  const thSrc = dev.config?.go2rtc_thermal || dev.config?.go2rtc_id || `cam_${(dev.config?.ip||'').replace(/\./g,'_')}_thermal`;
+  const thSrcRaw = dev.config?.go2rtc_thermal || dev.config?.go2rtc_id || `cam_${(dev.config?.ip||'').replace(/\./g,'_')}_thermal`;
+  const thSrc = (dev.config as any)?.go2rtc_thermal_sub || (thSrcRaw ? `${thSrcRaw}_sub` : '');
 
   const load = useCallback(async () => {
     try {
@@ -91,8 +92,8 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
 
   // Lắng nghe SignalR SensorUpdate — cùng nguồn với realtime page
   useEffect(() => {
-    const hub = createRealtimeHub();
-    hub.on('SensorUpdate', (data: any[]) => {
+    const hub = getRealtimeHub();
+    const onSensorUpdate = (data: any[]) => {
       if (!Array.isArray(data)) return;
       const mine = data.filter(d => d.deviceId === did || d.deviceId?.toLowerCase() === did.toLowerCase());
       if (!mine.length) return;
@@ -107,9 +108,14 @@ export default function ThermalConfigTab({ device: dev }: { device:CameraDevice,
         const upd = mine.find(u => u.roiId === r.id || u.pointId === r.name);
         return upd?.max != null ? { ...r, maxTemp: upd.max } : r;
       }));
-    });
-    hub.start().catch(() => {});
-    return () => { hub.stop(); };
+    };
+
+    hub.on('SensorUpdate', onSensorUpdate);
+
+    startRealtimeConnection().catch(() => {});
+    return () => {
+      hub.off('SensorUpdate', onSensorUpdate);
+    };
   }, [did]);
 
   useEffect(() => {

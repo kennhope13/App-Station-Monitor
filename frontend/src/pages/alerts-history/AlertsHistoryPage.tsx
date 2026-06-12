@@ -4,7 +4,7 @@ import { RefreshCw, Play, Camera, Search, ChevronRight, ChevronLeft, Clock, Shie
 import { stationApi, AlertItem, AlertHistoryEntry } from '@/services/StationApiService';
 import { useStationStore, useDeviceStore, useAlertStore } from '@/store';
 import { ALERT_STATUS, ALERT_LEVEL, alertStatusLabel, alertLevelLabel } from '@/types/enums';
-import { createRealtimeHub } from '@/services/realtime.service';
+import { getRealtimeHub, startRealtimeConnection } from '@/services/realtime.service';
 import { fmtDateTime, fmtTimeRange } from '@/utils/format';
 import { confirmDialog } from '@/utils/confirm';
 import { GO2RTC_URL } from '@/utils/env';
@@ -46,13 +46,16 @@ export default function AlertsHistoryPage() {
   useEffect(() => { loadAlerts(); }, [loadAlerts]);
 
   useEffect(() => {
-    const hub = createRealtimeHub();
-    hub.on('AlertUpdated', (data: any) => {
+    const hub = getRealtimeHub();
+    const onAlertUpdated = (data: any) => {
       setAlerts(prev => prev.map(a => a.id === data.id ? { ...a, ...data } : a));
       if (selectedAlertId === data.id) loadDetail(data.id, true);
-    });
-    hub.start().catch(() => {});
-    return () => { hub.stop(); };
+    };
+    hub.on('AlertUpdated', onAlertUpdated);
+    startRealtimeConnection().catch(() => {});
+    return () => {
+      hub.off('AlertUpdated', onAlertUpdated);
+    };
   }, [selectedAlertId]);
 
   const loadDetail = async (id: string, silent = false) => {

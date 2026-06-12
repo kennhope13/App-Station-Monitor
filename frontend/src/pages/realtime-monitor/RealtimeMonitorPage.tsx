@@ -11,7 +11,7 @@ import ToolbarSelect from '@/components/ui/ToolbarSelect';
 import { stationApi, CameraDevice, RoiPoint, Boundary } from '@/services/StationApiService';
 import { GO2RTC_URL, AI_ENGINE_URL, API_BASE_URL } from '@/utils/env';
 import { authService } from '@/services/AuthService';
-import { createRealtimeHub } from '@/services/realtime.service';
+import { getRealtimeHub, startRealtimeConnection } from '@/services/realtime.service';
 import { useAlertStore } from '@/store/alertStore';
 import { useDeviceStore } from '@/store/deviceStore';
 import { useStationStore } from '@/store/stationStore';
@@ -90,24 +90,39 @@ export default function RealtimeMonitorPage({
           ...withStationMeta,
           id: `${c.id}_optical`,
           name: `${c.name} (Quang học)`,
-          config: { ...cfg, go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id }
+          config: { 
+            ...cfg, 
+            go2rtc_id: cfg.go2rtc_optical || cfg.go2rtc_id,
+            go2rtc_sub_id: cfg.go2rtc_optical_sub || (cfg.go2rtc_optical ? `${cfg.go2rtc_optical}_sub` : undefined)
+          }
         } as any);
         expandedCams.push({
           ...withStationMeta,
           id: `${c.id}_thermal`,
           name: `${c.name} (Nhiệt)`,
-          config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
+          config: { 
+            ...cfg, 
+            go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id,
+            go2rtc_sub_id: cfg.go2rtc_thermal_sub || (cfg.go2rtc_thermal ? `${cfg.go2rtc_thermal}_sub` : undefined)
+          }
         } as any);
       } else if (c.type === 'camera_thermal') {
         expandedCams.push({
           ...withStationMeta,
           name: c.name.includes('nhiệt') || c.name.includes('Nhiệt') ? c.name : `${c.name} (Nhiệt)`,
-          config: { ...cfg, go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id }
+          config: { 
+            ...cfg, 
+            go2rtc_id: cfg.go2rtc_thermal || cfg.go2rtc_id,
+            go2rtc_sub_id: cfg.go2rtc_thermal_sub || (cfg.go2rtc_thermal ? `${cfg.go2rtc_thermal}_sub` : (cfg.go2rtc_id ? `${cfg.go2rtc_id}_sub` : undefined))
+          }
         } as any);
       } else {
         expandedCams.push({
           ...withStationMeta,
-          config: cfg
+          config: {
+            ...cfg,
+            go2rtc_sub_id: cfg.go2rtc_sub_id || (cfg.go2rtc_id ? `${cfg.go2rtc_id}_sub` : undefined)
+          }
         } as any);
       }
     });
@@ -271,12 +286,12 @@ export default function RealtimeMonitorPage({
 
   // SignalR (Simplified: only local UI state, global alerts handled in AppShell)
   useEffect(() => {
-    const hubConnection = createRealtimeHub();
-    hubConnection.on('DeviceStatus', (data: { deviceId: string; status: string }) => {
+    const hubConnection = getRealtimeHub();
+    const onDeviceStatus = (data: { deviceId: string; status: string }) => {
       setDeviceStatus(prev => ({ ...prev, [data.deviceId.toLowerCase()]: data.status }));
-    });
+    };
     
-    hubConnection.on('SensorUpdate', (data: any[]) => {
+    const onSensorUpdate = (data: any[]) => {
       if (!Array.isArray(data)) return;
       setRoiReadings(prev => {
         const next = { ...prev };
@@ -291,10 +306,16 @@ export default function RealtimeMonitorPage({
         });
         return next;
       });
-    });
+    };
 
-    hubConnection.start().catch(() => {});
-    return () => { hubConnection.stop(); };
+    hubConnection.on('DeviceStatus', onDeviceStatus);
+    hubConnection.on('SensorUpdate', onSensorUpdate);
+
+    startRealtimeConnection().catch(() => {});
+    return () => {
+      hubConnection.off('DeviceStatus', onDeviceStatus);
+      hubConnection.off('SensorUpdate', onSensorUpdate);
+    };
   }, []);
 
   // Helpers

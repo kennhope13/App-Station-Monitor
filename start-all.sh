@@ -17,17 +17,19 @@ echo ""
 
 # 1. Dọn dẹp các cổng và tiến trình cũ
 echo "[1/4] Đang dọn dẹp các tiến trình chạy trùng cổng..."
-pkill -9 -f "dotnet run --project StationOS.Api" || true
-pkill -9 -f "StationOS.Api" || true
+# Kill TOÀN BỘ dotnet + MSBuild (bao gồm cả setsid session riêng)
+pkill -9 -f "dotnet" || true
+pkill -9 -f "MSBuild" || true
 pkill -9 -f "npm run dev" || true
 pkill -9 -f "vite" || true
 pkill -9 -f "main.py" || true
+sleep 2  # chờ chắc các MSBuild node xậ hẳn
 
 # Quét dọn các tiến trình cứng đầu đang giữ cổng
 for port in 5173 5000 8100 8105; do
     PIDS=$(lsof -t -i:$port 2>/dev/null)
     if [ -n "$PIDS" ]; then
-        echo "$PIDS" | xargs kill -9 >/dev/null 2>&1 || true
+        echo "$PIDS" | xargs kill -9 > /dev/null 2>&1 || true
     fi
 done
 
@@ -66,19 +68,47 @@ fi
 
 # 4. Khởi động Backend (.NET 8)
 echo "[4/4] Khởi động C# Backend..."
-export DOTNET_CLI_HOME=/tmp
-nohup dotnet run --project backend/StationOS.Api > backend.log 2>&1 &
-BACKEND_PID=$!
+export DOTNET_CLI_HOME=/tmp ASPNETCORE_ENVIRONMENT=Development
+
+# Nếu DLL đã build sẵn → dùng --no-build (đữt lại, không cần compile, tiết kiệm RAM)
+# Nếu chưa có DLL → dotnet run bình thường (tự biên dịch 1 lần)
+BACKEND_DLL="backend/StationOS.Api/bin/Release/net8.0/StationOS.Api.dll"
+if [ -f "$BACKEND_DLL" ]; then
+    echo "   ✅ DLL đã tồn tại, bỏ qua biên dịch (dùng --no-build)."
+    (
+        setsid nohup dotnet run --project "$ROOT/backend/StationOS.Api" --no-build -c Release \
+            > "$ROOT/backend.log" 2>&1 &
+        echo $!
+    ) > /tmp/_bpid.txt 2>/dev/null
+else
+    echo "   ⚠️  DLL chưa có, biên dịch lần đầu (có thể mất 60 giây)..."
+    (
+        setsid nohup dotnet run --project "$ROOT/backend/StationOS.Api" -c Release \
+            > "$ROOT/backend.log" 2>&1 &
+        echo $!
+    ) > /tmp/_bpid.txt 2>/dev/null
+fi
+BACKEND_PID=$(cat /tmp/_bpid.txt 2>/dev/null || echo "")
+disown $BACKEND_PID 2>/dev/null || true
 echo "✅ Backend đang khởi chạy ngầm (PID: $BACKEND_PID, Port: 5000)"
 
-# Đợi backend sẵn sàng (tối đa 15 giây, dừng ngay khi OK)
-for i in {1..5}; do
-    sleep 3
+# Đợi backend sẵn sàng (tối đa 30 giây)
+echo -n "   Đang chờ Backend khởi động..."
+BACKEND_READY=false
+for i in {1..15}; do
     if curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/v1/stations 2>/dev/null | grep -q "200"; then
-        echo "✅ Backend đã SẴN SÀNG!"
+        echo " ✅ Backend đã SẴN SÀNG!"
+        BACKEND_READY=true
         break
     fi
+    echo -n "."
+    sleep 2
 done
+
+if [ "$BACKEND_READY" = false ]; then
+    echo ""
+    echo " ⚠️  Backend chưa phản hồi sau 30s. Theo dõi: tail -f backend.log"
+fi
 
 echo ""
 echo "=================================================="
@@ -100,12 +130,13 @@ cd "$ROOT/ai_engine"
 # Cài đặt thư viện tự động nếu thiếu
 if [ -d ".venv" ]; then
     .venv/bin/pip install -r requirements.txt > /dev/null 2>&1 || true
-    nohup .venv/bin/python main.py > "$ROOT/ai_engine.log" 2>&1 &
+    setsid nohup .venv/bin/python main.py > "$ROOT/ai_engine.log" 2>&1 &
 else
     pip3 install -r requirements.txt > /dev/null 2>&1 || true
-    nohup python3 main.py > "$ROOT/ai_engine.log" 2>&1 &
+    setsid nohup python3 main.py > "$ROOT/ai_engine.log" 2>&1 &
 fi
 AI_PID=$!
+disown $AI_PID
 echo "✅ AI Engine đang khởi chạy ngầm (PID: $AI_PID, Port: 8100)"
 
 # Chờ AI Engine sẵn sàng trước khi Vite start (tránh proxy ECONNREFUSED)
@@ -124,10 +155,39 @@ if ! curl -s http://localhost:8100/health > /dev/null 2>&1; then
 fi
 
 cd "$ROOT"
-# Chạy Frontend ở foreground
 cd "$ROOT/frontend"
 if [ ! -d "node_modules" ]; then
     echo "📦 Thư viện Frontend chưa được cài đặt. Đang cài đặt tự động..."
     npm install
 fi
-npm run dev -- --host
+
+# Chạy Frontend trong session riêng — không bị kill khi script thoát
+setsid nohup npm run dev -- --host > "$ROOT/frontend.log" 2>&1 &
+VITE_PID=$!
+disown $VITE_PID
+
+cd "$ROOT"
+echo "✅ Frontend (Vite) đang chạy ngầm (PID: $VITE_PID, Port: 5173)"
+echo -n "   Đang chờ Vite sẵn sàng..."
+for i in {1..15}; do
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:5173 2>/dev/null | grep -qE "^(200|304)"; then
+        echo " ✅ Frontend SẴN SÀNG!"
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+
+echo ""
+echo "=================================================="
+echo " ✅ TẤT CẢ DỊCH VỤ ĐÃ CHẠY TRONG NỀN!"
+echo ""
+echo " Frontend : http://localhost:5173"
+echo " Backend  : http://localhost:5000/swagger"
+echo " go2rtc   : http://localhost:1984"
+echo ""
+echo " Theo dõi logs:"
+echo "   Backend : tail -f $ROOT/backend.log"
+echo "   Frontend: tail -f $ROOT/frontend.log"
+echo "   AI Eng. : tail -f $ROOT/ai_engine.log"
+echo "=================================================="

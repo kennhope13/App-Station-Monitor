@@ -35,8 +35,9 @@ export default function ThermalForecastTab() {
   // Robust Thermal Stream ID selection
   const thSrc = useMemo(() => {
     if (!selectedCamera) return null;
-    const c = selectedCamera.config || {};
-    return c.go2rtc_thermal || c.go2rtc_id || `cam_${(c.ip || '').replace(/\./g, '_')}_thermal`;
+    const c = (selectedCamera.config || {}) as any;
+    const baseThermalId = c.go2rtc_thermal || c.go2rtc_id || `cam_${(c.ip || '').replace(/\./g, '_')}_thermal`;
+    return c.go2rtc_thermal_sub || (baseThermalId ? `${baseThermalId}_sub` : '');
   }, [selectedCamera]);
 
   // Filter targets based on selected camera

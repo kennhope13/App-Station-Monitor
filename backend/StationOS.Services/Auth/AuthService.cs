@@ -157,6 +157,7 @@ public class AuthService
         admin.Email = "admin@StationOS.vn";
         admin.IsActive = true;
         admin.MustChangePassword = false;
+        admin.StationIds = new[] { Guid.Parse("7497ff6f-28c2-47a5-ba28-6b15f8a84c9c") };
 
         // 2. Upsert multi (Đa trạm)
         var multi = await _db.Users.FirstOrDefaultAsync(u => u.Username == "multi");

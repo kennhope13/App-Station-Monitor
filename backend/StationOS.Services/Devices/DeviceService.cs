@@ -181,13 +181,17 @@ public class DeviceService
                 existingStreams[opticalId] = rtspOpticalUrl;
                 existingStreams[thermalId] = rtspThermalUrl;
 
-                // Thêm sub-stream cho luồng quang học nếu có
+                // Thêm sub-stream cho luồng quang học nếu có (dùng transcoding ffmpeg sang H.264)
                 var subOpticalPath = DeriveHikvisionSubPath(opticalPath);
                 if (subOpticalPath != null)
                 {
                     var subOpticalId = opticalId + "_sub";
-                    existingStreams[subOpticalId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subOpticalPath}";
+                    existingStreams[subOpticalId] = $"ffmpeg:rtsp://{username}:{encodedPassword}@{ip}:554{subOpticalPath}#video=h264";
                 }
+
+                // Thêm sub-stream cho luồng nhiệt (transcode sang H.264 để WebRTC hỗ trợ)
+                var subThermalId = thermalId + "_sub";
+                existingStreams[subThermalId] = $"ffmpeg:rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}#video=h264";
 
                 _logger.LogInformation("[go2rtc] Đăng ký camera_dual: {OptId} ({OptPath}) + {ThId} ({ThPath})",
                     opticalId, opticalPath, thermalId, thermalPath);
@@ -206,6 +210,10 @@ public class DeviceService
 
                 existingStreams[thermalId] = rtspThermalUrl;
 
+                // Thêm sub-stream cho luồng nhiệt (transcode sang H.264 để WebRTC hỗ trợ)
+                var subThermalId = thermalId + "_sub";
+                existingStreams[subThermalId] = $"ffmpeg:rtsp://{username}:{encodedPassword}@{ip}:554{thermalPath}#video=h264";
+
                 _logger.LogInformation("[go2rtc] Đăng ký camera_thermal: {ThId} ({ThPath})", thermalId, thermalPath);
             }
             else
@@ -216,11 +224,18 @@ public class DeviceService
 
                 existingStreams[streamId] = rtspUrl;
 
-                var subRtspPath = DeriveHikvisionSubPath(rtspPath);
+                var subRtspPath = config.GetValueOrDefault("rtsp_sub_path")?.ToString() ?? DeriveHikvisionSubPath(rtspPath);
                 if (subRtspPath != null)
                 {
                     var subStreamId = streamId + "_sub";
-                    existingStreams[subStreamId] = $"rtsp://{username}:{encodedPassword}@{ip}:554{subRtspPath}";
+                    if (subRtspPath == rtspPath)
+                    {
+                        existingStreams[subStreamId] = rtspUrl;
+                    }
+                    else
+                    {
+                        existingStreams[subStreamId] = $"ffmpeg:rtsp://{username}:{encodedPassword}@{ip}:554{subRtspPath}#video=h264";
+                    }
                 }
 
                 _logger.LogInformation("[go2rtc] Đăng ký stream {StreamId} -> {RtspPath}", streamId, rtspPath);
