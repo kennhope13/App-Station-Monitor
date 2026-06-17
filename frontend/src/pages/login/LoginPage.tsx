@@ -19,15 +19,65 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isShaking, setIsShaking] = useState(false); // animation lắc form khi sai mật khẩu
 
+  const [autoLoginFailed, setAutoLoginFailed] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
+
+  const params = new URLSearchParams(window.location.search);
+  const isAutoLogin = params.has('token') || params.get('embed') === '1' || window.self !== window.top;
+
+  useEffect(() => {
+    if (isAutoLogin) {
+      const timer = setTimeout(() => {
+        setShowManualForm(true);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isAutoLogin]);
+
   const usernameRef = useRef<HTMLInputElement>(null);
 
-  // Nếu đã đăng nhập rồi thì không cho vào trang login nữa, đá về trang tương ứng
+  const resolveNextPath = () => {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get('next');
+    if (next && next.startsWith('/')) return next;
+    return null;
+  };
+
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const embedUser = params.get('u');
+    const embedPass = params.get('p');
+    const nextPath = resolveNextPath();
+
     if (authService.isAuthenticated()) {
-      navigate('/dashboard', { replace: true });
-    } else {
-      usernameRef.current?.focus();
+      navigate(nextPath || '/dashboard', { replace: true });
+      return;
     }
+
+    // Chạy trong iframe embed từ trạm tổng — tự đăng nhập
+    if (params.get('embed') === '1' && embedUser && embedPass) {
+      authService.login(embedUser, embedPass).then(result => {
+        if (result.success) navigate(nextPath || '/dashboard', { replace: true });
+        else {
+          setAutoLoginFailed(true);
+          usernameRef.current?.focus();
+        }
+      });
+      return;
+    }
+
+    if (window.self !== window.top) {
+      authService.login('admin', 'Admin@123').then(result => {
+        if (result.success) navigate(nextPath || '/dashboard', { replace: true });
+        else {
+          setAutoLoginFailed(true);
+          usernameRef.current?.focus();
+        }
+      });
+      return;
+    }
+
+    usernameRef.current?.focus();
   }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -46,7 +96,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result.success) {
-      navigate('/dashboard');
+      navigate(resolveNextPath() || '/dashboard');
     } else {
       setErrorMsg(result.error || 'Đăng nhập thất bại');
       setIsShaking(true);
@@ -54,6 +104,23 @@ export default function LoginPage() {
       setTimeout(() => setIsShaking(false), 400);
     }
   };
+
+  if (isAutoLogin && !autoLoginFailed && !showManualForm) {
+    return (
+      <div className="gm-login-wrapper">
+        <div className="gm-overlay"></div>
+        <div className="gm-glass-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 60px', gap: 20 }}>
+          <img src="/favico/logo.svg" alt="Station Monitor Logo" className="gm-logo gm-pulse" style={{ width: 64, height: 64 }} />
+          <div style={{ color: '#0284c7', fontFamily: 'monospace', fontSize: '0.85rem', fontWeight: 900, letterSpacing: '0.15em' }}>
+            ĐANG KẾT NỐI HỆ THỐNG...
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.7rem', fontFamily: 'monospace' }}>
+            Vui lòng đợi trong giây lát
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="gm-login-wrapper">

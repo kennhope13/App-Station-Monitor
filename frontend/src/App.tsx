@@ -28,12 +28,16 @@ const LicensePage = React.lazy(() => import('@/pages/license/LicensePage'));
 
 import { authService } from '@/services/AuthService';
 
-// Bảo vệ route và phân quyền theo vai trò
 const ProtectedRoute = ({ children, roles, denyRestricted }: { children: React.ReactNode, roles?: string[], denyRestricted?: boolean }) => {
   const user = authService.getUser();
+  const params = new URLSearchParams(window.location.search);
+  const hasSsoToken = params.has('token');
   
   if (!user) {
-    return <Navigate to="/login" replace />;
+    if (hasSsoToken) {
+      return <ScreenLoader />;
+    }
+    return <Navigate to={`/login${window.location.search}`} replace />;
   }
   
   if (denyRestricted && user.is_restricted) {
@@ -112,12 +116,19 @@ function SsoAutoLogin() {
         setSession(user, token);
         localStorage.setItem('station_token', token);
 
-        // Xóa tham số token khỏi URL để bảo mật
+        // Xóa tham số token khỏi URL để bảo mật và chuyển hướng người dùng
+        const nextPath = params.get('next');
         params.delete('token');
         const searchStr = params.toString();
-        const cleanUrl = location.pathname + (searchStr ? `?${searchStr}` : '') + location.hash;
+
+        let targetPath = location.pathname;
+        if (location.pathname === '/login' || location.pathname === '/') {
+          targetPath = nextPath || '/dashboard';
+        }
+
+        const cleanUrl = targetPath + (searchStr ? `?${searchStr}` : '') + location.hash;
         
-        // Cập nhật URL và giữ nguyên trang hiện tại
+        // Cập nhật URL và chuyển hướng người dùng
         window.history.replaceState({}, document.title, cleanUrl);
         navigate(cleanUrl, { replace: true });
       } catch (error) {
